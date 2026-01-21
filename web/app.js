@@ -21,6 +21,9 @@ const contactsList = document.getElementById('contactsList');
 const notesList = document.getElementById('notesList');
 const logTable = document.getElementById('logTable');
 const toast = document.getElementById('toast');
+const spaceForm = document.getElementById('spaceForm');
+const deviceForm = document.getElementById('deviceForm');
+const openCreate = document.getElementById('openCreate');
 
 const statusMap = {
   armed: 'Под охраной',
@@ -51,7 +54,8 @@ const apiFetch = async (path, options = {}) => {
     ...options,
   });
   if (!response.ok) {
-    throw new Error(`API error: ${response.status}`);
+    const payload = await response.json().catch(() => ({}));
+    throw new Error(payload.error ?? `API error: ${response.status}`);
   }
   return response.json();
 };
@@ -123,7 +127,7 @@ const renderObjectList = () => {
     card.innerHTML = `
       <div class="object-card__title">${space.name}</div>
       <div class="object-card__meta">ID хаба ${space.hubId}</div>
-      <div class="object-card__status ${statusTone[space.status]}">${statusMap[space.status]}</div>
+      <div class="object-card__status ${statusTone[space.status] ?? ''}">${statusMap[space.status] ?? space.status}</div>
       <div class="object-card__meta">${space.address}</div>
     `;
     card.addEventListener('click', async () => {
@@ -376,6 +380,62 @@ if (refreshBtn) {
     }
     renderAll();
     showToast('Данные синхронизированы с хабами.');
+  });
+}
+
+if (spaceForm) {
+  spaceForm.addEventListener('submit', async (event) => {
+    event.preventDefault();
+    const formData = new FormData(spaceForm);
+    const payload = Object.fromEntries(formData.entries());
+    try {
+      const created = await apiFetch('/api/spaces', {
+        method: 'POST',
+        body: JSON.stringify(payload),
+      });
+      spaces.unshift({ ...created, logs: [] });
+      state.selectedSpaceId = created.id;
+      await loadLogs(created.id);
+      renderAll();
+      spaceForm.reset();
+      showToast('Пространство создано.');
+    } catch (error) {
+      console.error(error);
+      showToast('Не удалось создать пространство.');
+    }
+  });
+}
+
+if (deviceForm) {
+  deviceForm.addEventListener('submit', async (event) => {
+    event.preventDefault();
+    const space = spaces.find((item) => item.id === state.selectedSpaceId);
+    if (!space) return;
+
+    const formData = new FormData(deviceForm);
+    const payload = Object.fromEntries(formData.entries());
+    try {
+      await apiFetch(`/api/spaces/${space.id}/devices`, {
+        method: 'POST',
+        body: JSON.stringify(payload),
+      });
+      await loadSpaces();
+      await loadLogs(space.id);
+      renderAll();
+      deviceForm.reset();
+      showToast('Устройство добавлено.');
+    } catch (error) {
+      console.error(error);
+      showToast('Не удалось добавить устройство.');
+    }
+  });
+}
+
+if (openCreate) {
+  openCreate.addEventListener('click', () => {
+    const tab = document.querySelector('[data-tab="object"]');
+    if (tab) tab.click();
+    spaceForm?.scrollIntoView({ behavior: 'smooth', block: 'center' });
   });
 }
 

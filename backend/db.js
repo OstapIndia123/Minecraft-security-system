@@ -1,9 +1,13 @@
+import dotenv from 'dotenv';
 import pg from 'pg';
 
+dotenv.config();
+
 const { Pool } = pg;
+const connectionString = process.env.DATABASE_URL ?? 'postgres://postgres:postgres@localhost:5433/minecraft_security';
 
 const pool = new Pool({
-  connectionString: process.env.DATABASE_URL,
+  connectionString,
 });
 
 export const query = async (text, params) => {

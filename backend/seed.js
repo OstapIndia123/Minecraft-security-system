@@ -6,7 +6,11 @@ const seed = async () => {
   await query(schema.toString());
 
   await query('DELETE FROM logs');
+  await query('DELETE FROM reader_keys');
+  await query('DELETE FROM readers');
+  await query('DELETE FROM devices');
   await query('DELETE FROM spaces');
+  await query('DELETE FROM hubs');
 
   const spaces = [
     {
@@ -91,9 +95,10 @@ const seed = async () => {
   ];
 
   for (const space of spaces) {
+    await query('INSERT INTO hubs (id, space_id) VALUES ($1,$2)', [space.hub_id, space.id]);
     await query(
-      `INSERT INTO spaces (id, hub_id, name, address, status, hub_online, issues, city, timezone, company, contacts, notes, devices)
-       VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13)`,
+      `INSERT INTO spaces (id, hub_id, name, address, status, hub_online, issues, city, timezone, company, contacts, notes)
+       VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12)`,
       [
         space.id,
         space.hub_id,
@@ -107,9 +112,15 @@ const seed = async () => {
         JSON.stringify(space.company),
         JSON.stringify(space.contacts),
         JSON.stringify(space.notes),
-        JSON.stringify(space.devices),
       ],
     );
+
+    for (const device of space.devices) {
+      await query(
+        'INSERT INTO devices (id, space_id, name, room, status, type, side, config) VALUES ($1,$2,$3,$4,$5,$6,$7,$8)',
+        [device.id, space.id, device.name, device.room, device.status, device.type, device.side ?? null, JSON.stringify(device.config ?? {})],
+      );
+    }
   }
 
   const logs = [

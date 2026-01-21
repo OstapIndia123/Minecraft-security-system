@@ -4,8 +4,8 @@
 
 ## Быстрый старт (UI + backend демо)
 ```bash
-# 1. Запуск Postgres
-sudo docker compose up -d
+# 1. Запуск Postgres (порт 5433, чтобы не конфликтовать с локальной БД)
+docker compose up -d
 
 # 2. Установка зависимостей и сидинг данных
 cd backend

@@ -48,7 +48,7 @@
           </div>
           <div class="topbar__right">
             <button class="button button--ghost" id="refreshBtn">Обновить</button>
-            <button class="button button--primary">Добавить объект</button>
+            <button class="button button--primary" id="openCreate">Добавить объект</button>
           </div>
         </header>
 
@@ -87,6 +87,21 @@
               </div>
               <div class="device-details" id="deviceDetails"></div>
             </div>
+            <div class="panel__footer">
+              <h3>Добавить устройство</h3>
+              <form class="form-grid" id="deviceForm">
+                <input type="text" name="id" placeholder="ID устройства" required />
+                <input type="text" name="name" placeholder="Имя устройства" required />
+                <input type="text" name="room" placeholder="Комната" required />
+                <select name="type" required>
+                  <option value="zone">Шлейф/зона</option>
+                  <option value="output">Выход</option>
+                  <option value="reader">Reader</option>
+                </select>
+                <input type="text" name="side" placeholder="Сторона (north/south/etc)" />
+                <button class="button button--primary" type="submit">Добавить</button>
+              </form>
+            </div>
           </div>
 
           <div class="panel" id="object">
@@ -95,6 +110,18 @@
               <button class="button button--ghost">Редактировать</button>
             </div>
             <div class="object-grid" id="objectInfo"></div>
+            <div class="panel__footer">
+              <h3>Создать пространство</h3>
+              <form class="form-grid" id="spaceForm">
+                <input type="text" name="id" placeholder="ID пространства" required />
+                <input type="text" name="hubId" placeholder="ID хаба" required />
+                <input type="text" name="name" placeholder="Название" required />
+                <input type="text" name="address" placeholder="Адрес" />
+                <input type="text" name="city" placeholder="Город" />
+                <input type="text" name="timezone" placeholder="Часовой пояс" value="Europe/Kyiv" />
+                <button class="button button--primary" type="submit">Создать</button>
+              </form>
+            </div>
           </div>
 
           <div class="panel" id="companies">

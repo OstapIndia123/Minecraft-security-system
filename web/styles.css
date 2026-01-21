@@ -332,6 +332,38 @@ body {
   gap: 18px;
 }
 
+.panel__footer {
+  margin-top: 18px;
+  background: #1b1b1b;
+  border-radius: 16px;
+  padding: 16px;
+  border: 1px solid #2a2a2a;
+}
+
+.panel__footer h3 {
+  font-size: 14px;
+  margin-bottom: 12px;
+}
+
+.form-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+  gap: 12px;
+}
+
+.form-grid input,
+.form-grid select {
+  background: #222;
+  border: 1px solid #2a2a2a;
+  color: var(--text);
+  border-radius: 10px;
+  padding: 10px;
+}
+
+.form-grid button {
+  justify-self: start;
+}
+
 .device-list {
   display: flex;
   flex-direction: column;
