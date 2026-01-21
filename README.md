@@ -18,6 +18,16 @@ npm run dev
 ```
 Откройте: http://localhost:8080
 
+## Webhook от модов
+Хабы и читатели присылают события на:
+- `POST /api/hub/events`
+- `POST /api/reader/events`
+
+Если указан `WEBHOOK_TOKEN`, передавайте заголовок:
+```
+X-Webhook-Token: dev-secret-change-me
+```
+
 ## Содержание
 - [Архитектура и модели](docs/architecture.md)
 - [Авторизация через launcher token](docs/auth-flow.md)

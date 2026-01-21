@@ -15,7 +15,8 @@ CREATE TABLE IF NOT EXISTS spaces (
   timezone TEXT NOT NULL,
   company JSONB NOT NULL,
   contacts JSONB NOT NULL,
-  notes JSONB NOT NULL
+  notes JSONB NOT NULL,
+  photos JSONB NOT NULL
 );
 
 CREATE TABLE IF NOT EXISTS devices (
@@ -29,19 +30,13 @@ CREATE TABLE IF NOT EXISTS devices (
   config JSONB NOT NULL DEFAULT '{}'::jsonb
 );
 
-CREATE TABLE IF NOT EXISTS readers (
-  id TEXT PRIMARY KEY,
-  space_id TEXT NOT NULL REFERENCES spaces(id) ON DELETE CASCADE,
-  name TEXT NOT NULL,
-  side TEXT,
-  level INT NOT NULL DEFAULT 0
-);
-
-CREATE TABLE IF NOT EXISTS reader_keys (
+CREATE TABLE IF NOT EXISTS reader_sessions (
   id SERIAL PRIMARY KEY,
-  reader_id TEXT NOT NULL REFERENCES readers(id) ON DELETE CASCADE,
-  key_name TEXT NOT NULL,
-  groups JSONB NOT NULL DEFAULT '[]'::jsonb
+  reader_id TEXT NOT NULL,
+  space_id TEXT NOT NULL REFERENCES spaces(id) ON DELETE CASCADE,
+  input_side TEXT NOT NULL,
+  input_level INT NOT NULL,
+  expires_at TIMESTAMP NOT NULL
 );
 
 CREATE TABLE IF NOT EXISTS logs (

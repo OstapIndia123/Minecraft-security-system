@@ -6,8 +6,7 @@ const seed = async () => {
   await query(schema.toString());
 
   await query('DELETE FROM logs');
-  await query('DELETE FROM reader_keys');
-  await query('DELETE FROM readers');
+  await query('DELETE FROM reader_sessions');
   await query('DELETE FROM devices');
   await query('DELETE FROM spaces');
   await query('DELETE FROM hubs');
@@ -35,12 +34,21 @@ const seed = async () => {
         { name: 'Павлюк О.', role: 'Инженер монтажа', phone: '+380 50 000 00 00' },
       ],
       notes: ['Постановка через reader на стороне EAST.', 'Сирена на стороне SOUTH.'],
+      photos: [],
       devices: [
         { id: 'hub-261156', name: 'Хаб 261156', room: 'Комната не выбрана', status: 'В сети', type: 'hub' },
         { id: 'zone-entrance', name: 'вхід', room: 'коридор', status: 'Норма', type: 'zone' },
         { id: 'zone-motion-1', name: 'рух 1', room: 'кухня', status: 'Норма', type: 'zone' },
         { id: 'zone-motion-2', name: 'рух 2', room: 'спальня', status: 'Норма', type: 'zone' },
-        { id: 'reader-key', name: 'брелок', room: 'спальня дит', status: 'Норма', type: 'reader' },
+        {
+          id: 'reader-key',
+          name: 'брелок',
+          room: 'спальня дит',
+          status: 'Норма',
+          type: 'reader',
+          side: 'east',
+          config: { outputLevel: 6, inputSide: 'up', inputLevel: 6 },
+        },
       ],
     },
     {
@@ -62,6 +70,7 @@ const seed = async () => {
       },
       contacts: [{ name: 'Владимир', role: 'Ответственное лицо', phone: '+380 50 111 22 33' }],
       notes: ['Тест канала каждые 5 минут.', 'Временно нет связи.'],
+      photos: [],
       devices: [
         { id: 'hub-261738', name: 'Хаб 261738', room: 'Склад', status: 'Не в сети', type: 'hub' },
         { id: 'zone-door', name: 'дверь', room: 'склад', status: 'Норма', type: 'zone' },
@@ -86,6 +95,7 @@ const seed = async () => {
       },
       contacts: [{ name: 'Олег', role: 'Ответственное лицо', phone: '+380 67 555 44 22' }],
       notes: ['Ночной режим: только периметр.'],
+      photos: [],
       devices: [
         { id: 'hub-260696', name: 'Хаб 260696', room: 'Торговый зал', status: 'В сети', type: 'hub' },
         { id: 'zone-window', name: 'окно', room: 'зал', status: 'Норма', type: 'zone' },
@@ -97,8 +107,8 @@ const seed = async () => {
   for (const space of spaces) {
     await query('INSERT INTO hubs (id, space_id) VALUES ($1,$2)', [space.hub_id, space.id]);
     await query(
-      `INSERT INTO spaces (id, hub_id, name, address, status, hub_online, issues, city, timezone, company, contacts, notes)
-       VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12)`,
+      `INSERT INTO spaces (id, hub_id, name, address, status, hub_online, issues, city, timezone, company, contacts, notes, photos)
+       VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13)`,
       [
         space.id,
         space.hub_id,
@@ -112,13 +122,23 @@ const seed = async () => {
         JSON.stringify(space.company),
         JSON.stringify(space.contacts),
         JSON.stringify(space.notes),
+        JSON.stringify(space.photos),
       ],
     );
 
     for (const device of space.devices) {
       await query(
         'INSERT INTO devices (id, space_id, name, room, status, type, side, config) VALUES ($1,$2,$3,$4,$5,$6,$7,$8)',
-        [device.id, space.id, device.name, device.room, device.status, device.type, device.side ?? null, JSON.stringify(device.config ?? {})],
+        [
+          device.id,
+          space.id,
+          device.name,
+          device.room,
+          device.status,
+          device.type,
+          device.side ?? null,
+          JSON.stringify(device.config ?? {}),
+        ],
       );
     }
   }

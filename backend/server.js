@@ -7,6 +7,7 @@ import { query } from './db.js';
 const app = express();
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
+const webhookToken = process.env.WEBHOOK_TOKEN;
 
 app.use(cors());
 app.use(express.json());
@@ -25,6 +26,7 @@ const mapSpace = (row) => ({
   company: row.company,
   contacts: row.contacts,
   notes: row.notes,
+  photos: row.photos,
 });
 
 const mapDevice = (row) => ({
@@ -57,6 +59,15 @@ const appendLog = async (spaceId, text, who, type) => {
   );
 };
 
+const requireWebhookToken = (req, res, next) => {
+  if (!webhookToken) return next();
+  const headerToken = req.header('x-webhook-token') ?? req.header('authorization')?.replace('Bearer ', '');
+  if (headerToken !== webhookToken) {
+    return res.status(401).json({ error: 'invalid_token' });
+  }
+  return next();
+};
+
 app.get('/api/spaces', async (req, res) => {
   const result = await query('SELECT * FROM spaces ORDER BY id');
   const spaces = await Promise.all(
@@ -87,8 +98,8 @@ app.get('/api/spaces/:id/logs', async (req, res) => {
 });
 
 app.post('/api/spaces', async (req, res) => {
-  const { id, hubId, name, address, city, timezone } = req.body ?? {};
-  if (!id || !hubId || !name) {
+  const { hubId, name, address, city, timezone } = req.body ?? {};
+  if (!hubId || !name) {
     return res.status(400).json({ error: 'missing_fields' });
   }
 
@@ -97,16 +108,18 @@ app.post('/api/spaces', async (req, res) => {
     return res.status(409).json({ error: 'hub_already_registered' });
   }
 
+  const generatedId = `SPACE-${Date.now()}`;
   const company = { name: 'Не указано', country: '—', pcs: '—', site: '—', email: '—' };
   const contacts = [];
   const notes = [];
+  const photos = [];
 
-  await query('INSERT INTO hubs (id, space_id) VALUES ($1,$2)', [hubId, id]);
+  await query('INSERT INTO hubs (id, space_id) VALUES ($1,$2)', [hubId, generatedId]);
   await query(
-    `INSERT INTO spaces (id, hub_id, name, address, status, hub_online, issues, city, timezone, company, contacts, notes)
-     VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12)`,
+    `INSERT INTO spaces (id, hub_id, name, address, status, hub_online, issues, city, timezone, company, contacts, notes, photos)
+     VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13)`,
     [
-      id,
+      generatedId,
       hubId,
       name,
       address ?? '—',
@@ -118,14 +131,82 @@ app.post('/api/spaces', async (req, res) => {
       JSON.stringify(company),
       JSON.stringify(contacts),
       JSON.stringify(notes),
+      JSON.stringify(photos),
     ],
   );
 
-  await appendLog(id, 'Создано пространство', 'UI', 'system');
-  const space = await query('SELECT * FROM spaces WHERE id = $1', [id]);
+  await appendLog(generatedId, 'Создано пространство', 'UI', 'system');
+  const space = await query('SELECT * FROM spaces WHERE id = $1', [generatedId]);
   const result = mapSpace(space.rows[0]);
   result.devices = [];
   res.status(201).json(result);
+});
+
+app.patch('/api/spaces/:id', async (req, res) => {
+  const { name, address, city, timezone } = req.body ?? {};
+  const existing = await query('SELECT * FROM spaces WHERE id = $1', [req.params.id]);
+  if (!existing.rows.length) {
+    return res.status(404).json({ error: 'space_not_found' });
+  }
+
+  const space = existing.rows[0];
+  const updated = await query(
+    'UPDATE spaces SET name = $1, address = $2, city = $3, timezone = $4 WHERE id = $5 RETURNING *',
+    [
+      name ?? space.name,
+      address ?? space.address,
+      city ?? space.city,
+      timezone ?? space.timezone,
+      req.params.id,
+    ],
+  );
+
+  await appendLog(req.params.id, 'Обновлена информация об объекте', 'UI', 'system');
+  const result = mapSpace(updated.rows[0]);
+  result.devices = await loadDevices(req.params.id);
+  res.json(result);
+});
+
+app.post('/api/spaces/:id/contacts', async (req, res) => {
+  const { name, role, phone } = req.body ?? {};
+  if (!name) return res.status(400).json({ error: 'missing_fields' });
+
+  const result = await query('SELECT contacts FROM spaces WHERE id = $1', [req.params.id]);
+  if (!result.rows.length) return res.status(404).json({ error: 'space_not_found' });
+
+  const contacts = result.rows[0].contacts ?? [];
+  contacts.push({ name, role: role ?? '—', phone: phone ?? '—' });
+  await query('UPDATE spaces SET contacts = $1 WHERE id = $2', [JSON.stringify(contacts), req.params.id]);
+  await appendLog(req.params.id, `Добавлено контактное лицо: ${name}`, 'UI', 'system');
+  res.status(201).json({ ok: true });
+});
+
+app.post('/api/spaces/:id/notes', async (req, res) => {
+  const { text } = req.body ?? {};
+  if (!text) return res.status(400).json({ error: 'missing_fields' });
+
+  const result = await query('SELECT notes FROM spaces WHERE id = $1', [req.params.id]);
+  if (!result.rows.length) return res.status(404).json({ error: 'space_not_found' });
+
+  const notes = result.rows[0].notes ?? [];
+  notes.push(text);
+  await query('UPDATE spaces SET notes = $1 WHERE id = $2', [JSON.stringify(notes), req.params.id]);
+  await appendLog(req.params.id, 'Добавлено примечание', 'UI', 'system');
+  res.status(201).json({ ok: true });
+});
+
+app.post('/api/spaces/:id/photos', async (req, res) => {
+  const { url, label } = req.body ?? {};
+  if (!url) return res.status(400).json({ error: 'missing_fields' });
+
+  const result = await query('SELECT photos FROM spaces WHERE id = $1', [req.params.id]);
+  if (!result.rows.length) return res.status(404).json({ error: 'space_not_found' });
+
+  const photos = result.rows[0].photos ?? [];
+  photos.push({ url, label: label ?? 'Фото' });
+  await query('UPDATE spaces SET photos = $1 WHERE id = $2', [JSON.stringify(photos), req.params.id]);
+  await appendLog(req.params.id, 'Добавлено фото', 'UI', 'system');
+  res.status(201).json({ ok: true });
 });
 
 app.post('/api/spaces/:id/attach-hub', async (req, res) => {
@@ -143,8 +224,25 @@ app.post('/api/spaces/:id/attach-hub', async (req, res) => {
   res.json({ ok: true });
 });
 
+const deviceConfigFromPayload = (payload) => {
+  if (payload.type === 'output-light') {
+    return { level: Number(payload.outputLevel ?? 15) };
+  }
+  if (payload.type === 'siren') {
+    return { level: Number(payload.outputLevel ?? 15), intervalMs: Number(payload.intervalMs ?? 1000) };
+  }
+  if (payload.type === 'reader') {
+    return {
+      outputLevel: Number(payload.outputLevel ?? 6),
+      inputSide: payload.inputSide ?? 'up',
+      inputLevel: Number(payload.inputLevel ?? 6),
+    };
+  }
+  return {};
+};
+
 app.post('/api/spaces/:id/devices', async (req, res) => {
-  const { id, name, room, status, type, side, config } = req.body ?? {};
+  const { id, name, room, status, type, side } = req.body ?? {};
   if (!id || !name || !room || !type) {
     return res.status(400).json({ error: 'missing_fields' });
   }
@@ -159,7 +257,7 @@ app.post('/api/spaces/:id/devices', async (req, res) => {
       status ?? 'Норма',
       type,
       side ?? null,
-      JSON.stringify(config ?? {}),
+      JSON.stringify(deviceConfigFromPayload(req.body)),
     ],
   );
 
@@ -188,8 +286,8 @@ app.post('/api/spaces/:id/disarm', async (req, res) => {
   res.json(space);
 });
 
-app.post('/api/hub/events', async (req, res) => {
-  const { type, hubId, ts } = req.body ?? {};
+app.post('/api/hub/events', requireWebhookToken, async (req, res) => {
+  const { type, hubId, ts, payload } = req.body ?? {};
   if (!type || !hubId) {
     return res.status(400).json({ error: 'invalid_payload' });
   }
@@ -210,21 +308,35 @@ app.post('/api/hub/events', async (req, res) => {
     [spaceId, time, `Событие хаба: ${type}`, hubId, 'system'],
   );
 
+  if (type === 'PORT_IN' && payload?.side && payload?.level !== undefined) {
+    const sessions = await query(
+      'SELECT id, input_side, input_level FROM reader_sessions WHERE space_id = $1 AND expires_at >= NOW() ORDER BY id DESC LIMIT 1',
+      [spaceId],
+    );
+    if (sessions.rows.length) {
+      const session = sessions.rows[0];
+      if (session.input_side === payload.side && Number(session.input_level) === Number(payload.level)) {
+        await updateStatus(spaceId, 'armed', 'Reader');
+        await query('DELETE FROM reader_sessions WHERE id = $1', [session.id]);
+      }
+    }
+  }
+
   res.json({ ok: true });
 });
 
-app.post('/api/reader/events', async (req, res) => {
+app.post('/api/reader/events', requireWebhookToken, async (req, res) => {
   const { type, readerId, payload, ts } = req.body ?? {};
   if (type !== 'READER_SCAN' || !readerId) {
     return res.status(400).json({ error: 'invalid_payload' });
   }
 
-  const reader = await query('SELECT space_id, name FROM readers WHERE id = $1', [readerId]);
-  if (!reader.rows.length) {
+  const device = await query('SELECT space_id, name, config FROM devices WHERE id = $1 AND type = $2', [readerId, 'reader']);
+  if (!device.rows.length) {
     return res.status(202).json({ ok: true, ignored: true });
   }
 
-  const spaceId = reader.rows[0].space_id;
+  const { space_id: spaceId, name, config } = device.rows[0];
   const time = ts
     ? new Date(ts).toLocaleTimeString('ru-RU', { hour: '2-digit', minute: '2-digit', second: '2-digit' })
     : new Date().toLocaleTimeString('ru-RU', { hour: '2-digit', minute: '2-digit', second: '2-digit' });
@@ -232,10 +344,23 @@ app.post('/api/reader/events', async (req, res) => {
 
   await query(
     'INSERT INTO logs (space_id, time, text, who, type) VALUES ($1,$2,$3,$4,$5)',
-    [spaceId, time, `Скан ключа: ${keyName}`, reader.rows[0].name ?? readerId, 'access'],
+    [spaceId, time, `Скан ключа: ${keyName}`, name ?? readerId, 'access'],
   );
 
-  res.json({ ok: true });
+  const inputSide = config?.inputSide ?? 'up';
+  const inputLevel = Number(config?.inputLevel ?? 6);
+  await query(
+    'INSERT INTO reader_sessions (reader_id, space_id, input_side, input_level, expires_at) VALUES ($1,$2,$3,$4,NOW() + INTERVAL \'1 second\')',
+    [readerId, spaceId, inputSide, inputLevel],
+  );
+
+  res.json({
+    ok: true,
+    output: {
+      readerId,
+      level: Number(config?.outputLevel ?? 6),
+    },
+  });
 });
 
 app.listen(8080, () => {

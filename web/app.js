@@ -16,14 +16,24 @@ const hubLabel = document.getElementById('hubLabel');
 const deviceList = document.getElementById('deviceList');
 const deviceDetails = document.getElementById('deviceDetails');
 const objectInfo = document.getElementById('objectInfo');
-const companyInfo = document.getElementById('companyInfo');
 const contactsList = document.getElementById('contactsList');
 const notesList = document.getElementById('notesList');
+const photosList = document.getElementById('photosList');
 const logTable = document.getElementById('logTable');
 const toast = document.getElementById('toast');
 const spaceForm = document.getElementById('spaceForm');
 const deviceForm = document.getElementById('deviceForm');
+const contactForm = document.getElementById('contactForm');
+const noteForm = document.getElementById('noteForm');
+const photoForm = document.getElementById('photoForm');
+const editForm = document.getElementById('editForm');
 const openCreate = document.getElementById('openCreate');
+const modal = document.getElementById('spaceModal');
+const modalClose = document.getElementById('closeModal');
+const deviceType = document.getElementById('deviceType');
+const readerFields = document.getElementById('readerFields');
+const sirenFields = document.getElementById('sirenFields');
+const lightFields = document.getElementById('lightFields');
 
 const statusMap = {
   armed: 'Под охраной',
@@ -232,21 +242,13 @@ const renderObjectInfo = (space) => {
       <strong>${statusMap[space.status] ?? space.status}</strong>
     </div>
   `;
-};
 
-const renderCompany = (space) => {
-  companyInfo.innerHTML = `
-    <div class="company-logo">АО</div>
-    <div>
-      <div class="company-row__title">${space.company.name}</div>
-      <div class="company-row__meta">${space.company.country}</div>
-    </div>
-    <div class="company-row__contacts">
-      <div>ПЦС: ${space.company.pcs}</div>
-      <div>Сайт: ${space.company.site}</div>
-      <div>Почта: ${space.company.email}</div>
-    </div>
-  `;
+  if (editForm) {
+    editForm.name.value = space.name;
+    editForm.address.value = space.address;
+    editForm.city.value = space.city;
+    editForm.timezone.value = space.timezone;
+  }
 };
 
 const renderContacts = (space) => {
@@ -270,6 +272,24 @@ const renderNotes = (space) => {
     card.className = 'note-card';
     card.textContent = note;
     notesList.appendChild(card);
+  });
+};
+
+const renderPhotos = (space) => {
+  const photos = space.photos ?? [];
+  photosList.innerHTML = '';
+  if (!photos.length) {
+    photosList.innerHTML = '<div class="empty-state">Нет фотографий</div>';
+    return;
+  }
+  photos.forEach((photo) => {
+    const card = document.createElement('div');
+    card.className = 'photo-card';
+    card.innerHTML = `
+      <img src="${photo.url}" alt="${photo.label}" />
+      <div>${photo.label}</div>
+    `;
+    photosList.appendChild(card);
   });
 };
 
@@ -303,9 +323,9 @@ const renderAll = () => {
   renderSpaceHeader(space);
   renderDevices(space);
   renderObjectInfo(space);
-  renderCompany(space);
   renderContacts(space);
   renderNotes(space);
+  renderPhotos(space);
   renderLogs(space);
 };
 
@@ -399,11 +419,41 @@ if (spaceForm) {
       renderAll();
       spaceForm.reset();
       showToast('Пространство создано.');
+      modal?.classList.remove('modal--open');
     } catch (error) {
       console.error(error);
       showToast('Не удалось создать пространство.');
     }
   });
+}
+
+if (deviceType) {
+  const updateDeviceFields = () => {
+    const value = deviceType.value;
+    const isReader = value === 'reader';
+    const isSiren = value === 'siren';
+    const isLight = value === 'output-light';
+
+    readerFields?.classList.toggle('hidden', !isReader);
+    sirenFields?.classList.toggle('hidden', !isSiren);
+    lightFields?.classList.toggle('hidden', !isLight);
+
+    readerFields?.querySelectorAll('input').forEach((input) => {
+      input.disabled = !isReader;
+      input.required = isReader;
+    });
+    sirenFields?.querySelectorAll('input').forEach((input) => {
+      input.disabled = !isSiren;
+      input.required = isSiren;
+    });
+    lightFields?.querySelectorAll('input').forEach((input) => {
+      input.disabled = !isLight;
+      input.required = isLight;
+    });
+  };
+
+  deviceType.addEventListener('change', updateDeviceFields);
+  updateDeviceFields();
 }
 
 if (deviceForm) {
@@ -431,11 +481,119 @@ if (deviceForm) {
   });
 }
 
-if (openCreate) {
+if (contactForm) {
+  contactForm.addEventListener('submit', async (event) => {
+    event.preventDefault();
+    const space = spaces.find((item) => item.id === state.selectedSpaceId);
+    if (!space) return;
+
+    const formData = new FormData(contactForm);
+    const payload = Object.fromEntries(formData.entries());
+    try {
+      await apiFetch(`/api/spaces/${space.id}/contacts`, {
+        method: 'POST',
+        body: JSON.stringify(payload),
+      });
+      await loadSpaces();
+      renderAll();
+      contactForm.reset();
+      showToast('Контакт добавлен.');
+    } catch (error) {
+      console.error(error);
+      showToast('Не удалось добавить контакт.');
+    }
+  });
+}
+
+if (noteForm) {
+  noteForm.addEventListener('submit', async (event) => {
+    event.preventDefault();
+    const space = spaces.find((item) => item.id === state.selectedSpaceId);
+    if (!space) return;
+
+    const formData = new FormData(noteForm);
+    const payload = Object.fromEntries(formData.entries());
+    try {
+      await apiFetch(`/api/spaces/${space.id}/notes`, {
+        method: 'POST',
+        body: JSON.stringify(payload),
+      });
+      await loadSpaces();
+      renderAll();
+      noteForm.reset();
+      showToast('Примечание добавлено.');
+    } catch (error) {
+      console.error(error);
+      showToast('Не удалось добавить примечание.');
+    }
+  });
+}
+
+if (photoForm) {
+  photoForm.addEventListener('submit', async (event) => {
+    event.preventDefault();
+    const space = spaces.find((item) => item.id === state.selectedSpaceId);
+    if (!space) return;
+
+    const formData = new FormData(photoForm);
+    const payload = Object.fromEntries(formData.entries());
+    try {
+      await apiFetch(`/api/spaces/${space.id}/photos`, {
+        method: 'POST',
+        body: JSON.stringify(payload),
+      });
+      await loadSpaces();
+      renderAll();
+      photoForm.reset();
+      showToast('Фото добавлено.');
+    } catch (error) {
+      console.error(error);
+      showToast('Не удалось добавить фото.');
+    }
+  });
+}
+
+if (editForm) {
+  editForm.addEventListener('submit', async (event) => {
+    event.preventDefault();
+    const space = spaces.find((item) => item.id === state.selectedSpaceId);
+    if (!space) return;
+
+    const formData = new FormData(editForm);
+    const payload = Object.fromEntries(formData.entries());
+    try {
+      const updated = await apiFetch(`/api/spaces/${space.id}`, {
+        method: 'PATCH',
+        body: JSON.stringify(payload),
+      });
+      Object.assign(space, updated);
+      await loadLogs(space.id);
+      renderAll();
+      showToast('Информация обновлена.');
+    } catch (error) {
+      console.error(error);
+      showToast('Не удалось обновить объект.');
+    }
+  });
+}
+
+if (openCreate && modal) {
   openCreate.addEventListener('click', () => {
-    const tab = document.querySelector('[data-tab="object"]');
-    if (tab) tab.click();
-    spaceForm?.scrollIntoView({ behavior: 'smooth', block: 'center' });
+    modal.classList.add('modal--open');
+  });
+}
+
+if (modalClose && modal) {
+  modalClose.addEventListener('click', () => {
+    modal.classList.remove('modal--open');
+  });
+}
+
+if (modal) {
+  modal.addEventListener('click', (event) => {
+    if (event.target === modal) {
+      modal.classList.remove('modal--open');
+    }
   });
 }
 
