@@ -19,22 +19,30 @@
           </button>
         </div>
 
-        <nav class="sidebar__nav" id="filters">
-          <button class="nav-pill nav-pill--active" data-filter="all">
-            Все объекты <span class="badge" data-count="all">0</span>
-          </button>
-          <button class="nav-pill" data-filter="offline">
-            С хабами не в сети <span class="badge" data-count="offline">0</span>
-          </button>
-          <button class="nav-pill" data-filter="autonomous">
-            С автономными устройствами <span class="badge" data-count="autonomous">0</span>
-          </button>
-          <button class="nav-pill" data-filter="issues">
-            С неисправностями <span class="badge badge--alert" data-count="issues">0</span>
-          </button>
+        <nav class="sidebar__nav">
+          <button class="nav-pill nav-pill--active">Все объекты <span class="badge">3</span></button>
+          <button class="nav-pill">С хабами не в сети <span class="badge">0</span></button>
+          <button class="nav-pill">С автономными устройствами <span class="badge">0</span></button>
+          <button class="nav-pill">С неисправностями <span class="badge badge--alert">1</span></button>
         </nav>
 
-        <div class="sidebar__list" id="objectList"></div>
+        <div class="sidebar__list">
+          <div class="object-card object-card--active">
+            <div class="object-card__title">261156</div>
+            <div class="object-card__meta">ID хаба 0008951F</div>
+            <div class="object-card__status">Под охраной</div>
+          </div>
+          <div class="object-card">
+            <div class="object-card__title">261738</div>
+            <div class="object-card__meta">ID хаба 00230716</div>
+            <div class="object-card__status">Снято</div>
+          </div>
+          <div class="object-card">
+            <div class="object-card__title">Крамница</div>
+            <div class="object-card__meta">ID хаба 00082578</div>
+            <div class="object-card__status">Ночной режим</div>
+          </div>
+        </div>
       </aside>
 
       <main class="main">
@@ -46,27 +54,26 @@
             </div>
             <div class="search">
               <span class="icon">🔍</span>
-              <input type="text" id="globalSearch" placeholder="Поиск по объекту или ID" />
+              <input type="text" placeholder="Поиск по объекту или ID" />
             </div>
           </div>
           <div class="topbar__right">
             <button class="button button--ghost">Отчёты о работе системы</button>
-            <button class="button button--ghost" id="refreshBtn">Обновить</button>
+            <button class="button button--ghost">Обновить</button>
             <button class="button button--primary">Добавить объект</button>
           </div>
         </header>
 
         <section class="status-panel">
           <div class="status-card">
-            <div class="status-card__id" id="spaceId">—</div>
-            <div class="status-card__state" id="spaceState">—</div>
-            <div class="status-card__meta" id="spaceMeta">—</div>
+            <div class="status-card__id">261156</div>
+            <div class="status-card__state">Под охраной</div>
           </div>
           <div class="status-actions">
-            <button class="chip chip--alert" data-action="alarm">Тревога</button>
-            <button class="chip" data-action="arm">Под охрану</button>
-            <button class="chip" data-action="disarm">С охраны</button>
-            <button class="chip" data-action="night">Ночной режим</button>
+            <button class="chip chip--alert">Тревога</button>
+            <button class="chip">Под охрану</button>
+            <button class="chip">С охраны</button>
+            <button class="chip">Ночной режим</button>
           </div>
         </section>
 
@@ -84,14 +91,74 @@
           <div class="panel panel--active" id="equipment">
             <div class="panel__header">
               <h2>Оборудование</h2>
-              <span class="muted" id="hubLabel">—</span>
+              <span class="muted">Hub 261156</span>
             </div>
             <div class="panel__grid">
               <div class="device-list">
-                <input class="device-search" id="deviceSearch" placeholder="Поиск по названию или ID" />
-                <div id="deviceList"></div>
+                <input class="device-search" placeholder="Поиск по названию или ID" />
+                <div class="device-item device-item--active">
+                  <div>
+                    <div class="device-item__title">Хаб 261156</div>
+                    <div class="device-item__meta">Комната не выбрана</div>
+                  </div>
+                  <span class="device-item__status">В сети</span>
+                </div>
+                <div class="device-item">
+                  <div>
+                    <div class="device-item__title">вхід</div>
+                    <div class="device-item__meta">коридор</div>
+                  </div>
+                  <span class="device-item__status">Норма</span>
+                </div>
+                <div class="device-item">
+                  <div>
+                    <div class="device-item__title">рух 1</div>
+                    <div class="device-item__meta">кухня</div>
+                  </div>
+                  <span class="device-item__status">Норма</span>
+                </div>
+                <div class="device-item">
+                  <div>
+                    <div class="device-item__title">рух 2</div>
+                    <div class="device-item__meta">спальня</div>
+                  </div>
+                  <span class="device-item__status">Норма</span>
+                </div>
+                <div class="device-item">
+                  <div>
+                    <div class="device-item__title">брелок</div>
+                    <div class="device-item__meta">спальня дит</div>
+                  </div>
+                  <span class="device-item__status">Норма</span>
+                </div>
               </div>
-              <div class="device-details" id="deviceDetails"></div>
+              <div class="device-details">
+                <div class="device-details__header">
+                  <div class="device-avatar">Hub</div>
+                  <div>
+                    <div class="device-details__title">Hub 261156</div>
+                    <div class="device-details__meta">Основной хаб объекта</div>
+                  </div>
+                </div>
+                <div class="device-details__stats">
+                  <div class="stat">
+                    <span>Сигнал</span>
+                    <strong>В сети</strong>
+                  </div>
+                  <div class="stat">
+                    <span>Канал</span>
+                    <strong>Ethernet</strong>
+                  </div>
+                  <div class="stat">
+                    <span>Тест связи</span>
+                    <strong>5 минут</strong>
+                  </div>
+                  <div class="stat">
+                    <span>Состояние</span>
+                    <strong>Норма</strong>
+                  </div>
+                </div>
+              </div>
             </div>
           </div>
 
@@ -100,14 +167,29 @@
               <h2>Информация об объекте</h2>
               <button class="button button--ghost">Редактировать</button>
             </div>
-            <div class="object-grid" id="objectInfo"></div>
+            <div class="empty-state">
+              <div class="empty-state__icon">ℹ️</div>
+              <h3>Информация не заполнена</h3>
+              <p>Добавьте номер объекта, адрес и контактные данные.</p>
+            </div>
           </div>
 
           <div class="panel" id="companies">
             <div class="panel__header">
               <h2>Охранные компании</h2>
             </div>
-            <div class="company-row" id="companyInfo"></div>
+            <div class="company-row">
+              <div class="company-logo">АО</div>
+              <div>
+                <div class="company-row__title">АО «Явир-2000»</div>
+                <div class="company-row__meta">Украина</div>
+              </div>
+              <div class="company-row__contacts">
+                <div>ПЦС: +380931702200</div>
+                <div>Сайт: https://yavir2000.com</div>
+                <div>Почта: ajax@yavir2000.com</div>
+              </div>
+            </div>
           </div>
 
           <div class="panel" id="contacts">
@@ -115,7 +197,11 @@
               <h2>Контактные лица</h2>
               <button class="button button--ghost">Добавить контактное лицо</button>
             </div>
-            <div class="contacts" id="contactsList"></div>
+            <div class="empty-state">
+              <div class="empty-state__icon">👤</div>
+              <h3>Контакты не добавлены</h3>
+              <p>Добавьте ответственное лицо для объекта.</p>
+            </div>
           </div>
 
           <div class="panel" id="photos">
@@ -123,7 +209,7 @@
               <h2>Фото объекта</h2>
               <button class="button button--ghost">Добавить фото</button>
             </div>
-            <div class="empty-state" id="photosEmpty">
+            <div class="empty-state">
               <div class="empty-state__icon">🖼️</div>
               <h3>Нет фотографий</h3>
               <p>Добавьте фото или схемы объекта.</p>
@@ -135,26 +221,54 @@
               <h2>Примечания</h2>
               <button class="button button--ghost">Добавить примечание</button>
             </div>
-            <div class="notes" id="notesList"></div>
+            <div class="empty-state">
+              <div class="empty-state__icon">📝</div>
+              <h3>Нет примечаний</h3>
+              <p>Добавьте важную информацию для инженерной группы.</p>
+            </div>
           </div>
 
           <div class="panel" id="log">
             <div class="panel__header">
               <h2>Лог событий</h2>
-              <div class="filters" id="logFilters">
-                <button class="chip chip--active" data-log="all">Все</button>
-                <button class="chip" data-log="security">Охранные</button>
-                <button class="chip" data-log="access">Доступ</button>
-                <button class="chip" data-log="system">Система</button>
+              <div class="filters">
+                <button class="chip chip--active">Все</button>
+                <button class="chip">Охранные</button>
+                <button class="chip">Видео</button>
+                <button class="chip">Автоматизация</button>
               </div>
             </div>
-            <div class="log-table" id="logTable"></div>
+            <div class="log-table">
+              <div class="log-row">
+                <span>04:11:43</span>
+                <span>Пользователь Aramaic поставил объект 261156 под охрану</span>
+                <span class="muted">Aramaic</span>
+              </div>
+              <div class="log-row">
+                <span>04:07:43</span>
+                <span>Добавлен новый пользователь Aramaic</span>
+                <span class="muted">АО «Явир-2000»</span>
+              </div>
+              <div class="log-row">
+                <span>03:11:14</span>
+                <span>Инженер Павлюк О. получил доступ к объекту</span>
+                <span class="muted">Явир2000</span>
+              </div>
+              <div class="log-row">
+                <span>12:01:33</span>
+                <span>Питание хаба подключено</span>
+                <span class="muted">261156</span>
+              </div>
+              <div class="log-row">
+                <span>10:55:26</span>
+                <span>Снято с охраны пользователем Ivanna</span>
+                <span class="muted">Ivanna</span>
+              </div>
+            </div>
           </div>
         </section>
       </main>
     </div>
-
-    <div class="toast" id="toast" role="status" aria-live="polite"></div>
 
     <script src="app.js"></script>
   </body>
