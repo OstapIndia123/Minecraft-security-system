@@ -1,0 +1,50 @@
+CREATE TABLE IF NOT EXISTS hubs (
+  id TEXT PRIMARY KEY,
+  space_id TEXT UNIQUE
+);
+
+CREATE TABLE IF NOT EXISTS spaces (
+  id TEXT PRIMARY KEY,
+  hub_id TEXT NOT NULL,
+  name TEXT NOT NULL,
+  address TEXT NOT NULL,
+  status TEXT NOT NULL,
+  hub_online BOOLEAN NOT NULL DEFAULT true,
+  issues BOOLEAN NOT NULL DEFAULT false,
+  city TEXT NOT NULL,
+  timezone TEXT NOT NULL,
+  company JSONB NOT NULL,
+  contacts JSONB NOT NULL,
+  notes JSONB NOT NULL,
+  photos JSONB NOT NULL
+);
+
+CREATE TABLE IF NOT EXISTS devices (
+  id TEXT PRIMARY KEY,
+  space_id TEXT NOT NULL REFERENCES spaces(id) ON DELETE CASCADE,
+  name TEXT NOT NULL,
+  room TEXT NOT NULL,
+  status TEXT NOT NULL,
+  type TEXT NOT NULL,
+  side TEXT,
+  config JSONB NOT NULL DEFAULT '{}'::jsonb
+);
+
+CREATE TABLE IF NOT EXISTS reader_sessions (
+  id SERIAL PRIMARY KEY,
+  reader_id TEXT NOT NULL,
+  space_id TEXT NOT NULL REFERENCES spaces(id) ON DELETE CASCADE,
+  input_side TEXT NOT NULL,
+  input_level INT NOT NULL,
+  expires_at TIMESTAMP NOT NULL
+);
+
+CREATE TABLE IF NOT EXISTS logs (
+  id SERIAL PRIMARY KEY,
+  space_id TEXT NOT NULL REFERENCES spaces(id) ON DELETE CASCADE,
+  time TEXT NOT NULL,
+  text TEXT NOT NULL,
+  who TEXT NOT NULL,
+  type TEXT NOT NULL,
+  created_at TIMESTAMP NOT NULL DEFAULT NOW()
+);
