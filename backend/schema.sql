@@ -1,0 +1,25 @@
+CREATE TABLE IF NOT EXISTS spaces (
+  id TEXT PRIMARY KEY,
+  hub_id TEXT NOT NULL,
+  name TEXT NOT NULL,
+  address TEXT NOT NULL,
+  status TEXT NOT NULL,
+  hub_online BOOLEAN NOT NULL DEFAULT true,
+  issues BOOLEAN NOT NULL DEFAULT false,
+  city TEXT NOT NULL,
+  timezone TEXT NOT NULL,
+  company JSONB NOT NULL,
+  contacts JSONB NOT NULL,
+  notes JSONB NOT NULL,
+  devices JSONB NOT NULL
+);
+
+CREATE TABLE IF NOT EXISTS logs (
+  id SERIAL PRIMARY KEY,
+  space_id TEXT NOT NULL REFERENCES spaces(id) ON DELETE CASCADE,
+  time TEXT NOT NULL,
+  text TEXT NOT NULL,
+  who TEXT NOT NULL,
+  type TEXT NOT NULL,
+  created_at TIMESTAMP NOT NULL DEFAULT NOW()
+);
