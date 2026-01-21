@@ -2,12 +2,21 @@
 
 Документация по стартовой архитектуре и авторизации (launcher token), ориентированная на UX как у Ajax.
 
-## Быстрый старт (UI прототип)
+## Быстрый старт (UI + backend демо)
 ```bash
-cd web
-python3 -m http.server 5173
+# 1. Запуск Postgres
+sudo docker compose up -d
+
+# 2. Установка зависимостей и сидинг данных
+cd backend
+npm install
+cp .env.example .env
+npm run seed
+
+# 3. Запуск backend + UI
+npm run dev
 ```
-Откройте: http://localhost:5173
+Откройте: http://localhost:8080
 
 ## Содержание
 - [Архитектура и модели](docs/architecture.md)
