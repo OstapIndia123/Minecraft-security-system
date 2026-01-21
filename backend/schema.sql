@@ -12,7 +12,7 @@ CREATE TABLE hubs (
 
 CREATE TABLE spaces (
   id TEXT PRIMARY KEY,
-  hub_id TEXT NOT NULL,
+  hub_id TEXT,
   name TEXT NOT NULL,
   address TEXT NOT NULL,
   status TEXT NOT NULL,

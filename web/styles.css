@@ -227,6 +227,18 @@ body {
   background: transparent;
 }
 
+.button--danger {
+  border-color: rgba(255, 107, 95, 0.5);
+  color: var(--alert);
+}
+
+.danger-actions {
+  margin-top: 12px;
+  display: flex;
+  gap: 12px;
+  flex-wrap: wrap;
+}
+
 .status-panel {
   background: var(--panel);
   border-radius: var(--radius);

@@ -30,7 +30,6 @@ const seed = async () => {
       notes: ['Постановка через reader на стороне EAST.', 'Сирена на стороне SOUTH.'],
       photos: [],
       devices: [
-        { id: 'hub-261156', name: 'Хаб 261156', room: 'Комната не выбрана', status: 'В сети', type: 'hub' },
         {
           id: 'zone-entrance',
           name: 'вхід',

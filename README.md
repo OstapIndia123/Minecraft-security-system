@@ -36,6 +36,11 @@ PORT=8090 npm run dev
 WEBHOOK_URL=http://127.0.0.1:8080/api/hub/events
 ```
 
+Если нужно отправлять команды на hub‑backend (сирена/светодиод/reader выходы), укажите:
+```
+HUB_API_URL=http://127.0.0.1:8090
+```
+
 Если указан `WEBHOOK_TOKEN`, передавайте заголовок (поддерживаются оба варианта):
 ```
 X-Webhook-Token: dev-secret-change-me

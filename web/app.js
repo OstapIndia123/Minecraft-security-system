@@ -1,9 +1,11 @@
 const state = {
   filter: 'all',
   selectedSpaceId: null,
+  selectedDeviceId: null,
   logFilter: 'all',
   search: '',
   deviceSearch: '',
+  lastLogKey: '',
 };
 
 let spaces = [];
@@ -80,6 +82,12 @@ const apiFetch = async (path, options = {}) => {
 const loadSpaces = async () => {
   try {
     spaces = await apiFetch('/api/spaces');
+    if (!state.selectedSpaceId) {
+      const savedSpaceId = localStorage.getItem('selectedSpaceId');
+      if (savedSpaceId && spaces.some((space) => space.id === savedSpaceId)) {
+        state.selectedSpaceId = savedSpaceId;
+      }
+    }
     if (!state.selectedSpaceId && spaces.length) {
       state.selectedSpaceId = spaces[0].id;
     }
@@ -95,6 +103,8 @@ const loadLogs = async (spaceId) => {
     const space = spaces.find((item) => item.id === spaceId);
     if (space) {
       space.logs = logs;
+      const lastLog = logs[0];
+      state.lastLogKey = `${logs.length}-${lastLog?.time ?? ''}-${lastLog?.text ?? ''}`;
     }
   } catch (error) {
     console.error(error);
@@ -119,7 +129,7 @@ const applySearch = (list) => {
     return (
       space.id.toLowerCase().includes(query) ||
       space.name.toLowerCase().includes(query) ||
-      space.hubId.toLowerCase().includes(query)
+      (space.hubId ?? '').toLowerCase().includes(query)
     );
   });
 };
@@ -143,12 +153,15 @@ const renderObjectList = () => {
     card.className = `object-card ${space.id === state.selectedSpaceId ? 'object-card--active' : ''}`;
     card.innerHTML = `
       <div class="object-card__title">${space.name}</div>
-      <div class="object-card__meta">ID хаба ${space.hubId}</div>
+      <div class="object-card__meta">ID хаба ${space.hubId ?? '—'}</div>
       <div class="object-card__status ${statusTone[space.status] ?? ''}">${statusMap[space.status] ?? space.status}</div>
       <div class="object-card__meta">${space.address}</div>
     `;
     card.addEventListener('click', async () => {
       state.selectedSpaceId = space.id;
+      state.selectedDeviceId = null;
+      state.lastLogKey = '';
+      localStorage.setItem('selectedSpaceId', space.id);
       await loadLogs(space.id);
       renderAll();
     });
@@ -161,7 +174,7 @@ const renderSpaceHeader = (space) => {
   spaceStateEl.textContent = statusMap[space.status] ?? space.status;
   spaceStateEl.className = `status-card__state ${statusTone[space.status] ?? ''}`;
   spaceMetaEl.textContent = `Координаты: ${space.address} • ${space.city} • ${space.timezone}`;
-  hubLabel.textContent = `Hub ${space.id}`;
+  hubLabel.textContent = space.hubId ? `Hub ${space.hubId}` : 'Hub не привязан';
 };
 
 const renderDevices = (space) => {
@@ -171,9 +184,19 @@ const renderDevices = (space) => {
     : space.devices;
 
   deviceList.innerHTML = '';
-  devices.forEach((device, index) => {
+  if (!devices.length) {
+    deviceList.innerHTML = '<div class="empty-state">Нет устройств по запросу</div>';
+    deviceDetails.innerHTML = '<div class="empty-state">Выберите устройство</div>';
+    return;
+  }
+
+  if (!state.selectedDeviceId || !devices.some((device) => device.id === state.selectedDeviceId)) {
+    state.selectedDeviceId = devices[0].id;
+  }
+
+  devices.forEach((device) => {
     const item = document.createElement('button');
-    item.className = `device-item ${index === 0 ? 'device-item--active' : ''}`;
+    item.className = `device-item ${device.id === state.selectedDeviceId ? 'device-item--active' : ''}`;
     item.innerHTML = `
       <div>
         <div class="device-item__title">${device.name}</div>
@@ -181,18 +204,18 @@ const renderDevices = (space) => {
       </div>
       <span class="device-item__status">${device.status}</span>
     `;
-    item.addEventListener('click', () => renderDeviceDetails(device));
+    item.addEventListener('click', () => {
+      state.selectedDeviceId = device.id;
+      renderDevices(space);
+    });
     deviceList.appendChild(item);
-    if (index === 0) renderDeviceDetails(device);
+    if (device.id === state.selectedDeviceId) renderDeviceDetails(device);
   });
-
-  if (!devices.length) {
-    deviceList.innerHTML = '<div class="empty-state">Нет устройств по запросу</div>';
-    deviceDetails.innerHTML = '<div class="empty-state">Выберите устройство</div>';
-  }
 };
 
 const renderDeviceDetails = (device) => {
+  const canDelete = device.type !== 'hub';
+  const deleteLabel = device.type === 'key' ? 'Удалить ключ' : 'Удалить устройство';
   deviceDetails.innerHTML = `
     <div class="device-details__header">
       <div class="device-avatar">${device.type.toUpperCase()}</div>
@@ -219,7 +242,31 @@ const renderDeviceDetails = (device) => {
         <strong>Норма</strong>
       </div>
     </div>
+    ${canDelete ? `<button class="button button--ghost button--danger" id="deleteDevice">${deleteLabel}</button>` : ''}
   `;
+
+  const deleteButton = document.getElementById('deleteDevice');
+  if (deleteButton) {
+    deleteButton.addEventListener('click', async () => {
+      const space = spaces.find((item) => item.id === state.selectedSpaceId);
+      if (!space) return;
+
+      try {
+        if (device.type === 'key') {
+          await apiFetch(`/api/spaces/${space.id}/keys/${device.config.keyId}`, { method: 'DELETE' });
+        } else {
+          await apiFetch(`/api/spaces/${space.id}/devices/${device.id}`, { method: 'DELETE' });
+        }
+        await loadSpaces();
+        await loadLogs(space.id);
+        renderAll();
+        showToast('Устройство удалено.');
+      } catch (error) {
+        console.error(error);
+        showToast('Не удалось удалить устройство.');
+      }
+    });
+  }
 };
 
 const renderObjectInfo = (space) => {
@@ -242,7 +289,11 @@ const renderObjectInfo = (space) => {
     </div>
     <div class="info-card">
       <span>Хаб</span>
-      <strong>${space.hubId}</strong>
+      <strong>${space.hubId ?? 'Не привязан'}</strong>
+    </div>
+    <div class="info-card">
+      <span>Статус хаба</span>
+      <strong>${space.hubId ? (space.hubOnline ? 'В сети' : 'Не в сети') : 'Нет хаба'}</strong>
     </div>
     <div class="info-card">
       <span>Режим</span>
@@ -301,9 +352,10 @@ const renderPhotos = (space) => {
 };
 
 const renderLogs = (space) => {
+  const logsSource = space.logs ?? [];
   const logs = state.logFilter === 'all'
-    ? space.logs
-    : space.logs.filter((log) => log.type === state.logFilter);
+    ? logsSource
+    : logsSource.filter((log) => log.type === state.logFilter);
 
   logTable.innerHTML = '';
   logs.forEach((log) => {
@@ -376,13 +428,18 @@ logFilters.forEach((button) => {
     logFilters.forEach((btn) => btn.classList.remove('chip--active'));
     button.classList.add('chip--active');
     state.logFilter = button.dataset.log;
-    renderLogs(spaces.find((item) => item.id === state.selectedSpaceId));
+    const space = spaces.find((item) => item.id === state.selectedSpaceId);
+    if (space) {
+      renderLogs(space);
+    }
   });
 });
 
 const globalSearch = document.getElementById('globalSearch');
 const deviceSearch = document.getElementById('deviceSearch');
 const refreshBtn = document.getElementById('refreshBtn');
+const deleteSpaceBtn = document.getElementById('deleteSpace');
+const detachHubBtn = document.getElementById('detachHub');
 
 if (globalSearch) {
   globalSearch.addEventListener('input', (event) => {
@@ -395,20 +452,85 @@ if (deviceSearch) {
   deviceSearch.addEventListener('input', (event) => {
     state.deviceSearch = event.target.value;
     const space = spaces.find((item) => item.id === state.selectedSpaceId);
-    renderDevices(space);
+    if (space) {
+      renderDevices(space);
+    }
   });
 }
 
+const refreshAll = async () => {
+  await loadSpaces();
+  if (state.selectedSpaceId && !spaces.some((space) => space.id === state.selectedSpaceId)) {
+    state.selectedSpaceId = null;
+    state.selectedDeviceId = null;
+    localStorage.removeItem('selectedSpaceId');
+  }
+  const space = spaces.find((item) => item.id === state.selectedSpaceId);
+  if (space) {
+    await loadLogs(space.id);
+  }
+  renderAll();
+};
+
 if (refreshBtn) {
   refreshBtn.addEventListener('click', async () => {
-    await loadSpaces();
-    if (state.selectedSpaceId) {
-      await loadLogs(state.selectedSpaceId);
-    }
-    renderAll();
+    await refreshAll();
     showToast('Данные синхронизированы с хабами.');
   });
 }
+
+if (deleteSpaceBtn) {
+  deleteSpaceBtn.addEventListener('click', async () => {
+    const space = spaces.find((item) => item.id === state.selectedSpaceId);
+    if (!space) return;
+
+    try {
+      await apiFetch(`/api/spaces/${space.id}`, { method: 'DELETE' });
+      state.selectedSpaceId = null;
+      state.selectedDeviceId = null;
+      localStorage.removeItem('selectedSpaceId');
+      await refreshAll();
+      showToast('Пространство удалено.');
+    } catch (error) {
+      console.error(error);
+      showToast('Не удалось удалить пространство.');
+    }
+  });
+}
+
+if (detachHubBtn) {
+  detachHubBtn.addEventListener('click', async () => {
+    const space = spaces.find((item) => item.id === state.selectedSpaceId);
+    if (!space) return;
+
+    try {
+      await apiFetch(`/api/spaces/${space.id}/hub`, { method: 'DELETE' });
+      await refreshAll();
+      showToast('Хаб удалён из пространства.');
+    } catch (error) {
+      console.error(error);
+      showToast('Не удалось удалить хаб.');
+    }
+  });
+}
+
+const pollLogs = async () => {
+  const space = spaces.find((item) => item.id === state.selectedSpaceId);
+  if (!space) return;
+
+  try {
+    const logs = await apiFetch(`/api/spaces/${space.id}/logs`);
+    const lastLog = logs[0];
+    const logKey = `${logs.length}-${lastLog?.time ?? ''}-${lastLog?.text ?? ''}`;
+    if (logKey !== state.lastLogKey) {
+      state.lastLogKey = logKey;
+      space.logs = logs;
+      renderLogs(space);
+    }
+  } catch (error) {
+    console.error(error);
+  }
+};
 
 if (spaceForm) {
   spaceForm.addEventListener('submit', async (event) => {
@@ -422,6 +544,9 @@ if (spaceForm) {
       });
       spaces.unshift({ ...created, logs: [] });
       state.selectedSpaceId = created.id;
+      state.selectedDeviceId = null;
+      state.lastLogKey = '';
+      localStorage.setItem('selectedSpaceId', created.id);
       await loadLogs(created.id);
       renderAll();
       spaceForm.reset();
@@ -675,6 +800,8 @@ const init = async () => {
     await loadLogs(state.selectedSpaceId);
   }
   renderAll();
+  setInterval(pollLogs, 3000);
+  setInterval(refreshAll, 12000);
 };
 
 init();
