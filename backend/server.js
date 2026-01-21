@@ -89,6 +89,11 @@ const appendLog = async (spaceId, text, who, type) => {
   );
 };
 
+const formatHubPayload = (payload) => {
+  if (!payload || typeof payload !== 'object') return '';
+  return JSON.stringify(payload, null, 2);
+};
+
 const requireWebhookToken = (req, res, next) => {
   if (!webhookToken) return next();
   const headerToken = req.header('x-webhook-token')
@@ -808,11 +813,11 @@ app.post('/api/hub/events', requireWebhookToken, async (req, res) => {
     ? new Date(ts).toLocaleTimeString('ru-RU', { hour: '2-digit', minute: '2-digit', second: '2-digit' })
     : new Date().toLocaleTimeString('ru-RU', { hour: '2-digit', minute: '2-digit', second: '2-digit' });
 
-  const knownTypes = new Set(['PORT_IN', 'TEST_OK', 'TEST_FAIL', 'HUB_PING', 'HUB_ONLINE']);
-  const payloadInfo = !knownTypes.has(type) && payload ? ` (${JSON.stringify(payload)})` : '';
+  const payloadText = formatHubPayload(payload);
+  const hubLogText = `Событие хаба: ${type}\n${hubId}${payloadText ? `\n${payloadText}` : ''}`;
   await query(
     'INSERT INTO logs (space_id, time, text, who, type) VALUES ($1,$2,$3,$4,$5)',
-    [spaceId, time, `Событие хаба: ${type}${payloadInfo}`, hubId, 'system'],
+    [spaceId, time, hubLogText, hubId, 'hub_raw'],
   );
 
   if (type === 'TEST_FAIL') {
@@ -877,7 +882,7 @@ app.post('/api/hub/events', requireWebhookToken, async (req, res) => {
     }
 
     const zones = await query(
-      'SELECT id, name, config FROM devices WHERE space_id = $1 AND type = $2 AND side = $3',
+      'SELECT id, name, status, config FROM devices WHERE space_id = $1 AND type = $2 AND side = $3',
       [spaceId, 'zone', payload.side],
     );
 
@@ -885,6 +890,7 @@ app.post('/api/hub/events', requireWebhookToken, async (req, res) => {
       const config = zone.config ?? {};
       const normalLevel = Number(config.normalLevel ?? 15);
       const isNormal = Number(payload.level) === normalLevel;
+      const currentStatus = zone.status ?? 'Норма';
       const newStatus = isNormal ? 'Норма' : 'Нарушение';
       await query('UPDATE devices SET status = $1 WHERE id = $2', [newStatus, zone.id]);
 
@@ -899,6 +905,10 @@ app.post('/api/hub/events', requireWebhookToken, async (req, res) => {
         spaceAlarmState.set(spaceId, true);
         await startSirenTimers(spaceId, spaceRow.rows[0]?.hub_id);
         await query('UPDATE spaces SET issues = true WHERE id = $1', [spaceId]);
+      }
+
+      if (isNormal && currentStatus === 'Нарушение') {
+        await appendLog(spaceId, `Восстановление шлейфа: ${zone.name}`, 'Zone', 'restore');
       }
     }
 

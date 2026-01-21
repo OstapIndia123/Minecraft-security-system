@@ -578,6 +578,17 @@ body {
   animation: alarm-row 1s steps(2) 10;
 }
 
+.log-row--restore {
+  color: #3bd671;
+  background: rgba(59, 214, 113, 0.12);
+}
+
+.log-row--hub {
+  font-family: "JetBrains Mono", ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", monospace;
+  font-size: 12px;
+  line-height: 1.4;
+}
+
 .log-divider {
   margin: 8px 0 4px;
   padding: 6px 12px;

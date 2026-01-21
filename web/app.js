@@ -42,6 +42,7 @@ const generateKey = document.getElementById('generateKey');
 const sideInput = deviceForm?.querySelector('input[name="side"]');
 const deviceNameInput = deviceForm?.querySelector('input[name="name"]');
 const deviceRoomInput = deviceForm?.querySelector('input[name="room"]');
+const readerIdInput = readerFields?.querySelector('input[name="id"]');
 const attachHubForm = document.getElementById('attachHubForm');
 const guardModal = document.getElementById('guardModal');
 const guardModalClose = document.getElementById('closeGuardModal');
@@ -226,6 +227,7 @@ const renderDevices = (space) => {
   }
 
   devices.forEach((device) => {
+    const statusText = device.type === 'zone' || device.type === 'hub' ? device.status : '';
     const item = document.createElement('button');
     item.className = `device-item ${device.id === state.selectedDeviceId ? 'device-item--active' : ''}`;
     item.innerHTML = `
@@ -233,7 +235,7 @@ const renderDevices = (space) => {
         <div class="device-item__title">${device.name}</div>
         <div class="device-item__meta">${device.room}</div>
       </div>
-      <span class="device-item__status">${device.status}</span>
+      <span class="device-item__status">${statusText}</span>
     `;
     item.addEventListener('click', () => {
       state.selectedDeviceId = device.id;
@@ -247,6 +249,14 @@ const renderDevices = (space) => {
 const renderDeviceDetails = (device) => {
   const canDelete = device.type !== 'hub';
   const deleteLabel = device.type === 'key' ? 'Удалить ключ' : 'Удалить устройство';
+  const statusBlock = device.type === 'zone' || device.type === 'hub'
+    ? `
+      <div class="stat">
+        <span>Статус</span>
+        <strong>${device.status}</strong>
+      </div>
+    `
+    : '';
   const baseFields = device.type !== 'key'
     ? `
       <input type="text" name="name" value="${device.name}" placeholder="Имя" required />
@@ -301,10 +311,7 @@ const renderDeviceDetails = (device) => {
       </div>
     </div>
     <div class="device-details__stats">
-      <div class="stat">
-        <span>Статус</span>
-        <strong>${device.status}</strong>
-      </div>
+      ${statusBlock}
       <div class="stat">
         <span>Тип</span>
         <strong>${device.type}</strong>
@@ -312,10 +319,6 @@ const renderDeviceDetails = (device) => {
       <div class="stat">
         <span>ID</span>
         <strong>${device.id}</strong>
-      </div>
-      <div class="stat">
-        <span>Связь</span>
-        <strong>Норма</strong>
       </div>
     </div>
     ${device.type !== 'hub' ? `
@@ -576,10 +579,13 @@ const renderPhotos = (space) => {
 const renderLogs = (space) => {
   const logsSource = space.logs ?? [];
   const logs = state.logFilter === 'all'
-    ? logsSource
+    ? logsSource.filter((log) => log.type !== 'hub_raw')
     : logsSource.filter((log) => {
         if (state.logFilter === 'security') {
-          return log.type === 'security' || log.type === 'alarm';
+          return log.type === 'security' || log.type === 'alarm' || log.type === 'restore';
+        }
+        if (state.logFilter === 'hub') {
+          return log.type === 'hub_raw';
         }
         return log.type === state.logFilter;
       });
@@ -595,10 +601,14 @@ const renderLogs = (space) => {
       lastDate = log.date;
     }
     const row = document.createElement('div');
-    row.className = `log-row ${log.type === 'alarm' ? 'log-row--alarm' : ''}`;
+    const isAlarm = log.type === 'alarm';
+    const isRestore = log.type === 'restore';
+    const isHub = log.type === 'hub_raw';
+    row.className = `log-row ${isAlarm ? 'log-row--alarm' : ''} ${isRestore ? 'log-row--restore' : ''} ${isHub ? 'log-row--hub' : ''}`;
+    const text = isHub ? log.text.replace(/\n/g, '<br />') : log.text;
     row.innerHTML = `
       <span>${log.time}</span>
-      <span>${log.text}</span>
+      <span>${text}</span>
       <span class="muted">${log.who}</span>
     `;
     logTable.appendChild(row);
@@ -813,7 +823,7 @@ if (deviceType) {
 
     readerFields?.querySelectorAll('input').forEach((input) => {
       input.disabled = !isReader;
-      input.required = isReader;
+      input.required = isReader && input.name === 'id';
     });
     sirenFields?.querySelectorAll('input').forEach((input) => {
       input.disabled = !isSiren;
@@ -852,6 +862,10 @@ if (deviceType) {
         input.value = '';
       }
     });
+
+    if (readerIdInput && !isReader) {
+      readerIdInput.value = '';
+    }
   };
 
   deviceType.addEventListener('change', updateDeviceFields);
