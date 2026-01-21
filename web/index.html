@@ -93,13 +93,29 @@
                 <input type="text" name="name" placeholder="Имя устройства" required />
                 <input type="text" name="room" placeholder="Комната" required />
                 <select name="type" id="deviceType" required>
+                  <option value="zone">Шлейф/зона</option>
                   <option value="output-light">Постановочный светодиод</option>
                   <option value="siren">Сирена</option>
                   <option value="reader">Считыватель</option>
+                  <option value="key">Ключ</option>
                 </select>
                 <input type="text" name="side" placeholder="Сторона хаба (north/south/etc)" required />
 
-                <div class="form-inline" id="lightFields">
+                <div class="form-inline" id="zoneFields">
+                  <select name="zoneType">
+                    <option value="instant">Нормальная</option>
+                    <option value="delayed">Задержанная</option>
+                    <option value="pass">Проходная</option>
+                    <option value="24h">24-часовая</option>
+                  </select>
+                  <select name="bypass">
+                    <option value="false">Обход: нет</option>
+                    <option value="true">Обход: да</option>
+                  </select>
+                  <input type="number" name="normalLevel" placeholder="Норма уровня" min="0" max="15" />
+                </div>
+
+                <div class="form-inline hidden" id="lightFields">
                   <input type="number" name="outputLevel" placeholder="Уровень сигнала" min="0" max="15" />
                 </div>
 
@@ -112,6 +128,12 @@
                   <input type="number" name="outputLevel" placeholder="Выходной уровень" min="0" max="15" />
                   <input type="text" name="inputSide" placeholder="Входная сторона" />
                   <input type="number" name="inputLevel" placeholder="Входной уровень" min="0" max="15" />
+                </div>
+
+                <div class="form-inline hidden" id="keyFields">
+                  <input type="text" name="keyName" placeholder="Имя ключа" />
+                  <input type="text" name="readerId" placeholder="ID считывателя" />
+                  <button type="button" class="button button--ghost" id="generateKey">Сгенерировать</button>
                 </div>
 
                 <button class="button button--primary" type="submit">Добавить</button>

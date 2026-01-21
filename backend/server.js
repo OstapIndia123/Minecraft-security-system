@@ -238,6 +238,13 @@ const deviceConfigFromPayload = (payload) => {
       inputLevel: Number(payload.inputLevel ?? 6),
     };
   }
+  if (payload.type === 'zone') {
+    return {
+      zoneType: payload.zoneType ?? 'instant',
+      bypass: payload.bypass === 'true',
+      normalLevel: Number(payload.normalLevel ?? 15),
+    };
+  }
   return {};
 };
 
@@ -262,6 +269,20 @@ app.post('/api/spaces/:id/devices', async (req, res) => {
   );
 
   await appendLog(req.params.id, `Добавлено устройство: ${name}`, 'UI', 'system');
+  res.status(201).json({ ok: true });
+});
+
+app.post('/api/spaces/:id/keys', async (req, res) => {
+  const { name, readerId } = req.body ?? {};
+  if (!name) return res.status(400).json({ error: 'missing_fields' });
+
+  await query('INSERT INTO keys (space_id, name, reader_id, groups) VALUES ($1,$2,$3,$4)', [
+    req.params.id,
+    name,
+    readerId ?? null,
+    JSON.stringify(['all']),
+  ]);
+  await appendLog(req.params.id, `Добавлен ключ: ${name}`, 'UI', 'system');
   res.status(201).json({ ok: true });
 });
 
@@ -353,6 +374,15 @@ app.post('/api/reader/events', requireWebhookToken, async (req, res) => {
     'INSERT INTO reader_sessions (reader_id, space_id, input_side, input_level, expires_at) VALUES ($1,$2,$3,$4,NOW() + INTERVAL \'1 second\')',
     [readerId, spaceId, inputSide, inputLevel],
   );
+
+  const key = await query(
+    'SELECT name FROM keys WHERE space_id = $1 AND (reader_id IS NULL OR reader_id = $2)',
+    [spaceId, readerId],
+  );
+  const hasKey = key.rows.some((row) => keyName.includes(row.name));
+  if (hasKey) {
+    await updateStatus(spaceId, 'disarmed', 'Key');
+  }
 
   res.json({
     ok: true,

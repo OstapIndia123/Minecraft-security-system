@@ -34,6 +34,10 @@ const deviceType = document.getElementById('deviceType');
 const readerFields = document.getElementById('readerFields');
 const sirenFields = document.getElementById('sirenFields');
 const lightFields = document.getElementById('lightFields');
+const zoneFields = document.getElementById('zoneFields');
+const keyFields = document.getElementById('keyFields');
+const generateKey = document.getElementById('generateKey');
+const sideInput = deviceForm?.querySelector('input[name="side"]');
 
 const statusMap = {
   armed: 'Под охраной',
@@ -433,10 +437,14 @@ if (deviceType) {
     const isReader = value === 'reader';
     const isSiren = value === 'siren';
     const isLight = value === 'output-light';
+    const isZone = value === 'zone';
+    const isKey = value === 'key';
 
     readerFields?.classList.toggle('hidden', !isReader);
     sirenFields?.classList.toggle('hidden', !isSiren);
     lightFields?.classList.toggle('hidden', !isLight);
+    zoneFields?.classList.toggle('hidden', !isZone);
+    keyFields?.classList.toggle('hidden', !isKey);
 
     readerFields?.querySelectorAll('input').forEach((input) => {
       input.disabled = !isReader;
@@ -450,6 +458,23 @@ if (deviceType) {
       input.disabled = !isLight;
       input.required = isLight;
     });
+    zoneFields?.querySelectorAll('input, select').forEach((input) => {
+      input.disabled = !isZone;
+      if (input.name === 'normalLevel') {
+        input.required = isZone;
+      }
+    });
+    keyFields?.querySelectorAll('input').forEach((input) => {
+      input.disabled = !isKey;
+      if (input.name === 'keyName') {
+        input.required = isKey;
+      }
+    });
+
+    if (sideInput) {
+      sideInput.disabled = isKey;
+      sideInput.required = !isKey;
+    }
   };
 
   deviceType.addEventListener('change', updateDeviceFields);
@@ -465,10 +490,17 @@ if (deviceForm) {
     const formData = new FormData(deviceForm);
     const payload = Object.fromEntries(formData.entries());
     try {
-      await apiFetch(`/api/spaces/${space.id}/devices`, {
-        method: 'POST',
-        body: JSON.stringify(payload),
-      });
+      if (payload.type === 'key') {
+        await apiFetch(`/api/spaces/${space.id}/keys`, {
+          method: 'POST',
+          body: JSON.stringify({ name: payload.keyName, readerId: payload.readerId }),
+        });
+      } else {
+        await apiFetch(`/api/spaces/${space.id}/devices`, {
+          method: 'POST',
+          body: JSON.stringify(payload),
+        });
+      }
       await loadSpaces();
       await loadLogs(space.id);
       renderAll();
@@ -477,6 +509,15 @@ if (deviceForm) {
     } catch (error) {
       console.error(error);
       showToast('Не удалось добавить устройство.');
+    }
+  });
+}
+
+if (generateKey && deviceForm) {
+  generateKey.addEventListener('click', () => {
+    const keyInput = deviceForm.querySelector('input[name=\"keyName\"]');
+    if (keyInput) {
+      keyInput.value = `KEY-${Math.random().toString(36).slice(2, 8).toUpperCase()}`;
     }
   });
 }
