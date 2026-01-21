@@ -149,7 +149,7 @@ body {
 }
 
 .status--armed {
-  color: var(--accent);
+  color: #ff4d4d;
 }
 
 .status--disarmed {
@@ -247,6 +247,10 @@ body {
 
 .status-card__state {
   color: var(--accent);
+}
+
+.status-card__state.status--armed {
+  color: #ff4d4d;
 }
 
 .status-card__meta {

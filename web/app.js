@@ -38,6 +38,9 @@ const zoneFields = document.getElementById('zoneFields');
 const keyFields = document.getElementById('keyFields');
 const generateKey = document.getElementById('generateKey');
 const sideInput = deviceForm?.querySelector('input[name="side"]');
+const deviceIdInput = deviceForm?.querySelector('input[name="id"]');
+const deviceNameInput = deviceForm?.querySelector('input[name="name"]');
+const deviceRoomInput = deviceForm?.querySelector('input[name="room"]');
 
 const statusMap = {
   armed: 'Под охраной',
@@ -434,17 +437,17 @@ if (spaceForm) {
 if (deviceType) {
   const updateDeviceFields = () => {
     const value = deviceType.value;
-    const isReader = value === 'reader';
-    const isSiren = value === 'siren';
-    const isLight = value === 'output-light';
-    const isZone = value === 'zone';
-    const isKey = value === 'key';
+  const isReader = value === 'reader';
+  const isSiren = value === 'siren';
+  const isLight = value === 'output-light';
+  const isZone = value === 'zone';
+  const isKey = value === 'key';
 
     readerFields?.classList.toggle('hidden', !isReader);
     sirenFields?.classList.toggle('hidden', !isSiren);
     lightFields?.classList.toggle('hidden', !isLight);
-    zoneFields?.classList.toggle('hidden', !isZone);
-    keyFields?.classList.toggle('hidden', !isKey);
+  zoneFields?.classList.toggle('hidden', !isZone);
+  keyFields?.classList.toggle('hidden', !isKey);
 
     readerFields?.querySelectorAll('input').forEach((input) => {
       input.disabled = !isReader;
@@ -474,7 +477,19 @@ if (deviceType) {
     if (sideInput) {
       sideInput.disabled = isKey;
       sideInput.required = !isKey;
+      if (isKey) {
+        sideInput.value = '';
+      }
     }
+
+    [deviceIdInput, deviceNameInput, deviceRoomInput].forEach((input) => {
+      if (!input) return;
+      input.disabled = isKey;
+      input.required = !isKey;
+      if (isKey) {
+        input.value = '';
+      }
+    });
   };
 
   deviceType.addEventListener('change', updateDeviceFields);

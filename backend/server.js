@@ -8,6 +8,7 @@ const app = express();
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 const webhookToken = process.env.WEBHOOK_TOKEN;
+const port = Number(process.env.PORT ?? 8080);
 
 app.use(cors());
 app.use(express.json());
@@ -61,12 +62,16 @@ const appendLog = async (spaceId, text, who, type) => {
 
 const requireWebhookToken = (req, res, next) => {
   if (!webhookToken) return next();
-  const headerToken = req.header('x-webhook-token') ?? req.header('authorization')?.replace('Bearer ', '');
+  const headerToken = req.header('x-webhook-token')
+    ?? req.header('x-hub-token')
+    ?? req.header('authorization')?.replace('Bearer ', '');
   if (headerToken !== webhookToken) {
     return res.status(401).json({ error: 'invalid_token' });
   }
   return next();
 };
+
+const normalizeHubId = (hubId) => (hubId?.startsWith('HUB-') ? hubId.replace('HUB-', '') : hubId);
 
 app.get('/api/spaces', async (req, res) => {
   const result = await query('SELECT * FROM spaces ORDER BY id');
@@ -103,7 +108,8 @@ app.post('/api/spaces', async (req, res) => {
     return res.status(400).json({ error: 'missing_fields' });
   }
 
-  const hub = await query('SELECT id FROM hubs WHERE id = $1', [hubId]);
+  const normalizedHubId = normalizeHubId(hubId);
+  const hub = await query('SELECT id FROM hubs WHERE id = $1', [normalizedHubId]);
   if (hub.rows.length) {
     return res.status(409).json({ error: 'hub_already_registered' });
   }
@@ -114,13 +120,13 @@ app.post('/api/spaces', async (req, res) => {
   const notes = [];
   const photos = [];
 
-  await query('INSERT INTO hubs (id, space_id) VALUES ($1,$2)', [hubId, generatedId]);
+  await query('INSERT INTO hubs (id, space_id) VALUES ($1,$2)', [normalizedHubId, generatedId]);
   await query(
     `INSERT INTO spaces (id, hub_id, name, address, status, hub_online, issues, city, timezone, company, contacts, notes, photos)
      VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13)`,
     [
       generatedId,
-      hubId,
+      normalizedHubId,
       name,
       address ?? '—',
       'disarmed',
@@ -213,13 +219,14 @@ app.post('/api/spaces/:id/attach-hub', async (req, res) => {
   const { hubId } = req.body ?? {};
   if (!hubId) return res.status(400).json({ error: 'missing_hub_id' });
 
-  const existing = await query('SELECT id FROM hubs WHERE id = $1', [hubId]);
+  const normalizedHubId = normalizeHubId(hubId);
+  const existing = await query('SELECT id FROM hubs WHERE id = $1', [normalizedHubId]);
   if (existing.rows.length) {
     return res.status(409).json({ error: 'hub_already_registered' });
   }
 
-  await query('INSERT INTO hubs (id, space_id) VALUES ($1,$2)', [hubId, req.params.id]);
-  await query('UPDATE spaces SET hub_id = $1 WHERE id = $2', [hubId, req.params.id]);
+  await query('INSERT INTO hubs (id, space_id) VALUES ($1,$2)', [normalizedHubId, req.params.id]);
+  await query('UPDATE spaces SET hub_id = $1 WHERE id = $2', [normalizedHubId, req.params.id]);
   await appendLog(req.params.id, 'Хаб привязан к пространству', 'UI', 'system');
   res.json({ ok: true });
 });
@@ -313,8 +320,8 @@ app.post('/api/hub/events', requireWebhookToken, async (req, res) => {
     return res.status(400).json({ error: 'invalid_payload' });
   }
 
-  const hubIdClean = hubId.startsWith('HUB-') ? hubId.replace('HUB-', '') : hubId;
-  const spaceResult = await query('SELECT space_id FROM hubs WHERE id = $1', [hubIdClean]);
+  const normalizedHubId = normalizeHubId(hubId);
+  const spaceResult = await query('SELECT space_id FROM hubs WHERE id = $1', [normalizedHubId]);
   if (!spaceResult.rows.length) {
     return res.status(202).json({ ok: true, ignored: true });
   }
@@ -339,6 +346,28 @@ app.post('/api/hub/events', requireWebhookToken, async (req, res) => {
       if (session.input_side === payload.side && Number(session.input_level) === Number(payload.level)) {
         await updateStatus(spaceId, 'armed', 'Reader');
         await query('DELETE FROM reader_sessions WHERE id = $1', [session.id]);
+      }
+    }
+
+    const zones = await query(
+      'SELECT name, config FROM devices WHERE space_id = $1 AND type = $2 AND side = $3',
+      [spaceId, 'zone', payload.side],
+    );
+    if (zones.rows.length) {
+      const spaceRow = await query('SELECT status FROM spaces WHERE id = $1', [spaceId]);
+      const status = spaceRow.rows[0]?.status ?? 'disarmed';
+
+      for (const zone of zones.rows) {
+        const config = zone.config ?? {};
+        const normalLevel = Number(config.normalLevel ?? 15);
+        const bypass = Boolean(config.bypass);
+        const zoneType = config.zoneType ?? 'instant';
+        const shouldCheck = zoneType === '24h' || status === 'armed';
+
+        if (shouldCheck && !bypass && Number(payload.level) !== normalLevel) {
+          await appendLog(spaceId, `Нарушение зоны: ${zone.name}`, 'Zone', 'security');
+          await query('UPDATE spaces SET issues = true WHERE id = $1', [spaceId]);
+        }
       }
     }
   }
@@ -393,6 +422,6 @@ app.post('/api/reader/events', requireWebhookToken, async (req, res) => {
   });
 });
 
-app.listen(8080, () => {
-  console.log('Backend listening on http://localhost:8080');
+app.listen(port, () => {
+  console.log(`Backend listening on http://localhost:${port}`);
 });

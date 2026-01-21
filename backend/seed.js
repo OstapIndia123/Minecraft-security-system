@@ -55,13 +55,13 @@ const seed = async () => {
   ];
 
   for (const space of spaces) {
-    await query('INSERT INTO hubs (id, space_id) VALUES ($1,$2)', [space.hub_id, space.id]);
+    await query('INSERT INTO hubs (id, space_id) VALUES ($1,$2)', [space.hub_id.replace('HUB-', ''), space.id]);
     await query(
       `INSERT INTO spaces (id, hub_id, name, address, status, hub_online, issues, city, timezone, company, contacts, notes, photos)
        VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13)`,
       [
         space.id,
-        space.hub_id,
+        space.hub_id.replace('HUB-', ''),
         space.name,
         space.address,
         space.status,

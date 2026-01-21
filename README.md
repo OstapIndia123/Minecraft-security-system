@@ -26,9 +26,20 @@ npm run dev
 - `POST /api/hub/events`
 - `POST /api/reader/events`
 
-Если указан `WEBHOOK_TOKEN`, передавайте заголовок:
+Если backend слушает не на `8080`, задайте порт через `PORT`, например:
+```
+PORT=8090 npm run dev
+```
+
+В мод‑backend укажите правильный URL, например:
+```
+WEBHOOK_URL=http://127.0.0.1:8080/api/hub/events
+```
+
+Если указан `WEBHOOK_TOKEN`, передавайте заголовок (поддерживаются оба варианта):
 ```
 X-Webhook-Token: dev-secret-change-me
+X-Hub-Token: dev-secret-change-me
 ```
 
 ## Ключи и считыватели
