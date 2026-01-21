@@ -316,8 +316,11 @@ app.post('/api/spaces/:id/disarm', async (req, res) => {
 
 app.post('/api/hub/events', requireWebhookToken, async (req, res) => {
   const { type, hubId, ts, payload } = req.body ?? {};
-  if (!type || !hubId) {
+  if (!type) {
     return res.status(400).json({ error: 'invalid_payload' });
+  }
+  if (!hubId) {
+    return res.status(202).json({ ok: true, ignored: true });
   }
 
   const normalizedHubId = normalizeHubId(hubId);

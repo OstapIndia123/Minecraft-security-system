@@ -160,7 +160,7 @@ const renderSpaceHeader = (space) => {
   spaceIdEl.textContent = space.id;
   spaceStateEl.textContent = statusMap[space.status] ?? space.status;
   spaceStateEl.className = `status-card__state ${statusTone[space.status] ?? ''}`;
-  spaceMetaEl.textContent = `${space.address} • ${space.city} • ${space.timezone}`;
+  spaceMetaEl.textContent = `Координаты: ${space.address} • ${space.city} • ${space.timezone}`;
   hubLabel.textContent = `Hub ${space.id}`;
 };
 
@@ -229,7 +229,7 @@ const renderObjectInfo = (space) => {
       <strong>${space.name}</strong>
     </div>
     <div class="info-card">
-      <span>Адрес</span>
+      <span>Координаты</span>
       <strong>${space.address}</strong>
     </div>
     <div class="info-card">
@@ -437,17 +437,17 @@ if (spaceForm) {
 if (deviceType) {
   const updateDeviceFields = () => {
     const value = deviceType.value;
-  const isReader = value === 'reader';
-  const isSiren = value === 'siren';
-  const isLight = value === 'output-light';
-  const isZone = value === 'zone';
-  const isKey = value === 'key';
+    const isReader = value === 'reader';
+    const isSiren = value === 'siren';
+    const isLight = value === 'output-light';
+    const isZone = value === 'zone';
+    const isKey = value === 'key';
 
     readerFields?.classList.toggle('hidden', !isReader);
     sirenFields?.classList.toggle('hidden', !isSiren);
     lightFields?.classList.toggle('hidden', !isLight);
-  zoneFields?.classList.toggle('hidden', !isZone);
-  keyFields?.classList.toggle('hidden', !isKey);
+    zoneFields?.classList.toggle('hidden', !isZone);
+    keyFields?.classList.toggle('hidden', !isKey);
 
     readerFields?.querySelectorAll('input').forEach((input) => {
       input.disabled = !isReader;

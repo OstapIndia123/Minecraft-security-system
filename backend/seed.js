@@ -10,7 +10,7 @@ const seed = async () => {
       id: '261156',
       hub_id: '0008951F',
       name: 'Без номера объекта',
-      address: '—',
+      address: 'x:-8 y:79 z:23',
       status: 'armed',
       hub_online: true,
       issues: false,
