@@ -1,0 +1,243 @@
+<!doctype html>
+<html lang="ru">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Minecraft Security System — Демо интерфейс</title>
+    <link rel="stylesheet" href="styles.css" />
+  </head>
+  <body>
+    <div class="app-shell">
+      <aside class="sidebar">
+        <div class="sidebar__header">
+          <div class="brand">
+            <span class="brand__logo">PRO</span>
+            <span class="brand__title">Security</span>
+          </div>
+          <button class="ghost-button" aria-label="Назад">
+            <span class="icon">⟵</span>
+          </button>
+        </div>
+
+        <nav class="sidebar__nav" id="filters">
+          <button class="nav-pill nav-pill--active" data-filter="all">
+            Все объекты <span class="badge" data-count="all">0</span>
+          </button>
+          <button class="nav-pill" data-filter="offline">
+            С хабами не в сети <span class="badge" data-count="offline">0</span>
+          </button>
+          <button class="nav-pill" data-filter="issues">
+            С неисправностями <span class="badge badge--alert" data-count="issues">0</span>
+          </button>
+        </nav>
+
+        <div class="sidebar__list" id="objectList"></div>
+      </aside>
+
+      <main class="main">
+        <header class="topbar">
+          <div class="topbar__left">
+            <div class="topbar__title">
+              <h1>Объекты</h1>
+              <p>Управление пространствами и событиями</p>
+            </div>
+            <div class="search">
+              <span class="icon">🔍</span>
+              <input type="text" id="globalSearch" placeholder="Поиск по объекту или ID" />
+            </div>
+          </div>
+          <div class="topbar__right">
+            <button class="button button--ghost" id="refreshBtn">Обновить</button>
+            <button class="button button--primary" id="openCreate">Добавить объект</button>
+          </div>
+        </header>
+
+        <section class="status-panel">
+          <div class="status-card">
+            <div class="status-card__id" id="spaceId">—</div>
+            <div class="status-card__state" id="spaceState">—</div>
+            <div class="status-card__meta" id="spaceMeta">—</div>
+          </div>
+          <div class="status-actions">
+            <button class="chip" data-action="arm">Под охрану</button>
+            <button class="chip" data-action="disarm">С охраны</button>
+          </div>
+        </section>
+
+        <section class="content">
+          <div class="tabs">
+            <button class="tab tab--active" data-tab="equipment">Оборудование</button>
+            <button class="tab" data-tab="object">Про объект</button>
+            <button class="tab" data-tab="contacts">Контактные лица</button>
+            <button class="tab" data-tab="photos">Фото</button>
+            <button class="tab" data-tab="notes">Примечания</button>
+            <button class="tab" data-tab="log">Лог</button>
+          </div>
+
+          <div class="panel panel--active" id="equipment">
+            <div class="panel__header">
+              <h2>Оборудование</h2>
+              <span class="muted" id="hubLabel">—</span>
+            </div>
+            <div class="panel__grid">
+              <div class="device-list">
+                <input class="device-search" id="deviceSearch" placeholder="Поиск по названию или ID" />
+                <div id="deviceList"></div>
+              </div>
+              <div class="device-details" id="deviceDetails"></div>
+            </div>
+            <div class="panel__footer">
+              <h3>Добавить устройство</h3>
+              <form class="form-grid" id="deviceForm">
+                <input type="text" name="id" placeholder="ID устройства" required />
+                <input type="text" name="name" placeholder="Имя устройства" required />
+                <input type="text" name="room" placeholder="Комната" required />
+                <select name="type" id="deviceType" required>
+                  <option value="zone">Шлейф/зона</option>
+                  <option value="output-light">Постановочный светодиод</option>
+                  <option value="siren">Сирена</option>
+                  <option value="reader">Считыватель</option>
+                  <option value="key">Ключ</option>
+                </select>
+                <input type="text" name="side" placeholder="Сторона хаба (north/south/etc)" required />
+
+                <div class="form-inline" id="zoneFields">
+                  <select name="zoneType">
+                    <option value="instant">Нормальная</option>
+                    <option value="delayed">Задержанная</option>
+                    <option value="pass">Проходная</option>
+                    <option value="24h">24-часовая</option>
+                  </select>
+                  <select name="bypass">
+                    <option value="false">Обход: нет</option>
+                    <option value="true">Обход: да</option>
+                  </select>
+                  <input type="number" name="normalLevel" placeholder="Норма уровня" min="0" max="15" />
+                </div>
+
+                <div class="form-inline hidden" id="lightFields">
+                  <input type="number" name="outputLevel" placeholder="Уровень сигнала" min="0" max="15" />
+                </div>
+
+                <div class="form-inline hidden" id="sirenFields">
+                  <input type="number" name="outputLevel" placeholder="Уровень сигнала" min="0" max="15" />
+                  <input type="number" name="intervalMs" placeholder="Интервал (мс)" min="100" />
+                </div>
+
+                <div class="form-inline hidden" id="readerFields">
+                  <input type="number" name="outputLevel" placeholder="Выходной уровень" min="0" max="15" />
+                  <input type="text" name="inputSide" placeholder="Входная сторона" />
+                  <input type="number" name="inputLevel" placeholder="Входной уровень" min="0" max="15" />
+                </div>
+
+                <div class="form-inline hidden" id="keyFields">
+                  <input type="text" name="keyName" placeholder="Имя ключа" />
+                  <input type="text" name="readerId" placeholder="ID считывателя" />
+                  <button type="button" class="button button--ghost" id="generateKey">Сгенерировать</button>
+                </div>
+
+                <button class="button button--primary" type="submit">Добавить</button>
+              </form>
+            </div>
+          </div>
+
+          <div class="panel" id="object">
+            <div class="panel__header">
+              <h2>Информация об объекте</h2>
+            </div>
+            <div class="object-grid" id="objectInfo"></div>
+            <div class="panel__footer">
+              <h3>Редактировать объект</h3>
+              <form class="form-grid" id="editForm">
+                <input type="text" name="name" placeholder="Название" required />
+                <input type="text" name="address" placeholder="Адрес" />
+                <input type="text" name="city" placeholder="Город" />
+                <input type="text" name="timezone" placeholder="Часовой пояс" />
+                <button class="button button--primary" type="submit">Сохранить</button>
+              </form>
+            </div>
+          </div>
+
+          <div class="panel" id="contacts">
+            <div class="panel__header">
+              <h2>Контактные лица</h2>
+            </div>
+            <div class="contacts" id="contactsList"></div>
+            <div class="panel__footer">
+              <h3>Добавить контактное лицо</h3>
+              <form class="form-grid" id="contactForm">
+                <input type="text" name="name" placeholder="Имя" required />
+                <input type="text" name="role" placeholder="Роль" />
+                <input type="text" name="phone" placeholder="Телефон" />
+                <button class="button button--primary" type="submit">Добавить</button>
+              </form>
+            </div>
+          </div>
+
+          <div class="panel" id="photos">
+            <div class="panel__header">
+              <h2>Фото объекта</h2>
+            </div>
+            <div class="photos" id="photosList"></div>
+            <div class="panel__footer">
+              <h3>Добавить фото</h3>
+              <form class="form-grid" id="photoForm">
+                <input type="url" name="url" placeholder="URL изображения" required />
+                <input type="text" name="label" placeholder="Подпись" />
+                <button class="button button--primary" type="submit">Добавить</button>
+              </form>
+            </div>
+          </div>
+
+          <div class="panel" id="notes">
+            <div class="panel__header">
+              <h2>Примечания</h2>
+            </div>
+            <div class="notes" id="notesList"></div>
+            <div class="panel__footer">
+              <h3>Добавить примечание</h3>
+              <form class="form-grid" id="noteForm">
+                <input type="text" name="text" placeholder="Текст примечания" required />
+                <button class="button button--primary" type="submit">Добавить</button>
+              </form>
+            </div>
+          </div>
+
+          <div class="panel" id="log">
+            <div class="panel__header">
+              <h2>Лог событий</h2>
+              <div class="filters" id="logFilters">
+                <button class="chip chip--active" data-log="all">Все</button>
+                <button class="chip" data-log="security">Охранные</button>
+                <button class="chip" data-log="access">Доступ</button>
+                <button class="chip" data-log="system">Система</button>
+              </div>
+            </div>
+            <div class="log-table" id="logTable"></div>
+          </div>
+        </section>
+      </main>
+    </div>
+
+    <div class="modal" id="spaceModal" aria-hidden="true">
+      <div class="modal__content">
+        <div class="modal__header">
+          <h3>Создать пространство</h3>
+          <button class="ghost-button" id="closeModal" aria-label="Закрыть">✕</button>
+        </div>
+        <form class="form-grid" id="spaceForm">
+          <input type="text" name="hubId" placeholder="ID хаба" required />
+          <input type="text" name="name" placeholder="Название" required />
+          <input type="text" name="address" placeholder="Адрес" />
+          <input type="text" name="city" placeholder="Город" />
+          <input type="text" name="timezone" placeholder="Часовой пояс" value="Europe/Kyiv" />
+          <button class="button button--primary" type="submit">Создать</button>
+        </form>
+      </div>
+    </div>
+
+    <div class="toast" id="toast" role="status" aria-live="polite"></div>
+
+    <script src="app.js"></script>
+  </body>
+</html>
