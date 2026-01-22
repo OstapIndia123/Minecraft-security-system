@@ -241,12 +241,12 @@ body {
 }
 
 .chip--success {
-  background: rgba(59, 214, 113, 0.2);
+  background: rgba(59, 214, 113, 0.28);
   color: #3bd671;
 }
 
 .chip--danger {
-  background: rgba(255, 77, 77, 0.2);
+  background: rgba(255, 77, 77, 0.28);
   color: #ff4d4d;
 }
 
@@ -315,10 +315,17 @@ body {
   background: #2a2a2a;
   border: none;
   color: var(--text);
-  padding: 8px 14px;
+  padding: 10px 18px;
   border-radius: 999px;
   font-size: 12px;
   cursor: pointer;
+}
+
+.status-actions .chip {
+  min-width: 56px;
+  height: 48px;
+  border-radius: 14px;
+  padding: 10px 16px;
 }
 
 .chip--alert {
@@ -466,6 +473,7 @@ body {
   cursor: pointer;
   transition: border 0.2s ease, background 0.2s ease;
   height: 72px;
+  width: 100%;
 }
 
 .device-item > div {
