@@ -171,6 +171,7 @@ const sirenStopTimeouts = new Map();
 const spaceAlarmState = new Map();
 const pendingArmTimers = new Map();
 const entryDelayTimers = new Map();
+const entryDelayFailed = new Map();
 const lightBlinkTimers = new Map();
 const lastKeyScans = new Map();
 const keyScanWaiters = new Map();
@@ -246,7 +247,7 @@ const getMaxSirenDuration = (sirens) => sirens.reduce((max, siren) => {
 
 const getExitDelaySeconds = (zones) => zones.reduce((max, zone) => {
   const zoneType = zone.config?.zoneType;
-  if (zoneType !== 'delayed' && zoneType !== 'pass') return max;
+  if (zoneType !== 'delayed') return max;
   const delaySeconds = Number(zone.config?.delaySeconds ?? 30);
   return Math.max(max, delaySeconds);
 }, 0);
@@ -322,7 +323,7 @@ const startPendingArm = async (spaceId, hubId, delaySeconds, who, logMessage) =>
 };
 
 const startEntryDelay = async (spaceId, hubId, delaySeconds, zoneName) => {
-  if (!hubId || entryDelayTimers.has(spaceId)) return;
+  if (!hubId || entryDelayTimers.has(spaceId) || entryDelayFailed.get(spaceId)) return;
   await appendLog(spaceId, 'Начало снятия', 'Zone', 'security');
   await startBlinkingLights(spaceId, hubId, 'entry-delay');
   const timer = setTimeout(async () => {
@@ -331,6 +332,7 @@ const startEntryDelay = async (spaceId, hubId, delaySeconds, zoneName) => {
     const spaceRow = await query('SELECT status, hub_id FROM spaces WHERE id = $1', [spaceId]);
     const status = spaceRow.rows[0]?.status ?? 'disarmed';
     if (status === 'armed') {
+      entryDelayFailed.set(spaceId, true);
       await appendLog(
         spaceId,
         'Неудачное снятие с охраны, выслать группу реагирования!',
@@ -900,6 +902,7 @@ const updateStatus = async (spaceId, status, who, logMessage) => {
     spaceAlarmState.set(spaceId, false);
     await clearEntryDelay(spaceId, space.hubId);
     await clearPendingArm(spaceId, space.hubId);
+    entryDelayFailed.delete(spaceId);
   }
   space.devices = await loadDevices(spaceId, space.hubId, space.hubOnline);
   return space;
@@ -1144,7 +1147,16 @@ app.post('/api/hub/events', requireWebhookToken, async (req, res) => {
       const shouldCheck = zoneType === '24h' || status === 'armed';
 
       if (shouldCheck && !bypass && !isNormal) {
-        if (zoneType === 'delayed' && status === 'armed') {
+        if (entryDelayFailed.get(spaceId)) {
+          await appendLog(spaceId, `Тревога шлейфа: ${zone.name}`, 'Zone', 'alarm');
+          spaceAlarmState.set(spaceId, true);
+          if (!silent) {
+            await startSirenTimers(spaceId, spaceRow.rows[0]?.hub_id);
+          }
+          await query('UPDATE spaces SET issues = true WHERE id = $1', [spaceId]);
+          continue;
+        }
+        if (zoneType === 'delayed' && status === 'armed' && !entryDelayTimers.has(spaceId)) {
           const delaySeconds = Number(config.delaySeconds ?? 30);
           await startEntryDelay(spaceId, spaceRow.rows[0]?.hub_id, delaySeconds, zone.name);
           continue;

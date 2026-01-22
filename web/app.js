@@ -9,6 +9,7 @@ const state = {
 };
 
 let spaces = [];
+const FLASH_DURATION_MS = 15000;
 
 const objectList = document.getElementById('objectList');
 const spaceIdEl = document.getElementById('spaceId');
@@ -176,7 +177,7 @@ const setupZoneDelayFields = (form) => {
   if (!zoneTypeSelect || !delayInput) return;
 
   const update = () => {
-    const needsDelay = ['delayed', 'pass'].includes(zoneTypeSelect.value);
+    const needsDelay = zoneTypeSelect.value === 'delayed';
     delayInput.classList.toggle('hidden', !needsDelay);
     delayInput.disabled = !needsDelay;
     delayInput.required = needsDelay;
@@ -808,7 +809,16 @@ const renderLogs = (space) => {
     const isAlarm = log.type === 'alarm';
     const isRestore = log.type === 'restore';
     const isHub = log.type === 'hub_raw';
-    row.className = `log-row ${isAlarm ? 'log-row--alarm' : ''} ${isRestore ? 'log-row--restore' : ''} ${isHub ? 'log-row--hub' : ''}`;
+    const createdAt = log.createdAt ?? log.created_at;
+    const flashKey = `logFlash:${space.id}:${createdAt ?? log.time}:${log.text}`;
+    const shouldFlash = isAlarm
+      && createdAt
+      && Date.now() - new Date(createdAt).getTime() < FLASH_DURATION_MS
+      && !localStorage.getItem(flashKey);
+    if (shouldFlash) {
+      localStorage.setItem(flashKey, String(Date.now()));
+    }
+    row.className = `log-row ${isAlarm ? 'log-row--alarm' : ''} ${shouldFlash ? 'log-row--alarm-flash' : ''} ${isRestore ? 'log-row--restore' : ''} ${isHub ? 'log-row--hub' : ''}`;
     const text = isHub ? log.text.replace(/\n/g, '<br />') : log.text;
     row.innerHTML = `
       <span>${log.time}</span>

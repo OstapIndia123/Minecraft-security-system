@@ -131,8 +131,12 @@ body {
 }
 
 .object-card--alarm {
-  animation: alarm-card 1s steps(2) infinite;
   border-color: rgba(255, 77, 77, 0.6);
+  background: rgba(255, 77, 77, 0.16);
+}
+
+.object-card--alarm-flash {
+  animation: alarm-card 1s steps(2) infinite;
 }
 
 .object-card--active {
@@ -654,6 +658,10 @@ body {
 
 .log-row--alarm {
   color: #ff4d4d;
+  background: rgba(255, 77, 77, 0.12);
+}
+
+.log-row--alarm-flash {
   animation: alarm-row 1s steps(2) 10;
 }
 

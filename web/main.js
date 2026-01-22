@@ -3,6 +3,8 @@ const state = {
   logFilter: 'all',
 };
 
+const FLASH_DURATION_MS = 15000;
+
 const grid = document.getElementById('mainObjectGrid');
 const logTable = document.getElementById('mainLogTable');
 const refreshBtn = document.getElementById('mainRefresh');
@@ -57,7 +59,12 @@ const renderObjects = (spaces) => {
 
   filtered.forEach((space) => {
     const card = document.createElement('button');
-    card.className = `object-card ${space.issues ? 'object-card--alarm' : ''}`;
+    const alarmKey = `alarmPending:${space.id}`;
+    if (space.issues && !localStorage.getItem(alarmKey)) {
+      localStorage.setItem(alarmKey, String(Date.now()));
+    }
+    const shouldFlash = Boolean(localStorage.getItem(alarmKey));
+    card.className = `object-card ${shouldFlash ? 'object-card--alarm object-card--alarm-flash' : ''}`;
     card.innerHTML = `
       <div class="object-card__title">${space.name}</div>
       <div class="object-card__meta">ID хаба ${space.hubId ?? '—'}</div>
@@ -65,6 +72,7 @@ const renderObjects = (spaces) => {
       <div class="object-card__meta">${space.address}</div>
     `;
     card.addEventListener('click', () => {
+      localStorage.removeItem(alarmKey);
       const url = new URL('main.html', window.location.href);
       url.searchParams.set('spaceId', space.id);
       window.location.href = url.toString();
@@ -106,7 +114,16 @@ const renderLogs = (logs) => {
     const isAlarm = log.type === 'alarm';
     const isRestore = log.type === 'restore';
     const isHub = log.type === 'hub_raw';
-    row.className = `log-row ${isAlarm ? 'log-row--alarm' : ''} ${isRestore ? 'log-row--restore' : ''} ${isHub ? 'log-row--hub' : ''}`;
+    const flashKey = `logFlash:${log.createdAt ?? log.created_at}:${log.text}`;
+    const createdAt = log.createdAt ?? log.created_at;
+    const shouldFlash = isAlarm
+      && createdAt
+      && Date.now() - new Date(createdAt).getTime() < FLASH_DURATION_MS
+      && !localStorage.getItem(flashKey);
+    if (shouldFlash) {
+      localStorage.setItem(flashKey, String(Date.now()));
+    }
+    row.className = `log-row ${isAlarm ? 'log-row--alarm' : ''} ${shouldFlash ? 'log-row--alarm-flash' : ''} ${isRestore ? 'log-row--restore' : ''} ${isHub ? 'log-row--hub' : ''}`;
     const text = isHub ? log.text.replace(/\n/g, '<br />') : log.text;
     row.innerHTML = `
       <span>${log.time}</span>
@@ -160,3 +177,6 @@ if (searchInput) {
 }
 
 refresh().catch(() => null);
+setInterval(() => {
+  refresh().catch(() => null);
+}, 5000);
