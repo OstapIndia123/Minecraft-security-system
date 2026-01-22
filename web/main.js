@@ -4,6 +4,7 @@ const state = {
 };
 
 const FLASH_DURATION_MS = 15000;
+const logFlashActive = new Map();
 
 const grid = document.getElementById('mainObjectGrid');
 const logTable = document.getElementById('mainLogTable');
@@ -114,14 +115,16 @@ const renderLogs = (logs) => {
     const isAlarm = log.type === 'alarm';
     const isRestore = log.type === 'restore';
     const isHub = log.type === 'hub_raw';
-    const flashKey = `logFlash:${log.createdAt ?? log.created_at}:${log.text}`;
     const createdAt = log.createdAt ?? log.created_at;
-    const shouldFlash = isAlarm
-      && createdAt
-      && Date.now() - new Date(createdAt).getTime() < FLASH_DURATION_MS
-      && !localStorage.getItem(flashKey);
-    if (shouldFlash) {
+    const flashKey = `logFlash:${log.spaceName}:${createdAt ?? log.time}:${log.text}`;
+    const hasSeen = localStorage.getItem(flashKey);
+    if (isAlarm && createdAt && !hasSeen) {
       localStorage.setItem(flashKey, String(Date.now()));
+      logFlashActive.set(flashKey, Date.now() + FLASH_DURATION_MS);
+    }
+    const shouldFlash = logFlashActive.get(flashKey) > Date.now();
+    if (!shouldFlash) {
+      logFlashActive.delete(flashKey);
     }
     row.className = `log-row ${isAlarm ? 'log-row--alarm' : ''} ${shouldFlash ? 'log-row--alarm-flash' : ''} ${isRestore ? 'log-row--restore' : ''} ${isHub ? 'log-row--hub' : ''}`;
     const text = isHub ? log.text.replace(/\n/g, '<br />') : log.text;

@@ -137,10 +137,17 @@ const mapOutputSide = (side) => {
   return side;
 };
 
+const hubOutputState = new Map();
+
 const sendHubOutput = async (hubId, side, level) => {
   if (!hubId) return;
   const formattedHubId = formatHubIdForSend(hubId);
   const outputSide = mapOutputSide(side);
+  const stateKey = `${formattedHubId}:${outputSide}`;
+  if (hubOutputState.get(stateKey) === level) {
+    return;
+  }
+  hubOutputState.set(stateKey, level);
   const url = new URL(`/api/hub/${encodeURIComponent(formattedHubId)}/outputs`, hubApiUrl);
   await fetch(url, {
     method: 'POST',

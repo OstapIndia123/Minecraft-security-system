@@ -359,6 +359,21 @@ body {
   border: 1px solid #2a2a2a;
 }
 
+.pcn-layout {
+  display: grid;
+  grid-template-columns: minmax(320px, 1fr) minmax(520px, 1.6fr);
+  gap: 20px;
+}
+
+.pcn-layout__panel {
+  height: 100%;
+}
+
+.pcn-layout__panel--wide .log-table {
+  max-height: 640px;
+  overflow: auto;
+}
+
 .tiles-grid {
   margin-top: 16px;
   display: grid;
@@ -800,6 +815,10 @@ body {
   }
 
   .panel__grid {
+    grid-template-columns: 1fr;
+  }
+
+  .pcn-layout {
     grid-template-columns: 1fr;
   }
 }

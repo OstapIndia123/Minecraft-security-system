@@ -22,35 +22,37 @@
           </div>
         </header>
 
-        <section class="content">
-          <div class="panel__header">
-            <h2>Объекты</h2>
-            <div class="filters" id="mainFilters">
-              <button class="chip chip--active" data-filter="all">Все</button>
-              <button class="chip" data-filter="offline">С хабами не в сети</button>
-              <button class="chip" data-filter="issues">С тревогой</button>
+        <div class="pcn-layout">
+          <section class="content pcn-layout__panel">
+            <div class="panel__header">
+              <h2>Объекты</h2>
+              <div class="filters" id="mainFilters">
+                <button class="chip chip--active" data-filter="all">Все</button>
+                <button class="chip" data-filter="offline">С хабами не в сети</button>
+                <button class="chip" data-filter="issues">С тревогой</button>
+              </div>
             </div>
-          </div>
-          <div class="main-search">
-            <span class="icon">🔍</span>
-            <input type="text" id="mainSearch" placeholder="Поиск по объекту или ID" />
-          </div>
-          <div class="tiles-grid" id="mainObjectGrid"></div>
-        </section>
+            <div class="main-search">
+              <span class="icon">🔍</span>
+              <input type="text" id="mainSearch" placeholder="Поиск по объекту или ID" />
+            </div>
+            <div class="tiles-grid" id="mainObjectGrid"></div>
+          </section>
 
-        <section class="content">
-          <div class="panel__header">
-            <h2>Общий журнал событий</h2>
-            <div class="filters" id="mainLogFilters">
-              <button class="chip chip--active" data-log="all">Все</button>
-              <button class="chip" data-log="security">Охранные</button>
-              <button class="chip" data-log="access">Доступ</button>
-              <button class="chip" data-log="system">Система</button>
-              <button class="chip" data-log="hub">События хаба</button>
+          <section class="content pcn-layout__panel pcn-layout__panel--wide">
+            <div class="panel__header">
+              <h2>Общий журнал событий</h2>
+              <div class="filters" id="mainLogFilters">
+                <button class="chip chip--active" data-log="all">Все</button>
+                <button class="chip" data-log="security">Охранные</button>
+                <button class="chip" data-log="access">Доступ</button>
+                <button class="chip" data-log="system">Система</button>
+                <button class="chip" data-log="hub">События хаба</button>
+              </div>
             </div>
-          </div>
-          <div class="log-table" id="mainLogTable"></div>
-        </section>
+            <div class="log-table" id="mainLogTable"></div>
+          </section>
+        </div>
       </main>
     </div>
 
