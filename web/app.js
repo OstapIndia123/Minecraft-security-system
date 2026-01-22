@@ -1227,7 +1227,7 @@ if (openCreate && modal) {
 
 if (backToMain) {
   backToMain.addEventListener('click', () => {
-    window.location.href = 'main.html';
+    window.location.href = 'index.html';
   });
 }
 

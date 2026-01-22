@@ -197,6 +197,12 @@ const scheduleSirenStop = (spaceId, hubId, durationMs) => {
   sirenStopTimeouts.set(spaceId, timer);
 };
 
+const getMaxSirenDuration = (sirens) => sirens.reduce((max, siren) => {
+  const seconds = Number(siren.config?.alarmDuration ?? 0);
+  const durationMs = seconds > 0 ? seconds * 1000 : 0;
+  return Math.max(max, durationMs);
+}, 0);
+
 const startSirenTimers = async (spaceId, hubId) => {
   if (!hubId) return;
   const sirens = await query('SELECT id, side, config FROM devices WHERE space_id = $1 AND type = $2', [
@@ -221,11 +227,7 @@ const startSirenTimers = async (spaceId, hubId) => {
     }
   }
 
-  const maxDurationMs = sirens.rows.reduce((max, siren) => {
-    const seconds = Number(siren.config?.alarmDuration ?? 0);
-    const durationMs = seconds > 0 ? seconds * 1000 : 0;
-    return Math.max(max, durationMs);
-  }, 0);
+  const maxDurationMs = getMaxSirenDuration(sirens.rows);
   scheduleSirenStop(spaceId, hubId, maxDurationMs);
 };
 
@@ -987,7 +989,11 @@ app.post('/api/hub/events', requireWebhookToken, async (req, res) => {
     if (!hasIssues) {
       const spaceRow = await query('SELECT hub_id FROM spaces WHERE id = $1', [spaceId]);
       spaceAlarmState.set(spaceId, false);
-      await stopSirenTimers(spaceId, spaceRow.rows[0]?.hub_id);
+      const sirens = await query('SELECT config FROM devices WHERE space_id = $1 AND type = $2', [spaceId, 'siren']);
+      const maxDurationMs = getMaxSirenDuration(sirens.rows);
+      if (!maxDurationMs) {
+        await stopSirenTimers(spaceId, spaceRow.rows[0]?.hub_id);
+      }
     }
   }
 

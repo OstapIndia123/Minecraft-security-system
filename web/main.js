@@ -65,7 +65,7 @@ const renderObjects = (spaces) => {
       <div class="object-card__meta">${space.address}</div>
     `;
     card.addEventListener('click', () => {
-      const url = new URL('index.html', window.location.href);
+      const url = new URL('main.html', window.location.href);
       url.searchParams.set('spaceId', space.id);
       window.location.href = url.toString();
     });
@@ -149,7 +149,7 @@ if (refreshBtn) {
 
 if (addSpaceBtn) {
   addSpaceBtn.addEventListener('click', () => {
-    window.location.href = 'index.html?create=1';
+    window.location.href = 'main.html?create=1';
   });
 }
 
