@@ -1145,9 +1145,18 @@ if (readKeyButton && deviceForm) {
     const space = spaces.find((item) => item.id === state.selectedSpaceId);
     if (!space) return;
 
+    let countdown;
     try {
-      showLoading();
-      const scan = await apiFetch(`/api/spaces/${space.id}/last-key-scan`);
+      readKeyButton.disabled = true;
+      let remaining = 60;
+      readKeyButton.textContent = `Считывание (${remaining})`;
+      countdown = setInterval(() => {
+        remaining -= 1;
+        if (remaining <= 0) return;
+        readKeyButton.textContent = `Считывание (${remaining})`;
+      }, 1000);
+
+      const scan = await apiFetch(`/api/spaces/${space.id}/await-key-scan`);
       const keyInput = deviceForm.querySelector('input[name=\"keyName\"]');
       const readerInput = deviceForm.querySelector('input[name=\"readerId\"]');
       if (keyInput) keyInput.value = scan.keyName ?? '';
@@ -1157,7 +1166,11 @@ if (readKeyButton && deviceForm) {
       console.error(error);
       handleApiError(error, 'Не удалось считать ключ.');
     } finally {
-      hideLoading();
+      readKeyButton.disabled = false;
+      readKeyButton.textContent = 'Считать ключ';
+      if (countdown) {
+        clearInterval(countdown);
+      }
     }
   });
 }

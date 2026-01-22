@@ -173,6 +173,7 @@ const pendingArmTimers = new Map();
 const entryDelayTimers = new Map();
 const lightBlinkTimers = new Map();
 const lastKeyScans = new Map();
+const keyScanWaiters = new Map();
 
 const stopSirenTimers = async (spaceId, hubId) => {
   const timers = sirenTimers.get(spaceId) ?? [];
@@ -260,12 +261,11 @@ const clearPendingArm = async (spaceId, hubId) => {
 };
 
 const clearEntryDelay = async (spaceId, hubId) => {
-  const timer = entryDelayTimers.get(spaceId);
-  if (timer) {
-    clearTimeout(timer);
-    entryDelayTimers.delete(spaceId);
-    await stopBlinkingLights(spaceId, hubId, 'entry-delay');
-  }
+  const entry = entryDelayTimers.get(spaceId);
+  if (!entry) return;
+  clearTimeout(entry.timer);
+  entryDelayTimers.delete(spaceId);
+  await stopBlinkingLights(spaceId, hubId, 'entry-delay');
 };
 
 const startSirenTimers = async (spaceId, hubId) => {
@@ -321,7 +321,7 @@ const startPendingArm = async (spaceId, hubId, delaySeconds, who, logMessage) =>
   pendingArmTimers.set(spaceId, timer);
 };
 
-const startEntryDelay = async (spaceId, hubId, delaySeconds) => {
+const startEntryDelay = async (spaceId, hubId, delaySeconds, zoneName) => {
   if (!hubId || entryDelayTimers.has(spaceId)) return;
   await appendLog(spaceId, 'Начало снятия', 'Zone', 'security');
   await startBlinkingLights(spaceId, hubId, 'entry-delay');
@@ -337,12 +337,15 @@ const startEntryDelay = async (spaceId, hubId, delaySeconds) => {
         'Zone',
         'alarm',
       );
+      if (zoneName) {
+        await appendLog(spaceId, `Тревога шлейфа: ${zoneName}`, 'Zone', 'alarm');
+      }
       spaceAlarmState.set(spaceId, true);
       await startSirenTimers(spaceId, spaceRow.rows[0]?.hub_id);
       await query('UPDATE spaces SET issues = true WHERE id = $1', [spaceId]);
     }
   }, delaySeconds * 1000);
-  entryDelayTimers.set(spaceId, timer);
+  entryDelayTimers.set(spaceId, { timer, zoneName });
 };
 
 const handleExpiredReaderSessions = async () => {
@@ -393,6 +396,28 @@ app.get('/api/spaces/:id/last-key-scan', async (req, res) => {
     return res.status(404).json({ error: 'no_recent_scan' });
   }
   res.json({ readerId: entry.readerId, keyName: entry.keyName });
+});
+
+app.get('/api/spaces/:id/await-key-scan', async (req, res) => {
+  const spaceId = req.params.id;
+  const waiters = keyScanWaiters.get(spaceId) ?? [];
+  const timeout = setTimeout(() => {
+    const updated = (keyScanWaiters.get(spaceId) ?? []).filter((waiter) => waiter.timeout !== timeout);
+    if (updated.length) {
+      keyScanWaiters.set(spaceId, updated);
+    } else {
+      keyScanWaiters.delete(spaceId);
+    }
+    res.status(404).json({ error: 'no_recent_scan' });
+  }, 60000);
+
+  waiters.push({
+    timeout,
+    resolve: (payload) => {
+      res.json(payload);
+    },
+  });
+  keyScanWaiters.set(spaceId, waiters);
 });
 
 app.get('/api/spaces/:id/logs', async (req, res) => {
@@ -902,6 +927,14 @@ const handleReaderScan = async ({ readerId, payload, ts }) => {
   const { space_id: spaceId, name, config } = device.rows[0];
   const scannedKeyName = payload?.keyName ?? 'Неизвестный ключ';
   lastKeyScans.set(spaceId, { readerId, keyName: scannedKeyName, ts: Date.now() });
+  const waiters = keyScanWaiters.get(spaceId);
+  if (waiters?.length) {
+    waiters.forEach((waiter) => {
+      clearTimeout(waiter.timeout);
+      waiter.resolve({ readerId, keyName: scannedKeyName });
+    });
+    keyScanWaiters.delete(spaceId);
+  }
   const spaceRow = await query('SELECT status FROM spaces WHERE id = $1', [spaceId]);
   const spaceStatus = spaceRow.rows[0]?.status ?? 'disarmed';
   const time = ts
@@ -972,22 +1005,8 @@ const handleReaderScan = async ({ readerId, payload, ts }) => {
 };
 
 app.post('/api/spaces/:id/arm', async (req, res) => {
-  const spaceRow = await query('SELECT * FROM spaces WHERE id = $1', [req.params.id]);
-  if (!spaceRow.rows.length) return res.status(404).json({ error: 'space_not_found' });
-  const space = mapSpace(spaceRow.rows[0]);
-  if (pendingArmTimers.has(req.params.id)) {
-    return res.json({ ...space, pendingArm: true });
-  }
-  const zones = await query(
-    'SELECT config FROM devices WHERE space_id = $1 AND type = $2',
-    [req.params.id, 'zone'],
-  );
-  const delaySeconds = getExitDelaySeconds(zones.rows);
-  if (delaySeconds > 0) {
-    await startPendingArm(req.params.id, space.hubId, delaySeconds, 'UI');
-    return res.json({ ...space, pendingArm: true });
-  }
   const updated = await updateStatus(req.params.id, 'armed', 'UI');
+  if (!updated) return res.status(404).json({ error: 'space_not_found' });
   res.json(updated);
 });
 
@@ -1124,21 +1143,10 @@ app.post('/api/hub/events', requireWebhookToken, async (req, res) => {
       const silent = Boolean(config.silent);
       const shouldCheck = zoneType === '24h' || status === 'armed';
 
-      if (
-        pendingArmTimers.has(spaceId)
-        && (zoneType === 'delayed' || zoneType === 'pass')
-        && !isNormal
-      ) {
-        await clearPendingArm(spaceId, spaceRow.rows[0]?.hub_id);
-        await appendLog(spaceId, 'Неудачная попытка постановки под охрану', 'Zone', 'security');
-        await applyLightOutputs(spaceId, spaceRow.rows[0]?.hub_id, 'disarmed');
-        continue;
-      }
-
       if (shouldCheck && !bypass && !isNormal) {
         if (zoneType === 'delayed' && status === 'armed') {
           const delaySeconds = Number(config.delaySeconds ?? 30);
-          await startEntryDelay(spaceId, spaceRow.rows[0]?.hub_id, delaySeconds);
+          await startEntryDelay(spaceId, spaceRow.rows[0]?.hub_id, delaySeconds, zone.name);
           continue;
         }
         if (zoneType === 'pass' && entryDelayTimers.has(spaceId)) {
