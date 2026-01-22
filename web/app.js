@@ -71,6 +71,17 @@ const showToast = (message) => {
   showToast.timer = setTimeout(() => toast.classList.remove('toast--show'), 2200);
 };
 
+const formatLogDate = (dateValue) => {
+  if (!dateValue) return null;
+  const date = new Date(dateValue);
+  if (Number.isNaN(date.getTime())) return null;
+  return date.toLocaleDateString('ru-RU', {
+    day: '2-digit',
+    month: '2-digit',
+    year: 'numeric',
+  });
+};
+
 const showGuardModal = () => {
   guardModal?.classList.add('modal--open');
 };
@@ -133,7 +144,7 @@ const loadLogs = async (spaceId) => {
     if (space) {
       space.logs = logs;
       const lastLog = logs[0];
-      state.lastLogKey = `${logs.length}-${lastLog?.time ?? ''}-${lastLog?.text ?? ''}`;
+      state.lastLogKey = `${logs.length}-${lastLog?.time ?? ''}-${lastLog?.text ?? ''}-${lastLog?.createdAt ?? ''}`;
     }
   } catch (error) {
     console.error(error);
@@ -593,12 +604,13 @@ const renderLogs = (space) => {
   logTable.innerHTML = '';
   let lastDate = null;
   logs.forEach((log) => {
-    if (log.date && log.date !== lastDate) {
+    const dateLabel = formatLogDate(log.createdAt ?? log.created_at);
+    if (dateLabel && dateLabel !== lastDate) {
       const divider = document.createElement('div');
       divider.className = 'log-divider';
-      divider.textContent = log.date;
+      divider.textContent = dateLabel;
       logTable.appendChild(divider);
-      lastDate = log.date;
+      lastDate = dateLabel;
     }
     const row = document.createElement('div');
     const isAlarm = log.type === 'alarm';
@@ -768,11 +780,14 @@ const pollLogs = async () => {
   try {
     const logs = await apiFetch(`/api/spaces/${space.id}/logs`);
     const lastLog = logs[0];
-    const logKey = `${logs.length}-${lastLog?.time ?? ''}-${lastLog?.text ?? ''}`;
+    const logKey = `${logs.length}-${lastLog?.time ?? ''}-${lastLog?.text ?? ''}-${lastLog?.createdAt ?? ''}`;
     if (logKey !== state.lastLogKey) {
       state.lastLogKey = logKey;
       space.logs = logs;
       renderLogs(space);
+      if (lastLog?.type === 'alarm' || lastLog?.type === 'restore') {
+        await refreshAll();
+      }
     }
   } catch (error) {
     console.error(error);

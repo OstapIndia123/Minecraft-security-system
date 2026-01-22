@@ -46,7 +46,7 @@ const mapLog = (row) => ({
   text: row.text,
   who: row.who,
   type: row.type,
-  date: row.date,
+  createdAt: row.created_at,
 });
 
 const normalizeHubId = (hubId) => (hubId?.startsWith('HUB-') ? hubId.replace('HUB-', '') : hubId);
@@ -92,6 +92,19 @@ const appendLog = async (spaceId, text, who, type) => {
 const formatHubPayload = (payload) => {
   if (!payload || typeof payload !== 'object') return '';
   return JSON.stringify(payload, null, 2);
+};
+
+const trimHubLogs = async (hubId) => {
+  await query(
+    `DELETE FROM logs
+     WHERE id IN (
+       SELECT id FROM logs
+       WHERE type = 'hub_raw' AND who = $1
+       ORDER BY id DESC
+       OFFSET 100
+     )`,
+    [hubId],
+  );
 };
 
 const requireWebhookToken = (req, res, next) => {
@@ -240,7 +253,7 @@ app.get('/api/spaces/:id/logs', async (req, res) => {
             text,
             who,
             type,
-            TO_CHAR(created_at, 'DD.MM.YYYY') AS date
+            created_at
      FROM logs
      WHERE space_id = $1
      ORDER BY id DESC
@@ -248,6 +261,31 @@ app.get('/api/spaces/:id/logs', async (req, res) => {
     [req.params.id],
   );
   res.json(result.rows.map(mapLog));
+});
+
+app.get('/api/logs', async (req, res) => {
+  const result = await query(
+    `SELECT logs.time,
+            logs.text,
+            logs.who,
+            logs.type,
+            logs.created_at,
+            spaces.name AS space_name,
+            spaces.id AS space_id
+     FROM logs
+     JOIN spaces ON spaces.id = logs.space_id
+     ORDER BY logs.id DESC
+     LIMIT 300`,
+  );
+  res.json(result.rows.map((row) => ({
+    time: row.time,
+    text: row.text,
+    who: row.who,
+    type: row.type,
+    createdAt: row.created_at,
+    spaceName: row.space_name,
+    spaceId: row.space_id,
+  })));
 });
 
 app.post('/api/spaces', async (req, res) => {
@@ -819,6 +857,7 @@ app.post('/api/hub/events', requireWebhookToken, async (req, res) => {
     'INSERT INTO logs (space_id, time, text, who, type) VALUES ($1,$2,$3,$4,$5)',
     [spaceId, time, hubLogText, hubId, 'hub_raw'],
   );
+  await trimHubLogs(hubId);
 
   if (type === 'TEST_FAIL') {
     await query('UPDATE spaces SET hub_online = $1 WHERE id = $2', [false, spaceId]);

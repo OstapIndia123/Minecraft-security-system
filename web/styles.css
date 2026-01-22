@@ -30,6 +30,10 @@ body {
   min-height: 100vh;
 }
 
+.app-shell--single {
+  grid-template-columns: 1fr;
+}
+
 .sidebar {
   background: #151515;
   padding: 24px 18px;
@@ -318,6 +322,13 @@ body {
   border-radius: var(--radius);
   padding: 20px;
   border: 1px solid #2a2a2a;
+}
+
+.tiles-grid {
+  margin-top: 16px;
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+  gap: 14px;
 }
 
 .tabs {
