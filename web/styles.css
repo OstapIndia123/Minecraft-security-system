@@ -321,6 +321,16 @@ body {
   cursor: pointer;
 }
 
+.status-actions .chip--danger {
+  background: rgba(255, 77, 77, 0.4);
+  color: #ff4d4d;
+}
+
+.status-actions .chip--success {
+  background: rgba(59, 214, 113, 0.4);
+  color: #3bd671;
+}
+
 .status-actions .chip {
   min-width: 56px;
   height: 48px;
@@ -474,6 +484,7 @@ body {
   transition: border 0.2s ease, background 0.2s ease;
   height: 72px;
   width: 100%;
+  text-align: left;
 }
 
 .device-item > div {
