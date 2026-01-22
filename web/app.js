@@ -122,6 +122,15 @@ const apiFetch = async (path, options = {}) => {
 const loadSpaces = async () => {
   try {
     spaces = await apiFetch('/api/spaces');
+    const params = new URLSearchParams(window.location.search);
+    const requestedSpaceId = params.get('spaceId');
+    if (requestedSpaceId && spaces.some((space) => space.id === requestedSpaceId)) {
+      state.selectedSpaceId = requestedSpaceId;
+      localStorage.setItem('selectedSpaceId', requestedSpaceId);
+      params.delete('spaceId');
+      const newUrl = `${window.location.pathname}${params.toString() ? `?${params.toString()}` : ''}`;
+      window.history.replaceState({}, '', newUrl);
+    }
     if (!state.selectedSpaceId) {
       const savedSpaceId = localStorage.getItem('selectedSpaceId');
       if (savedSpaceId && spaces.some((space) => space.id === savedSpaceId)) {

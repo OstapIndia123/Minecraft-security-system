@@ -8,6 +8,7 @@ const logTable = document.getElementById('mainLogTable');
 const refreshBtn = document.getElementById('mainRefresh');
 const filterButtons = document.querySelectorAll('#mainFilters .chip');
 const logFilters = document.querySelectorAll('#mainLogFilters .chip');
+const searchInput = document.getElementById('mainSearch');
 
 const apiFetch = async (path) => {
   const response = await fetch(path);
@@ -29,6 +30,7 @@ const formatLogDate = (dateValue) => {
 };
 
 const renderObjects = (spaces) => {
+  const query = (searchInput?.value ?? '').trim().toLowerCase();
   const filtered = spaces.filter((space) => {
     if (state.filter === 'offline') {
       return !space.hubOnline;
@@ -37,6 +39,13 @@ const renderObjects = (spaces) => {
       return space.issues;
     }
     return true;
+  }).filter((space) => {
+    if (!query) return true;
+    return (
+      space.name.toLowerCase().includes(query) ||
+      space.id.toLowerCase().includes(query) ||
+      (space.hubId ?? '').toLowerCase().includes(query)
+    );
   });
 
   grid.innerHTML = '';
@@ -46,7 +55,7 @@ const renderObjects = (spaces) => {
   }
 
   filtered.forEach((space) => {
-    const card = document.createElement('div');
+    const card = document.createElement('button');
     card.className = `object-card ${space.issues ? 'object-card--alarm' : ''}`;
     card.innerHTML = `
       <div class="object-card__title">${space.name}</div>
@@ -54,6 +63,11 @@ const renderObjects = (spaces) => {
       <div class="object-card__status">${space.status}</div>
       <div class="object-card__meta">${space.address}</div>
     `;
+    card.addEventListener('click', () => {
+      const url = new URL('index.html', window.location.href);
+      url.searchParams.set('spaceId', space.id);
+      window.location.href = url.toString();
+    });
     grid.appendChild(card);
   });
 };
@@ -128,6 +142,12 @@ logFilters.forEach((button) => {
 
 if (refreshBtn) {
   refreshBtn.addEventListener('click', () => {
+    refresh().catch(() => null);
+  });
+}
+
+if (searchInput) {
+  searchInput.addEventListener('input', () => {
     refresh().catch(() => null);
   });
 }

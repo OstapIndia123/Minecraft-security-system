@@ -3,7 +3,7 @@
   <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
-    <title>Minecraft Security System — Главное меню</title>
+    <title>Minecraft Security System — Режим ПЦН</title>
     <link rel="stylesheet" href="styles.css" />
   </head>
   <body>
@@ -12,7 +12,7 @@
         <header class="topbar">
           <div class="topbar__left">
             <div class="topbar__title">
-              <h1>Главное меню</h1>
+              <h1>Режим ПЦН</h1>
               <p>Объекты и общий журнал событий</p>
             </div>
           </div>
@@ -29,6 +29,10 @@
               <button class="chip" data-filter="offline">С хабами не в сети</button>
               <button class="chip" data-filter="issues">С тревогой</button>
             </div>
+          </div>
+          <div class="main-search">
+            <span class="icon">🔍</span>
+            <input type="text" id="mainSearch" placeholder="Поиск по объекту или ID" />
           </div>
           <div class="tiles-grid" id="mainObjectGrid"></div>
         </section>
