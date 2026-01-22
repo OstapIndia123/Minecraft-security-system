@@ -169,6 +169,10 @@ const pulseReaderOutput = async (readerId, level, durationMs = 250) => {
 const sirenTimers = new Map();
 const sirenStopTimeouts = new Map();
 const spaceAlarmState = new Map();
+const pendingArmTimers = new Map();
+const entryDelayTimers = new Map();
+const lightBlinkTimers = new Map();
+const lastKeyScans = new Map();
 
 const stopSirenTimers = async (spaceId, hubId) => {
   const timers = sirenTimers.get(spaceId) ?? [];
@@ -187,6 +191,42 @@ const stopSirenTimers = async (spaceId, hubId) => {
   }
 };
 
+const startBlinkingLights = async (spaceId, hubId, reason) => {
+  if (!hubId) return;
+  const existing = lightBlinkTimers.get(spaceId);
+  if (existing) {
+    existing.reasons.add(reason);
+    return;
+  }
+  const outputs = await query(
+    'SELECT side, config FROM devices WHERE space_id = $1 AND type = $2',
+    [spaceId, 'output-light'],
+  );
+  if (!outputs.rows.length) return;
+  let on = false;
+  const timer = setInterval(() => {
+    on = !on;
+    outputs.rows.forEach((output) => {
+      const level = Number(output.config?.level ?? 15);
+      sendHubOutput(hubId, output.side, on ? level : 0).catch(() => null);
+    });
+  }, 500);
+  lightBlinkTimers.set(spaceId, { timer, reasons: new Set([reason]) });
+};
+
+const stopBlinkingLights = async (spaceId, hubId, reason) => {
+  const existing = lightBlinkTimers.get(spaceId);
+  if (!existing) return;
+  existing.reasons.delete(reason);
+  if (existing.reasons.size) return;
+  clearInterval(existing.timer);
+  lightBlinkTimers.delete(spaceId);
+  const spaceRow = await query('SELECT status, hub_id FROM spaces WHERE id = $1', [spaceId]);
+  const status = spaceRow.rows[0]?.status ?? 'disarmed';
+  const resolvedHubId = hubId ?? spaceRow.rows[0]?.hub_id;
+  await applyLightOutputs(spaceId, resolvedHubId, status);
+};
+
 const scheduleSirenStop = (spaceId, hubId, durationMs) => {
   if (!hubId || !durationMs || durationMs <= 0) return;
   const existing = sirenStopTimeouts.get(spaceId);
@@ -202,6 +242,31 @@ const getMaxSirenDuration = (sirens) => sirens.reduce((max, siren) => {
   const durationMs = seconds > 0 ? seconds * 1000 : 0;
   return Math.max(max, durationMs);
 }, 0);
+
+const getExitDelaySeconds = (zones) => zones.reduce((max, zone) => {
+  const zoneType = zone.config?.zoneType;
+  if (zoneType !== 'delayed' && zoneType !== 'pass') return max;
+  const delaySeconds = Number(zone.config?.delaySeconds ?? 30);
+  return Math.max(max, delaySeconds);
+}, 0);
+
+const clearPendingArm = async (spaceId, hubId) => {
+  const timer = pendingArmTimers.get(spaceId);
+  if (timer) {
+    clearTimeout(timer);
+    pendingArmTimers.delete(spaceId);
+    await stopBlinkingLights(spaceId, hubId, 'exit-delay');
+  }
+};
+
+const clearEntryDelay = async (spaceId, hubId) => {
+  const timer = entryDelayTimers.get(spaceId);
+  if (timer) {
+    clearTimeout(timer);
+    entryDelayTimers.delete(spaceId);
+    await stopBlinkingLights(spaceId, hubId, 'entry-delay');
+  }
+};
 
 const startSirenTimers = async (spaceId, hubId) => {
   if (!hubId) return;
@@ -229,6 +294,55 @@ const startSirenTimers = async (spaceId, hubId) => {
 
   const maxDurationMs = getMaxSirenDuration(sirens.rows);
   scheduleSirenStop(spaceId, hubId, maxDurationMs);
+};
+
+const startPendingArm = async (spaceId, hubId, delaySeconds, who, logMessage) => {
+  if (!hubId || pendingArmTimers.has(spaceId)) return;
+  await startBlinkingLights(spaceId, hubId, 'exit-delay');
+  const timer = setTimeout(async () => {
+    pendingArmTimers.delete(spaceId);
+    await stopBlinkingLights(spaceId, hubId, 'exit-delay');
+    const zones = await query('SELECT status, config FROM devices WHERE space_id = $1 AND type = $2', [
+      spaceId,
+      'zone',
+    ]);
+    const hasViolations = zones.rows.some((zone) => {
+      const zoneType = zone.config?.zoneType;
+      if (zoneType !== 'delayed' && zoneType !== 'pass') return false;
+      return zone.status !== 'Норма';
+    });
+    if (hasViolations) {
+      await appendLog(spaceId, 'Неудачная попытка постановки под охрану', 'Zone', 'security');
+      await applyLightOutputs(spaceId, hubId, 'disarmed');
+      return;
+    }
+    await updateStatus(spaceId, 'armed', who, logMessage);
+  }, delaySeconds * 1000);
+  pendingArmTimers.set(spaceId, timer);
+};
+
+const startEntryDelay = async (spaceId, hubId, delaySeconds) => {
+  if (!hubId || entryDelayTimers.has(spaceId)) return;
+  await appendLog(spaceId, 'Начало снятия', 'Zone', 'security');
+  await startBlinkingLights(spaceId, hubId, 'entry-delay');
+  const timer = setTimeout(async () => {
+    entryDelayTimers.delete(spaceId);
+    await stopBlinkingLights(spaceId, hubId, 'entry-delay');
+    const spaceRow = await query('SELECT status, hub_id FROM spaces WHERE id = $1', [spaceId]);
+    const status = spaceRow.rows[0]?.status ?? 'disarmed';
+    if (status === 'armed') {
+      await appendLog(
+        spaceId,
+        'Неудачное снятие с охраны, выслать группу реагирования!',
+        'Zone',
+        'alarm',
+      );
+      spaceAlarmState.set(spaceId, true);
+      await startSirenTimers(spaceId, spaceRow.rows[0]?.hub_id);
+      await query('UPDATE spaces SET issues = true WHERE id = $1', [spaceId]);
+    }
+  }, delaySeconds * 1000);
+  entryDelayTimers.set(spaceId, timer);
 };
 
 const handleExpiredReaderSessions = async () => {
@@ -271,6 +385,14 @@ app.get('/api/spaces/:id', async (req, res) => {
   const space = mapSpace(result.rows[0]);
   space.devices = await loadDevices(space.id, space.hubId, space.hubOnline);
   res.json(space);
+});
+
+app.get('/api/spaces/:id/last-key-scan', async (req, res) => {
+  const entry = lastKeyScans.get(req.params.id);
+  if (!entry || Date.now() - entry.ts > 60000) {
+    return res.status(404).json({ error: 'no_recent_scan' });
+  }
+  res.json({ readerId: entry.readerId, keyName: entry.keyName });
 });
 
 app.get('/api/spaces/:id/logs', async (req, res) => {
@@ -482,6 +604,7 @@ const deviceConfigFromPayload = (payload) => {
       zoneType: payload.zoneType ?? 'instant',
       bypass: payload.bypass === 'true',
       silent: payload.silent === 'true',
+      delaySeconds: payload.delaySeconds ? Number(payload.delaySeconds) : null,
       normalLevel: Number(payload.normalLevel ?? 15),
     };
   }
@@ -750,6 +873,8 @@ const updateStatus = async (spaceId, status, who, logMessage) => {
   if (status !== 'armed') {
     await stopSirenTimers(spaceId, space.hubId);
     spaceAlarmState.set(spaceId, false);
+    await clearEntryDelay(spaceId, space.hubId);
+    await clearPendingArm(spaceId, space.hubId);
   }
   space.devices = await loadDevices(spaceId, space.hubId, space.hubOnline);
   return space;
@@ -775,12 +900,14 @@ const handleReaderScan = async ({ readerId, payload, ts }) => {
   }
 
   const { space_id: spaceId, name, config } = device.rows[0];
+  const scannedKeyName = payload?.keyName ?? 'Неизвестный ключ';
+  lastKeyScans.set(spaceId, { readerId, keyName: scannedKeyName, ts: Date.now() });
   const spaceRow = await query('SELECT status FROM spaces WHERE id = $1', [spaceId]);
   const spaceStatus = spaceRow.rows[0]?.status ?? 'disarmed';
   const time = ts
     ? new Date(ts).toLocaleTimeString('ru-RU', { hour: '2-digit', minute: '2-digit', second: '2-digit' })
     : new Date().toLocaleTimeString('ru-RU', { hour: '2-digit', minute: '2-digit', second: '2-digit' });
-  const keyName = payload?.keyName ?? 'Неизвестный ключ';
+  const keyName = scannedKeyName;
 
   await query(
     'INSERT INTO logs (space_id, time, text, who, type) VALUES ($1,$2,$3,$4,$5)',
@@ -845,9 +972,23 @@ const handleReaderScan = async ({ readerId, payload, ts }) => {
 };
 
 app.post('/api/spaces/:id/arm', async (req, res) => {
-  const space = await updateStatus(req.params.id, 'armed', 'UI');
-  if (!space) return res.status(404).json({ error: 'space_not_found' });
-  res.json(space);
+  const spaceRow = await query('SELECT * FROM spaces WHERE id = $1', [req.params.id]);
+  if (!spaceRow.rows.length) return res.status(404).json({ error: 'space_not_found' });
+  const space = mapSpace(spaceRow.rows[0]);
+  if (pendingArmTimers.has(req.params.id)) {
+    return res.json({ ...space, pendingArm: true });
+  }
+  const zones = await query(
+    'SELECT config FROM devices WHERE space_id = $1 AND type = $2',
+    [req.params.id, 'zone'],
+  );
+  const delaySeconds = getExitDelaySeconds(zones.rows);
+  if (delaySeconds > 0) {
+    await startPendingArm(req.params.id, space.hubId, delaySeconds, 'UI');
+    return res.json({ ...space, pendingArm: true });
+  }
+  const updated = await updateStatus(req.params.id, 'armed', 'UI');
+  res.json(updated);
 });
 
 app.post('/api/spaces/:id/disarm', async (req, res) => {
@@ -932,12 +1073,24 @@ app.post('/api/hub/events', requireWebhookToken, async (req, res) => {
               'security',
             );
           } else {
-            await updateStatus(
-              spaceId,
-              'armed',
-              session.reader_name,
-              `Постановка на охрану ключом: ${session.key_name}`,
-            );
+            const delaySeconds = getExitDelaySeconds(zones.rows);
+            if (delaySeconds > 0) {
+              const spaceRow = await query('SELECT hub_id FROM spaces WHERE id = $1', [spaceId]);
+              await startPendingArm(
+                spaceId,
+                spaceRow.rows[0]?.hub_id,
+                delaySeconds,
+                session.reader_name,
+                `Постановка на охрану ключом: ${session.key_name}`,
+              );
+            } else {
+              await updateStatus(
+                spaceId,
+                'armed',
+                session.reader_name,
+                `Постановка на охрану ключом: ${session.key_name}`,
+              );
+            }
           }
         } else {
           await updateStatus(
@@ -971,7 +1124,26 @@ app.post('/api/hub/events', requireWebhookToken, async (req, res) => {
       const silent = Boolean(config.silent);
       const shouldCheck = zoneType === '24h' || status === 'armed';
 
+      if (
+        pendingArmTimers.has(spaceId)
+        && (zoneType === 'delayed' || zoneType === 'pass')
+        && !isNormal
+      ) {
+        await clearPendingArm(spaceId, spaceRow.rows[0]?.hub_id);
+        await appendLog(spaceId, 'Неудачная попытка постановки под охрану', 'Zone', 'security');
+        await applyLightOutputs(spaceId, spaceRow.rows[0]?.hub_id, 'disarmed');
+        continue;
+      }
+
       if (shouldCheck && !bypass && !isNormal) {
+        if (zoneType === 'delayed' && status === 'armed') {
+          const delaySeconds = Number(config.delaySeconds ?? 30);
+          await startEntryDelay(spaceId, spaceRow.rows[0]?.hub_id, delaySeconds);
+          continue;
+        }
+        if (zoneType === 'pass' && entryDelayTimers.has(spaceId)) {
+          continue;
+        }
         await appendLog(spaceId, `Тревога шлейфа: ${zone.name}`, 'Zone', 'alarm');
         spaceAlarmState.set(spaceId, true);
         if (!silent) {

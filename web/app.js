@@ -50,6 +50,7 @@ const lightFields = document.getElementById('lightFields');
 const zoneFields = document.getElementById('zoneFields');
 const keyFields = document.getElementById('keyFields');
 const generateKey = document.getElementById('generateKey');
+const readKeyButton = document.getElementById('readKey');
 const sideInput = deviceForm?.querySelector('input[name="side"]');
 const deviceNameInput = deviceForm?.querySelector('input[name="name"]');
 const deviceRoomInput = deviceForm?.querySelector('input[name="room"]');
@@ -166,6 +167,26 @@ const confirmAction = async (message, title = 'Подтвердите дейст
 const promptAction = async ({ title, message, fields, confirmText = 'Сохранить' }) => {
   const result = await openActionModal({ title, message, confirmText, fields });
   return result?.confirmed ? result.values : null;
+};
+
+const setupZoneDelayFields = (form) => {
+  if (!form) return;
+  const zoneTypeSelect = form.querySelector('select[name="zoneType"]');
+  const delayInput = form.querySelector('input[name="delaySeconds"]');
+  if (!zoneTypeSelect || !delayInput) return;
+
+  const update = () => {
+    const needsDelay = ['delayed', 'pass'].includes(zoneTypeSelect.value);
+    delayInput.classList.toggle('hidden', !needsDelay);
+    delayInput.disabled = !needsDelay;
+    delayInput.required = needsDelay;
+    if (!needsDelay) {
+      delayInput.value = '';
+    }
+  };
+
+  zoneTypeSelect.addEventListener('change', update);
+  update();
 };
 
 const formatLogDate = (dateValue) => {
@@ -402,6 +423,14 @@ const renderDeviceDetails = (device) => {
           <option value="false" ${device.config?.silent ? '' : 'selected'}>Тихая: нет</option>
           <option value="true" ${device.config?.silent ? 'selected' : ''}>Тихая: да</option>
         </select>
+        <input
+          type="number"
+          name="delaySeconds"
+          class="zone-delay hidden"
+          value="${device.config?.delaySeconds ?? ''}"
+          min="1"
+          placeholder="Задержка (сек)"
+        />
         <input type="number" name="normalLevel" value="${device.config?.normalLevel ?? 15}" min="0" max="15" />
       `;
     }
@@ -485,6 +514,9 @@ const renderDeviceDetails = (device) => {
 
   const editForm = document.getElementById('deviceEditForm');
   if (editForm) {
+    if (device.type === 'zone') {
+      setupZoneDelayFields(editForm);
+    }
     editForm.addEventListener('submit', async (event) => {
       event.preventDefault();
       if (!ensureEditable()) return;
@@ -811,13 +843,13 @@ chipActions.forEach((chip) => {
     const space = spaces.find((item) => item.id === state.selectedSpaceId);
     if (!space) return;
 
-    try {
-      showLoading();
-      if (action === 'arm') {
-        const updated = await apiFetch(`/api/spaces/${space.id}/arm`, { method: 'POST' });
-        Object.assign(space, updated);
-        showToast('Объект поставлен под охрану.');
-      }
+      try {
+        showLoading();
+        if (action === 'arm') {
+          const updated = await apiFetch(`/api/spaces/${space.id}/arm`, { method: 'POST' });
+          Object.assign(space, updated);
+          showToast(updated.pendingArm ? 'Запущена постановка под охрану.' : 'Объект поставлен под охрану.');
+        }
       if (action === 'disarm') {
         const updated = await apiFetch(`/api/spaces/${space.id}/disarm`, { method: 'POST' });
         Object.assign(space, updated);
@@ -1059,6 +1091,7 @@ if (deviceType) {
 
   deviceType.addEventListener('change', updateDeviceFields);
   updateDeviceFields();
+  setupZoneDelayFields(deviceForm);
 }
 
 if (deviceForm) {
@@ -1103,6 +1136,28 @@ if (generateKey && deviceForm) {
     const keyInput = deviceForm.querySelector('input[name=\"keyName\"]');
     if (keyInput) {
       keyInput.value = `KEY-${Math.random().toString(36).slice(2, 8).toUpperCase()}`;
+    }
+  });
+}
+
+if (readKeyButton && deviceForm) {
+  readKeyButton.addEventListener('click', async () => {
+    const space = spaces.find((item) => item.id === state.selectedSpaceId);
+    if (!space) return;
+
+    try {
+      showLoading();
+      const scan = await apiFetch(`/api/spaces/${space.id}/last-key-scan`);
+      const keyInput = deviceForm.querySelector('input[name=\"keyName\"]');
+      const readerInput = deviceForm.querySelector('input[name=\"readerId\"]');
+      if (keyInput) keyInput.value = scan.keyName ?? '';
+      if (readerInput) readerInput.value = scan.readerId ?? '';
+      showToast('Ключ считан.');
+    } catch (error) {
+      console.error(error);
+      handleApiError(error, 'Не удалось считать ключ.');
+    } finally {
+      hideLoading();
     }
   });
 }

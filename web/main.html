@@ -229,6 +229,7 @@
               <option value="false">Тихая: нет</option>
               <option value="true">Тихая: да</option>
             </select>
+            <input type="number" name="delaySeconds" class="hidden" placeholder="Задержка (сек)" min="1" />
             <input type="number" name="normalLevel" placeholder="Норма уровня" min="0" max="15" />
           </div>
 
@@ -251,6 +252,7 @@
           <div class="form-inline hidden" id="keyFields">
             <input type="text" name="keyName" placeholder="Имя ключа" />
             <input type="text" name="readerId" placeholder="ID считывателя" />
+            <button type="button" class="button button--ghost" id="readKey">Считать ключ</button>
             <button type="button" class="button button--ghost" id="generateKey">Сгенерировать</button>
           </div>
 
