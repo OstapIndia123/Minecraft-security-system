@@ -461,10 +461,12 @@ body {
   padding: 14px 16px;
   display: grid;
   grid-template-columns: 1fr auto;
+  gap: 12px;
   align-items: center;
   border: 1px solid #2a2a2a;
   cursor: pointer;
   transition: border 0.2s ease, background 0.2s ease;
+  min-height: 72px;
 }
 
 .device-item--active {
@@ -474,11 +476,19 @@ body {
 
 .device-item__title {
   font-weight: 600;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  max-width: 320px;
 }
 
 .device-item__meta {
   color: var(--muted);
   font-size: 12px;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  max-width: 320px;
 }
 
 .device-item__status {
@@ -675,9 +685,30 @@ body {
   border: 1px solid #2a2a2a;
 }
 
+.modal__footer {
+  display: flex;
+  justify-content: flex-end;
+  gap: 12px;
+  margin-top: 16px;
+  flex-wrap: wrap;
+}
+
+.form-field {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  font-size: 12px;
+  color: var(--muted);
+}
+
 .modal__content--small {
   width: min(320px, 90vw);
   text-align: center;
+}
+
+.modal__content--small #actionModalBody {
+  margin-top: 8px;
+  color: var(--muted);
 }
 
 .modal--loading .modal__content {

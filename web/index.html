@@ -14,7 +14,7 @@
             <span class="brand__logo">PRO</span>
             <span class="brand__title">Security</span>
           </div>
-          <button class="ghost-button" aria-label="Назад">
+          <button class="ghost-button" id="backToMain" aria-label="Назад">
             <span class="icon">⟵</span>
           </button>
         </div>
@@ -48,7 +48,6 @@
           </div>
           <div class="topbar__right">
             <button class="button button--ghost" id="refreshBtn">Обновить</button>
-            <a class="button button--ghost button--link" href="main.html">Режим ПЦН</a>
             <button class="button button--primary" id="openCreate">Добавить объект</button>
           </div>
         </header>
@@ -60,8 +59,8 @@
             <div class="status-card__meta" id="spaceMeta">—</div>
           </div>
           <div class="status-actions">
-            <button class="chip chip--success" data-action="arm">Под охрану</button>
-            <button class="chip chip--danger" data-action="disarm">С охраны</button>
+            <button class="chip chip--danger" data-action="arm">Под охрану</button>
+            <button class="chip chip--success" data-action="disarm">С охраны</button>
           </div>
         </section>
 
@@ -103,7 +102,6 @@
                 <input type="text" name="name" placeholder="Название" required />
                 <input type="text" name="address" placeholder="Координаты" />
                 <input type="text" name="city" placeholder="Город" />
-                <input type="text" name="timezone" placeholder="Часовой пояс" />
                 <button class="button button--primary" type="submit">Сохранить</button>
               </form>
               <div class="danger-actions">
@@ -193,7 +191,6 @@
           <input type="text" name="name" placeholder="Название" required />
           <input type="text" name="address" placeholder="Координаты" />
           <input type="text" name="city" placeholder="Город" />
-          <input type="text" name="timezone" placeholder="Часовой пояс" value="Europe/Kyiv" />
           <button class="button button--primary" type="submit">Создать</button>
         </form>
       </div>
@@ -228,6 +225,10 @@
               <option value="false">Обход: нет</option>
               <option value="true">Обход: да</option>
             </select>
+            <select name="silent">
+              <option value="false">Тихая: нет</option>
+              <option value="true">Тихая: да</option>
+            </select>
             <input type="number" name="normalLevel" placeholder="Норма уровня" min="0" max="15" />
           </div>
 
@@ -238,6 +239,7 @@
           <div class="form-inline hidden" id="sirenFields">
             <input type="number" name="outputLevel" placeholder="Уровень сигнала" min="0" max="15" />
             <input type="number" name="intervalMs" placeholder="Интервал (мс)" min="100" />
+            <input type="number" name="alarmDurationSec" placeholder="Время тревоги (сек)" min="1" />
           </div>
 
           <div class="form-inline hidden" id="readerFields">
@@ -258,6 +260,36 @@
     </div>
 
     <div class="toast" id="toast" role="status" aria-live="polite"></div>
+
+    <div class="modal" id="actionModal" aria-hidden="true">
+      <div class="modal__content modal__content--small">
+        <div class="modal__header">
+          <h3 id="actionModalTitle">Подтверждение</h3>
+          <button class="ghost-button" id="closeActionModal" aria-label="Закрыть">✕</button>
+        </div>
+        <div id="actionModalBody"></div>
+        <div class="modal__footer">
+          <button class="button button--ghost" id="actionModalCancel" type="button">Отмена</button>
+          <button class="button button--primary" id="actionModalConfirm" type="button">Подтвердить</button>
+        </div>
+      </div>
+    </div>
+
+    <div class="modal" id="editModal" aria-hidden="true">
+      <div class="modal__content">
+        <div class="modal__header">
+          <h3 id="editModalTitle">Редактирование</h3>
+          <button class="ghost-button" id="closeEditModal" aria-label="Закрыть">✕</button>
+        </div>
+        <form id="editModalForm">
+          <div class="form-grid" id="editModalFields"></div>
+          <div class="modal__footer">
+            <button class="button button--ghost" id="editModalCancel" type="button">Отмена</button>
+            <button class="button button--primary" id="editModalSubmit" type="submit">Сохранить</button>
+          </div>
+        </form>
+      </div>
+    </div>
 
     <div class="modal modal--loading" id="loadingModal" aria-hidden="true">
       <div class="modal__content modal__content--small">

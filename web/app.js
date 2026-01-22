@@ -32,9 +32,23 @@ const editForm = document.getElementById('editForm');
 const openCreate = document.getElementById('openCreate');
 const modal = document.getElementById('spaceModal');
 const modalClose = document.getElementById('closeModal');
+const backToMain = document.getElementById('backToMain');
 const deviceModal = document.getElementById('deviceModal');
 const deviceModalClose = document.getElementById('closeDeviceModal');
 const openDeviceModal = document.getElementById('openDeviceModal');
+const actionModal = document.getElementById('actionModal');
+const actionModalTitle = document.getElementById('actionModalTitle');
+const actionModalBody = document.getElementById('actionModalBody');
+const actionModalCancel = document.getElementById('actionModalCancel');
+const actionModalConfirm = document.getElementById('actionModalConfirm');
+const actionModalClose = document.getElementById('closeActionModal');
+const editModal = document.getElementById('editModal');
+const editModalTitle = document.getElementById('editModalTitle');
+const editModalForm = document.getElementById('editModalForm');
+const editModalFields = document.getElementById('editModalFields');
+const editModalCancel = document.getElementById('editModalCancel');
+const editModalSubmit = document.getElementById('editModalSubmit');
+const editModalClose = document.getElementById('closeEditModal');
 const loadingModal = document.getElementById('loadingModal');
 const deviceType = document.getElementById('deviceType');
 const readerFields = document.getElementById('readerFields');
@@ -81,6 +95,86 @@ const showLoading = () => {
 
 const hideLoading = () => {
   loadingModal?.classList.remove('modal--open');
+};
+
+let confirmResolver = null;
+let editResolver = null;
+
+const closeConfirmModal = () => {
+  actionModal?.classList.remove('modal--open');
+};
+
+const closeEditModal = () => {
+  editModal?.classList.remove('modal--open');
+  if (editModalFields) {
+    editModalFields.innerHTML = '';
+  }
+};
+
+const resolveConfirm = (value) => {
+  if (!confirmResolver) return;
+  confirmResolver(value);
+  confirmResolver = null;
+  closeConfirmModal();
+};
+
+const resolveEdit = (value) => {
+  if (!editResolver) return;
+  editResolver(value);
+  editResolver = null;
+  closeEditModal();
+};
+
+const showConfirm = (message, options = {}) => {
+  if (!actionModal) return Promise.resolve(false);
+  return new Promise((resolve) => {
+    confirmResolver = resolve;
+    if (actionModalTitle) {
+      actionModalTitle.textContent = options.title ?? 'Подтверждение';
+    }
+    if (actionModalBody) {
+      actionModalBody.textContent = message;
+    }
+    if (actionModalConfirm) {
+      actionModalConfirm.textContent = options.confirmText ?? 'Подтвердить';
+    }
+    actionModal.classList.add('modal--open');
+  });
+};
+
+const showEditModal = ({ title, fields, submitText }) => {
+  if (!editModal || !editModalFields || !editModalForm) {
+    return Promise.resolve(null);
+  }
+  return new Promise((resolve) => {
+    editResolver = resolve;
+    if (editModalTitle) {
+      editModalTitle.textContent = title;
+    }
+    if (editModalSubmit) {
+      editModalSubmit.textContent = submitText ?? 'Сохранить';
+    }
+    editModalFields.innerHTML = '';
+    fields.forEach((field) => {
+      const wrapper = document.createElement('label');
+      wrapper.className = 'form-field';
+      const label = document.createElement('span');
+      label.textContent = field.label;
+      const input = document.createElement('input');
+      input.type = field.type ?? 'text';
+      input.name = field.name;
+      input.value = field.value ?? '';
+      if (field.placeholder) {
+        input.placeholder = field.placeholder;
+      }
+      if (field.required) {
+        input.required = true;
+      }
+      wrapper.append(label, input);
+      editModalFields.appendChild(wrapper);
+    });
+    editModal.classList.add('modal--open');
+  });
 };
 
 const formatLogDate = (dateValue) => {
@@ -237,7 +331,7 @@ const renderSpaceHeader = (space) => {
   spaceIdEl.textContent = space.id;
   spaceStateEl.textContent = statusMap[space.status] ?? space.status;
   spaceStateEl.className = `status-card__state ${statusTone[space.status] ?? ''}`;
-  spaceMetaEl.textContent = `Координаты: ${space.address} • ${space.city} • ${space.timezone}`;
+  spaceMetaEl.textContent = `Координаты: ${space.address} • ${space.city}`;
   hubLabel.textContent = space.hubId ? `Hub ${space.hubId}` : 'Hub не привязан';
 };
 
@@ -313,6 +407,10 @@ const renderDeviceDetails = (device) => {
           <option value="false" ${device.config?.bypass ? '' : 'selected'}>Обход: нет</option>
           <option value="true" ${device.config?.bypass ? 'selected' : ''}>Обход: да</option>
         </select>
+        <select name="silent">
+          <option value="false" ${device.config?.silent ? '' : 'selected'}>Тихая: нет</option>
+          <option value="true" ${device.config?.silent ? 'selected' : ''}>Тихая: да</option>
+        </select>
         <input type="number" name="normalLevel" value="${device.config?.normalLevel ?? 15}" min="0" max="15" />
       `;
     }
@@ -323,6 +421,7 @@ const renderDeviceDetails = (device) => {
       return `
         <input type="number" name="outputLevel" value="${device.config?.level ?? 15}" min="0" max="15" />
         <input type="number" name="intervalMs" value="${device.config?.intervalMs ?? 1000}" min="100" />
+        <input type="number" name="alarmDurationSec" value="${device.config?.alarmDurationSec ?? 60}" min="1" />
       `;
     }
     if (device.type === 'reader') {
@@ -372,11 +471,13 @@ const renderDeviceDetails = (device) => {
 
       try {
         if (device.type === 'key') {
-          if (!confirm('Удалить ключ?')) return;
+          const shouldDelete = await showConfirm('Удалить ключ?', { confirmText: 'Удалить' });
+          if (!shouldDelete) return;
           showLoading();
           await apiFetch(`/api/spaces/${space.id}/keys/${device.config.keyId}`, { method: 'DELETE' });
         } else {
-          if (!confirm('Удалить устройство?')) return;
+          const shouldDelete = await showConfirm('Удалить устройство?', { confirmText: 'Удалить' });
+          if (!shouldDelete) return;
           showLoading();
           await apiFetch(`/api/spaces/${space.id}/devices/${device.id}`, { method: 'DELETE' });
         }
@@ -404,6 +505,7 @@ const renderDeviceDetails = (device) => {
       const formData = new FormData(editForm);
       const payload = Object.fromEntries(formData.entries());
       try {
+        showLoading();
         if (device.type === 'key') {
           await apiFetch(`/api/spaces/${space.id}/keys/${device.config.keyId}`, {
             method: 'PATCH',
@@ -423,6 +525,8 @@ const renderDeviceDetails = (device) => {
       } catch (error) {
         console.error(error);
         handleApiError(error, 'Не удалось обновить устройство.');
+      } finally {
+        hideLoading();
       }
     });
   }
@@ -443,10 +547,6 @@ const renderObjectInfo = (space) => {
       <strong>${space.city}</strong>
     </div>
     <div class="info-card">
-      <span>Часовой пояс</span>
-      <strong>${space.timezone}</strong>
-    </div>
-    <div class="info-card">
       <span>Хаб</span>
       <strong>${space.hubId ?? 'Не привязан'}</strong>
     </div>
@@ -464,7 +564,6 @@ const renderObjectInfo = (space) => {
     editForm.name.value = space.name;
     editForm.address.value = space.address;
     editForm.city.value = space.city;
-    editForm.timezone.value = space.timezone;
   }
 };
 
@@ -488,7 +587,8 @@ const renderContacts = (space) => {
         const action = button.dataset.action;
         if (action === 'delete') {
           try {
-            if (!confirm('Удалить контактное лицо?')) return;
+            const shouldDelete = await showConfirm('Удалить контактное лицо?', { confirmText: 'Удалить' });
+            if (!shouldDelete) return;
             showLoading();
             await apiFetch(`/api/spaces/${space.id}/contacts/${index}`, { method: 'DELETE' });
             await refreshAll();
@@ -501,18 +601,28 @@ const renderContacts = (space) => {
           }
         } else {
           try {
-            const name = prompt('Имя', contact.name) ?? contact.name;
-            const role = prompt('Роль', contact.role) ?? contact.role;
-            const phone = prompt('Телефон', contact.phone) ?? contact.phone;
+            const result = await showEditModal({
+              title: 'Изменить контакт',
+              submitText: 'Сохранить',
+              fields: [
+                { label: 'Имя', name: 'name', value: contact.name, required: true },
+                { label: 'Роль', name: 'role', value: contact.role ?? '' },
+                { label: 'Телефон', name: 'phone', type: 'tel', value: contact.phone ?? '' },
+              ],
+            });
+            if (!result) return;
+            showLoading();
             await apiFetch(`/api/spaces/${space.id}/contacts/${index}`, {
               method: 'PATCH',
-              body: JSON.stringify({ name, role, phone }),
+              body: JSON.stringify(result),
             });
             await refreshAll();
             showToast('Контакт обновлён.');
           } catch (error) {
             console.error(error);
             handleApiError(error, 'Не удалось обновить контакт.');
+          } finally {
+            hideLoading();
           }
         }
       });
@@ -539,7 +649,8 @@ const renderNotes = (space) => {
         const action = button.dataset.action;
         if (action === 'delete') {
           try {
-            if (!confirm('Удалить примечание?')) return;
+            const shouldDelete = await showConfirm('Удалить примечание?', { confirmText: 'Удалить' });
+            if (!shouldDelete) return;
             showLoading();
             await apiFetch(`/api/spaces/${space.id}/notes/${index}`, { method: 'DELETE' });
             await refreshAll();
@@ -552,16 +663,24 @@ const renderNotes = (space) => {
           }
         } else {
           try {
-            const text = prompt('Текст примечания', note) ?? note;
+            const result = await showEditModal({
+              title: 'Изменить примечание',
+              submitText: 'Сохранить',
+              fields: [{ label: 'Текст', name: 'text', value: note, required: true }],
+            });
+            if (!result) return;
+            showLoading();
             await apiFetch(`/api/spaces/${space.id}/notes/${index}`, {
               method: 'PATCH',
-              body: JSON.stringify({ text }),
+              body: JSON.stringify(result),
             });
             await refreshAll();
             showToast('Примечание обновлено.');
           } catch (error) {
             console.error(error);
             handleApiError(error, 'Не удалось обновить примечание.');
+          } finally {
+            hideLoading();
           }
         }
       });
@@ -594,7 +713,8 @@ const renderPhotos = (space) => {
         const action = button.dataset.action;
         if (action === 'delete') {
           try {
-            if (!confirm('Удалить фото?')) return;
+            const shouldDelete = await showConfirm('Удалить фото?', { confirmText: 'Удалить' });
+            if (!shouldDelete) return;
             showLoading();
             await apiFetch(`/api/spaces/${space.id}/photos/${index}`, { method: 'DELETE' });
             await refreshAll();
@@ -607,17 +727,27 @@ const renderPhotos = (space) => {
           }
         } else {
           try {
-            const url = prompt('URL фото', photo.url) ?? photo.url;
-            const label = prompt('Подпись', photo.label) ?? photo.label;
+            const result = await showEditModal({
+              title: 'Изменить фото',
+              submitText: 'Сохранить',
+              fields: [
+                { label: 'URL', name: 'url', type: 'url', value: photo.url, required: true },
+                { label: 'Подпись', name: 'label', value: photo.label ?? '' },
+              ],
+            });
+            if (!result) return;
+            showLoading();
             await apiFetch(`/api/spaces/${space.id}/photos/${index}`, {
               method: 'PATCH',
-              body: JSON.stringify({ url, label }),
+              body: JSON.stringify(result),
             });
             await refreshAll();
             showToast('Фото обновлено.');
           } catch (error) {
             console.error(error);
             handleApiError(error, 'Не удалось обновить фото.');
+          } finally {
+            hideLoading();
           }
         }
       });
@@ -691,6 +821,7 @@ chipActions.forEach((chip) => {
     if (!space) return;
 
     try {
+      showLoading();
       if (action === 'arm') {
         const updated = await apiFetch(`/api/spaces/${space.id}/arm`, { method: 'POST' });
         Object.assign(space, updated);
@@ -706,6 +837,8 @@ chipActions.forEach((chip) => {
     } catch (error) {
       console.error(error);
       showToast('Ошибка обновления статуса.');
+    } finally {
+      hideLoading();
     }
   });
 });
@@ -770,8 +903,13 @@ const refreshAll = async () => {
 
 if (refreshBtn) {
   refreshBtn.addEventListener('click', async () => {
-    await refreshAll();
-    showToast('Данные синхронизированы с хабами.');
+    try {
+      showLoading();
+      await refreshAll();
+      showToast('Данные синхронизированы с хабами.');
+    } finally {
+      hideLoading();
+    }
   });
 }
 
@@ -782,7 +920,8 @@ if (deleteSpaceBtn) {
     if (!space) return;
 
     try {
-      if (!confirm('Удалить объект?')) return;
+      const shouldDelete = await showConfirm('Удалить объект?', { confirmText: 'Удалить' });
+      if (!shouldDelete) return;
       showLoading();
       await apiFetch(`/api/spaces/${space.id}`, { method: 'DELETE' });
       state.selectedSpaceId = null;
@@ -806,7 +945,8 @@ if (detachHubBtn) {
     if (!space) return;
 
     try {
-      if (!confirm('Удалить хаб из пространства?')) return;
+      const shouldDelete = await showConfirm('Удалить хаб из пространства?', { confirmText: 'Удалить' });
+      if (!shouldDelete) return;
       showLoading();
       await apiFetch(`/api/spaces/${space.id}/hub`, { method: 'DELETE' });
       await refreshAll();
@@ -1101,6 +1241,12 @@ if (openCreate && modal) {
   });
 }
 
+if (backToMain) {
+  backToMain.addEventListener('click', () => {
+    window.location.href = 'main.html';
+  });
+}
+
 if (openDeviceModal && deviceModal) {
   openDeviceModal.addEventListener('click', () => {
     deviceModal.classList.add('modal--open');
@@ -1158,6 +1304,60 @@ if (guardModal) {
   });
 }
 
+if (actionModalCancel) {
+  actionModalCancel.addEventListener('click', () => {
+    resolveConfirm(false);
+  });
+}
+
+if (actionModalConfirm) {
+  actionModalConfirm.addEventListener('click', () => {
+    resolveConfirm(true);
+  });
+}
+
+if (actionModalClose) {
+  actionModalClose.addEventListener('click', () => {
+    resolveConfirm(false);
+  });
+}
+
+if (actionModal) {
+  actionModal.addEventListener('click', (event) => {
+    if (event.target === actionModal) {
+      resolveConfirm(false);
+    }
+  });
+}
+
+if (editModalCancel) {
+  editModalCancel.addEventListener('click', () => {
+    resolveEdit(null);
+  });
+}
+
+if (editModalClose) {
+  editModalClose.addEventListener('click', () => {
+    resolveEdit(null);
+  });
+}
+
+if (editModal) {
+  editModal.addEventListener('click', (event) => {
+    if (event.target === editModal) {
+      resolveEdit(null);
+    }
+  });
+}
+
+if (editModalForm) {
+  editModalForm.addEventListener('submit', (event) => {
+    event.preventDefault();
+    const payload = Object.fromEntries(new FormData(editModalForm).entries());
+    resolveEdit(payload);
+  });
+}
+
 if (modalClose && modal) {
   modalClose.addEventListener('click', () => {
     modal.classList.remove('modal--open');
@@ -1208,6 +1408,13 @@ const init = async () => {
     await loadLogs(state.selectedSpaceId);
   }
   renderAll();
+  const params = new URLSearchParams(window.location.search);
+  if (params.get('createSpace')) {
+    modal?.classList.add('modal--open');
+    params.delete('createSpace');
+    const newUrl = `${window.location.pathname}${params.toString() ? `?${params.toString()}` : ''}`;
+    window.history.replaceState({}, '', newUrl);
+  }
   setInterval(pollLogs, 3000);
   setInterval(refreshAll, 12000);
 };

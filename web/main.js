@@ -6,6 +6,8 @@ const state = {
 const grid = document.getElementById('mainObjectGrid');
 const logTable = document.getElementById('mainLogTable');
 const refreshBtn = document.getElementById('mainRefresh');
+const createSpaceBtn = document.getElementById('mainCreateSpace');
+const loadingModal = document.getElementById('mainLoadingModal');
 const filterButtons = document.querySelectorAll('#mainFilters .chip');
 const logFilters = document.querySelectorAll('#mainLogFilters .chip');
 const searchInput = document.getElementById('mainSearch');
@@ -16,6 +18,14 @@ const apiFetch = async (path) => {
     throw new Error(`API error: ${response.status}`);
   }
   return response.json();
+};
+
+const showLoading = () => {
+  loadingModal?.classList.add('modal--open');
+};
+
+const hideLoading = () => {
+  loadingModal?.classList.remove('modal--open');
 };
 
 const formatLogDate = (dateValue) => {
@@ -117,9 +127,14 @@ const renderLogs = (logs) => {
 };
 
 const refresh = async () => {
-  const [spaces, logs] = await Promise.all([apiFetch('/api/spaces'), apiFetch('/api/logs')]);
-  renderObjects(spaces);
-  renderLogs(logs);
+  try {
+    showLoading();
+    const [spaces, logs] = await Promise.all([apiFetch('/api/spaces'), apiFetch('/api/logs')]);
+    renderObjects(spaces);
+    renderLogs(logs);
+  } finally {
+    hideLoading();
+  }
 };
 
 filterButtons.forEach((button) => {
@@ -143,6 +158,14 @@ logFilters.forEach((button) => {
 if (refreshBtn) {
   refreshBtn.addEventListener('click', () => {
     refresh().catch(() => null);
+  });
+}
+
+if (createSpaceBtn) {
+  createSpaceBtn.addEventListener('click', () => {
+    const url = new URL('index.html', window.location.href);
+    url.searchParams.set('createSpace', '1');
+    window.location.href = url.toString();
   });
 }
 

@@ -18,7 +18,7 @@
           </div>
           <div class="topbar__right">
             <button class="button button--ghost" id="mainRefresh">Обновить</button>
-            <a class="button button--ghost button--link" href="index.html">Режим инженера</a>
+            <button class="button button--primary" id="mainCreateSpace">Добавить объект</button>
           </div>
         </header>
 
@@ -52,6 +52,13 @@
           <div class="log-table" id="mainLogTable"></div>
         </section>
       </main>
+    </div>
+
+    <div class="modal modal--loading" id="mainLoadingModal" aria-hidden="true">
+      <div class="modal__content modal__content--small">
+        <div class="spinner"></div>
+        <p>Выполняется действие...</p>
+      </div>
     </div>
 
     <script src="main.js"></script>
