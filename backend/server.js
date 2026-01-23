@@ -749,7 +749,7 @@ app.get('/api/logs', requireAuth, async (req, res) => {
   }));
 });
 
-app.post('/api/spaces', requireAuth, requireInstaller, async (req, res) => {
+app.post('/api/spaces', requireAuth, async (req, res) => {
   const { hubId, name, address, city, timezone } = req.body ?? {};
   if (!hubId || !name) {
     return res.status(400).json({ error: 'missing_fields' });
@@ -910,17 +910,14 @@ app.post('/api/spaces/:id/members', requireAuth, requireInstaller, async (req, r
     res.status(403).json({ error: 'forbidden' });
     return;
   }
-  const { email, nickname, role, identifier } = req.body ?? {};
-  const value = identifier ?? email ?? nickname;
+  const { nickname, role, identifier } = req.body ?? {};
+  const value = identifier ?? nickname;
   if (!value) {
     res.status(400).json({ error: 'missing_identifier' });
     return;
   }
   const normalized = String(value).trim();
-  const useEmail = normalized.includes('@');
-  const userResult = useEmail
-    ? await query('SELECT id, role FROM users WHERE email = $1', [normalized.toLowerCase()])
-    : await query('SELECT id, role FROM users WHERE minecraft_nickname ILIKE $1', [normalized]);
+  const userResult = await query('SELECT id, role FROM users WHERE minecraft_nickname ILIKE $1', [normalized]);
   if (!userResult.rows.length) {
     res.status(404).json({ error: 'user_not_found' });
     return;

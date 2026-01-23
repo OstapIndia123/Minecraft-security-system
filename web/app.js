@@ -155,10 +155,10 @@ const translations = {
     'engineer.search.device': 'Поиск по названию или ID',
     'engineer.users.title': 'Пользователи',
     'engineer.users.add': 'Добавить пользователя',
-    'engineer.users.email': 'Никнейм или email',
+    'engineer.users.email': 'Никнейм',
     'engineer.installers.title': 'Инженеры монтажа',
     'engineer.installers.add': 'Добавить инженера',
-    'engineer.installers.email': 'Никнейм или email',
+    'engineer.installers.email': 'Никнейм',
     'engineer.installers.note': 'Покинуть объект можно только если есть хотя бы ещё один инженер монтажа.',
     'engineer.members.emptyUsers': 'Нет пользователей',
     'engineer.members.emptyInstallers': 'Нет инженеров',
@@ -246,10 +246,10 @@ const translations = {
     'engineer.search.device': 'Search by name or ID',
     'engineer.users.title': 'Users',
     'engineer.users.add': 'Add user',
-    'engineer.users.email': 'Nickname or email',
+    'engineer.users.email': 'Nickname',
     'engineer.installers.title': 'Installers',
     'engineer.installers.add': 'Add installer',
-    'engineer.installers.email': 'Nickname or email',
+    'engineer.installers.email': 'Nickname',
     'engineer.installers.note': 'You can leave only if another installer still has access.',
     'engineer.members.emptyUsers': 'No users',
     'engineer.members.emptyInstallers': 'No installers',
@@ -570,8 +570,16 @@ const loadSpaces = async () => {
         state.selectedSpaceId = savedSpaceId;
       }
     }
+    if (state.selectedSpaceId && !spaces.some((space) => space.id === state.selectedSpaceId)) {
+      state.selectedSpaceId = null;
+      localStorage.removeItem('selectedSpaceId');
+    }
     if (!state.selectedSpaceId && spaces.length) {
       state.selectedSpaceId = spaces[0].id;
+    }
+    if (!spaces.length) {
+      state.selectedSpaceId = null;
+      localStorage.removeItem('selectedSpaceId');
     }
   } catch (error) {
     console.error(error);
@@ -915,7 +923,7 @@ const renderMembers = (members) => {
       users.forEach((member) => {
         const card = document.createElement('div');
         card.className = 'member-card';
-        const label = member.minecraft_nickname ? `${member.minecraft_nickname} (${member.email})` : member.email;
+        const label = member.minecraft_nickname ?? member.email;
         card.innerHTML = `
           <div>
             <div class="member-card__title">${label}</div>
@@ -948,7 +956,7 @@ const renderMembers = (members) => {
       installers.forEach((member) => {
         const card = document.createElement('div');
         card.className = 'member-card';
-        const label = member.minecraft_nickname ? `${member.minecraft_nickname} (${member.email})` : member.email;
+        const label = member.minecraft_nickname ?? member.email;
         card.innerHTML = `
           <div>
             <div class="member-card__title">${label}</div>
