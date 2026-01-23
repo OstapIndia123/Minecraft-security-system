@@ -22,11 +22,12 @@ const MIN_INTERVAL_MS = 300;
 const MAX_SIREN_DURATION_SEC = 120;
 const MAX_DELAY_SECONDS = 120;
 const MAX_NOTE_LENGTH = 100;
-const MAX_SPACE_NAME_LENGTH = 80;
+const MAX_SPACE_NAME_LENGTH = 16;
 const MAX_ADDRESS_LENGTH = 120;
+const MAX_SERVER_NAME_LENGTH = 16;
 const MAX_CITY_LENGTH = 60;
-const MAX_CONTACT_NAME_LENGTH = 60;
-const MAX_CONTACT_ROLE_LENGTH = 60;
+const MAX_CONTACT_NAME_LENGTH = 40;
+const MAX_CONTACT_ROLE_LENGTH = 40;
 const MAX_CONTACT_PHONE_LENGTH = 40;
 const MAX_DEVICE_NAME_LENGTH = 60;
 const MAX_DEVICE_ROOM_LENGTH = 60;
@@ -223,6 +224,7 @@ const mapSpace = (row) => ({
   hubId: row.hub_id,
   name: row.name,
   address: row.address,
+  server: row.server,
   status: row.status,
   hubOnline: row.hub_online,
   issues: row.issues,
@@ -1025,15 +1027,17 @@ app.get('/api/logs', requireAuth, async (req, res) => {
 });
 
 app.post('/api/spaces', requireAuth, requireInstaller, async (req, res) => {
-  const { hubId, name, address, city, timezone } = req.body ?? {};
+  const { hubId, name, address, server, city, timezone } = req.body ?? {};
   const normalizedName = normalizeText(name);
   const normalizedAddress = normalizeText(address) || '—';
+  const normalizedServer = normalizeText(server) || '—';
   const normalizedCity = normalizeText(city) || '—';
   if (!hubId || !normalizedName) {
     return res.status(400).json({ error: 'missing_fields' });
   }
   if (isOverMaxLength(normalizedName, MAX_SPACE_NAME_LENGTH)
     || isOverMaxLength(normalizedAddress, MAX_ADDRESS_LENGTH)
+    || isOverMaxLength(normalizedServer, MAX_SERVER_NAME_LENGTH)
     || isOverMaxLength(normalizedCity, MAX_CITY_LENGTH)) {
     return res.status(400).json({ error: 'field_too_long' });
   }
@@ -1055,8 +1059,8 @@ app.post('/api/spaces', requireAuth, requireInstaller, async (req, res) => {
   const photos = [];
 
   await query(
-    `INSERT INTO spaces (id, hub_id, name, address, status, hub_online, issues, city, timezone, company, contacts, notes, photos)
-     VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13)`,
+    `INSERT INTO spaces (id, hub_id, name, address, status, hub_online, issues, server, city, timezone, company, contacts, notes, photos)
+     VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14)`,
     [
       generatedId,
       null,
@@ -1065,6 +1069,7 @@ app.post('/api/spaces', requireAuth, requireInstaller, async (req, res) => {
       'disarmed',
       null,
       false,
+      normalizedServer,
       normalizedCity,
       timezone ?? 'Europe/Kyiv',
       JSON.stringify(company),
@@ -1091,7 +1096,7 @@ app.patch('/api/spaces/:id', requireAuth, requireInstaller, async (req, res) => 
     return;
   }
   if (!await ensureSpaceDisarmed(req.params.id, res)) return;
-  const { name, address, city, timezone } = req.body ?? {};
+  const { name, address, server, city, timezone } = req.body ?? {};
   const existing = await query('SELECT * FROM spaces WHERE id = $1', [req.params.id]);
   if (!existing.rows.length) {
     return res.status(404).json({ error: 'space_not_found' });
@@ -1100,20 +1105,23 @@ app.patch('/api/spaces/:id', requireAuth, requireInstaller, async (req, res) => 
   const space = existing.rows[0];
   const normalizedName = name ? normalizeText(name) : space.name;
   const normalizedAddress = address ? normalizeText(address) : space.address;
+  const normalizedServer = server ? normalizeText(server) : space.server;
   const normalizedCity = city ? normalizeText(city) : space.city;
   if (!normalizedName) {
     return res.status(400).json({ error: 'missing_fields' });
   }
   if (isOverMaxLength(normalizedName, MAX_SPACE_NAME_LENGTH)
     || isOverMaxLength(normalizedAddress, MAX_ADDRESS_LENGTH)
+    || isOverMaxLength(normalizedServer, MAX_SERVER_NAME_LENGTH)
     || isOverMaxLength(normalizedCity, MAX_CITY_LENGTH)) {
     return res.status(400).json({ error: 'field_too_long' });
   }
   const updated = await query(
-    'UPDATE spaces SET name = $1, address = $2, city = $3, timezone = $4 WHERE id = $5 RETURNING *',
+    'UPDATE spaces SET name = $1, address = $2, server = $3, city = $4, timezone = $5 WHERE id = $6 RETURNING *',
     [
       normalizedName,
       normalizedAddress,
+      normalizedServer,
       normalizedCity,
       timezone ?? space.timezone,
       req.params.id,

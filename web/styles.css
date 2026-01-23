@@ -735,6 +735,16 @@ body {
   font-size: 12px;
 }
 
+.profile-field__row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.profile-field__row input {
+  flex: 1;
+}
+
 .profile-field input,
 .profile-field select {
   background: var(--panel-light);
@@ -742,6 +752,11 @@ body {
   border-radius: 10px;
   padding: 8px 10px;
   color: var(--text);
+}
+
+.profile-field input:disabled {
+  opacity: 0.6;
+  cursor: not-allowed;
 }
 
 .profile-logout {

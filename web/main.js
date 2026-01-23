@@ -266,6 +266,7 @@ const renderObjects = (spaces) => {
       <div class="object-card__title">${escapeHtml(space.name)}</div>
       <div class="object-card__meta">${t('pcn.object.hubId')} ${escapeHtml(space.hubId ?? '—')}</div>
       <div class="object-card__status">${t(`status.${space.status}`) ?? space.status}</div>
+      <div class="object-card__meta">${escapeHtml(space.server ?? '—')}</div>
       <div class="object-card__meta">${escapeHtml(space.address)}</div>
     `;
     card.addEventListener('click', () => {

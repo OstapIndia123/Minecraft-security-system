@@ -68,7 +68,10 @@
                 </div>
                 <label class="profile-field">
                   <span data-i18n="profile.nickname">Игровой ник</span>
-                  <input type="text" id="profileNickname" placeholder="PlayerName" maxlength="16" />
+                  <div class="profile-field__row">
+                    <input type="text" id="profileNickname" placeholder="PlayerName" maxlength="16" />
+                    <button class="button button--danger profile-nickname-action" id="profileNicknameChange" type="button" data-i18n="profile.nickname.change">Сменить</button>
+                  </div>
                 </label>
                 <label class="profile-field">
                   <span data-i18n="profile.timezone">Часовой пояс</span>
@@ -167,8 +170,9 @@
             <div class="panel__footer">
               <h3 data-i18n="engineer.object.edit">Редактировать объект</h3>
               <form class="form-grid" id="editForm">
-                <input type="text" name="name" data-i18n-placeholder="engineer.object.name" placeholder="Название" maxlength="80" required />
+                <input type="text" name="name" data-i18n-placeholder="engineer.object.name" placeholder="Название" maxlength="16" required />
                 <input type="text" name="address" data-i18n-placeholder="engineer.object.coords" placeholder="Координаты" maxlength="120" />
+                <input type="text" name="server" data-i18n-placeholder="engineer.object.server" placeholder="Сервер" maxlength="16" />
                 <input type="text" name="city" data-i18n-placeholder="engineer.object.city" placeholder="Город" maxlength="60" />
                 <button class="button button--primary" type="submit" data-i18n="engineer.object.save">Сохранить</button>
               </form>
@@ -194,8 +198,8 @@
             <div class="panel__footer">
               <h3 data-i18n="engineer.contacts.addTitle">Добавить контактное лицо</h3>
               <form class="form-grid" id="contactForm">
-                <input type="text" name="name" data-i18n-placeholder="engineer.contacts.name" placeholder="Имя" maxlength="60" required />
-                <input type="text" name="role" data-i18n-placeholder="engineer.contacts.role" placeholder="Роль" maxlength="60" />
+                <input type="text" name="name" data-i18n-placeholder="engineer.contacts.name" placeholder="Имя" maxlength="40" required />
+                <input type="text" name="role" data-i18n-placeholder="engineer.contacts.role" placeholder="Роль" maxlength="40" />
                 <input type="text" name="phone" data-i18n-placeholder="engineer.contacts.phone" placeholder="Телефон" maxlength="40" />
                 <button class="button button--primary" type="submit" data-i18n="engineer.contacts.add">Добавить</button>
               </form>
@@ -283,8 +287,9 @@
         </div>
         <form class="form-grid" id="spaceForm">
           <input type="text" name="hubId" placeholder="ID хаба" maxlength="32" required />
-          <input type="text" name="name" placeholder="Название" maxlength="80" required />
+          <input type="text" name="name" placeholder="Название" maxlength="16" required />
           <input type="text" name="address" placeholder="Координаты" maxlength="120" />
+          <input type="text" name="server" placeholder="Сервер" maxlength="16" />
           <input type="text" name="city" placeholder="Город" maxlength="60" />
           <button class="button button--primary" type="submit">Создать</button>
         </form>

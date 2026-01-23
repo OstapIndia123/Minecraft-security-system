@@ -46,7 +46,10 @@
                 </div>
                 <label class="profile-field">
                   <span data-i18n="profile.nickname">Игровой ник</span>
-                  <input type="text" id="profileNickname" placeholder="PlayerName" maxlength="16" />
+                  <div class="profile-field__row">
+                    <input type="text" id="profileNickname" placeholder="PlayerName" maxlength="16" />
+                    <button class="button button--danger profile-nickname-action" id="profileNicknameChange" type="button" data-i18n="profile.nickname.change">Сменить</button>
+                  </div>
                 </label>
                 <label class="profile-field">
                   <span data-i18n="profile.timezone">Часовой пояс</span>

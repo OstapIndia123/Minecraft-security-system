@@ -9,6 +9,7 @@ const state = {
   language: 'ru',
   timezone: 'UTC',
   nickname: '',
+  lastNicknameChangeAt: null,
   avatarUrl: '',
   role: 'user',
 };
@@ -16,6 +17,7 @@ const state = {
 let spaces = [];
 const FLASH_DURATION_MS = 15000;
 const logFlashActive = new Map();
+const NICKNAME_COOLDOWN_MS = 3 * 24 * 60 * 60 * 1000;
 
 const escapeHtml = (value) => String(value ?? '')
   .replace(/&/g, '&amp;')
@@ -81,6 +83,7 @@ const backToMain = document.getElementById('backToMain');
 const avatarButton = document.getElementById('avatarButton');
 const profileDropdown = document.getElementById('profileDropdown');
 const profileNickname = document.getElementById('profileNickname');
+const profileNicknameChange = document.getElementById('profileNicknameChange');
 const profileTimezone = document.getElementById('profileTimezone');
 const profileLanguage = document.getElementById('profileLanguage');
 const profileLogout = document.getElementById('profileLogout');
@@ -136,6 +139,7 @@ const translations = {
     'engineer.object.edit': 'Редактировать объект',
     'engineer.object.name': 'Название',
     'engineer.object.coords': 'Координаты',
+    'engineer.object.server': 'Сервер',
     'engineer.object.city': 'Город',
     'engineer.object.save': 'Сохранить',
     'engineer.object.removeHub': 'Удалить хаб',
@@ -198,6 +202,7 @@ const translations = {
     'engineer.hub.unbound': 'Хаб не привязан',
     'engineer.object.label.name': 'Название',
     'engineer.object.label.coords': 'Координаты',
+    'engineer.object.label.server': 'Сервер',
     'engineer.object.label.city': 'Город',
     'engineer.object.label.hub': 'Хаб',
     'engineer.object.label.hubStatus': 'Статус хаба',
@@ -210,6 +215,7 @@ const translations = {
     'status.night': 'Ночной режим',
     'profile.title': 'Профиль',
     'profile.nickname': 'Игровой ник',
+    'profile.nickname.change': 'Сменить',
     'profile.timezone': 'Часовой пояс',
     'profile.language': 'Язык',
     'profile.switchUser': 'Перейти на обычный',
@@ -232,6 +238,7 @@ const translations = {
     'engineer.object.edit': 'Edit object',
     'engineer.object.name': 'Name',
     'engineer.object.coords': 'Coordinates',
+    'engineer.object.server': 'Server',
     'engineer.object.city': 'City',
     'engineer.object.save': 'Save',
     'engineer.object.removeHub': 'Remove hub',
@@ -294,6 +301,7 @@ const translations = {
     'engineer.hub.unbound': 'Hub not attached',
     'engineer.object.label.name': 'Name',
     'engineer.object.label.coords': 'Coordinates',
+    'engineer.object.label.server': 'Server',
     'engineer.object.label.city': 'City',
     'engineer.object.label.hub': 'Hub',
     'engineer.object.label.hubStatus': 'Hub status',
@@ -306,6 +314,7 @@ const translations = {
     'status.night': 'Night',
     'profile.title': 'Profile',
     'profile.nickname': 'Game nickname',
+    'profile.nickname.change': 'Change',
     'profile.timezone': 'Time zone',
     'profile.language': 'Language',
     'profile.switchUser': 'Go to user',
@@ -382,12 +391,36 @@ const syncProfileSettings = async () => {
     state.language = result.user.language ?? state.language;
     state.timezone = result.user.timezone ?? state.timezone;
     state.nickname = result.user.minecraft_nickname ?? state.nickname;
+    state.lastNicknameChangeAt = result.user.last_nickname_change_at ?? state.lastNicknameChangeAt;
     state.avatarUrl = result.user.discord_avatar_url ?? state.avatarUrl;
     state.role = result.user.role ?? state.role;
     saveProfileSettings();
     setAvatar(state.avatarUrl);
   } catch {
     // ignore
+  }
+};
+
+const getNicknameLockUntil = (lastChangedAt) => {
+  if (!lastChangedAt) return null;
+  const lastTimestamp = new Date(lastChangedAt).getTime();
+  if (Number.isNaN(lastTimestamp)) return null;
+  const lockUntil = lastTimestamp + NICKNAME_COOLDOWN_MS;
+  return Date.now() < lockUntil ? lockUntil : null;
+};
+
+const updateNicknameControls = () => {
+  const lockUntil = getNicknameLockUntil(state.lastNicknameChangeAt);
+  const locked = Boolean(lockUntil);
+  if (profileNickname) profileNickname.disabled = locked;
+  if (profileNicknameChange) {
+    profileNicknameChange.disabled = locked;
+    if (locked && lockUntil) {
+      const date = new Date(lockUntil);
+      profileNicknameChange.title = `Смена доступна после ${date.toLocaleDateString('ru-RU')} ${date.toLocaleTimeString('ru-RU', { hour: '2-digit', minute: '2-digit' })}`;
+    } else {
+      profileNicknameChange.removeAttribute('title');
+    }
   }
 };
 
@@ -591,6 +624,20 @@ const startHubRegistrationMonitor = (spaceId, registration) => {
   }, 2000);
 };
 
+const checkHubRegistration = async (spaceId) => {
+  if (!spaceId || hubRegistrationTimer || hubRegistrationPoller) return;
+  try {
+    const status = await apiFetch(`/api/spaces/${spaceId}/hub-registration`);
+    if (status?.pending && status?.hubId) {
+      startHubRegistrationMonitor(spaceId, status);
+    } else if (status?.expired) {
+      showToast('Не удалось подтвердить установку хаба.');
+    }
+  } catch (error) {
+    console.error(error);
+  }
+};
+
 const isSpaceArmed = () => {
   const space = spaces.find((item) => item.id === state.selectedSpaceId);
   return space?.status === 'armed';
@@ -610,7 +657,7 @@ const handleApiError = (error, fallbackMessage) => {
     return;
   }
   if (error.message === 'user_not_found') {
-    showToast('Пользователь не найден.');
+    showToast('Такого игрока не существует.');
     return;
   }
   if (error.message === 'nickname_too_long') {
@@ -619,6 +666,10 @@ const handleApiError = (error, fallbackMessage) => {
   }
   if (error.message === 'invalid_nickname') {
     showToast('Введите корректный ник.');
+    return;
+  }
+  if (error.message === 'nickname_taken') {
+    showToast('Такой ник уже используется.');
     return;
   }
   if (error.message === 'nickname_cooldown') {
@@ -760,6 +811,7 @@ const renderObjectList = () => {
       <div class="object-card__title">${escapeHtml(space.name)}</div>
       <div class="object-card__meta">${t('engineer.object.hubId')} ${escapeHtml(space.hubId ?? '—')}</div>
       <div class="object-card__status ${statusTone[space.status] ?? ''}">${t(`status.${space.status}`) ?? statusMap[space.status] ?? space.status}</div>
+      <div class="object-card__meta">${t('engineer.object.server')}: ${escapeHtml(space.server ?? '—')}</div>
       <div class="object-card__meta">${escapeHtml(space.address)}</div>
     `;
     card.addEventListener('click', async () => {
@@ -769,6 +821,7 @@ const renderObjectList = () => {
       localStorage.setItem('selectedSpaceId', space.id);
       await loadLogs(space.id);
       renderAll();
+      await checkHubRegistration(space.id);
     });
     objectList.appendChild(card);
   });
@@ -778,7 +831,7 @@ const renderSpaceHeader = (space) => {
   spaceIdEl.textContent = space.id;
   spaceStateEl.textContent = t(`status.${space.status}`) ?? statusMap[space.status] ?? space.status;
   spaceStateEl.className = `status-card__state ${statusTone[space.status] ?? ''}`;
-  spaceMetaEl.textContent = `${t('engineer.object.coordsLabel')}: ${space.address} • ${space.city}`;
+  spaceMetaEl.textContent = `${t('engineer.object.coordsLabel')}: ${space.address} • ${space.server ?? '—'} • ${space.city}`;
   hubLabel.textContent = space.hubId ? `Hub ${space.hubId}` : t('engineer.hub.unbound');
 };
 
@@ -1007,6 +1060,10 @@ const renderObjectInfo = (space) => {
       <strong>${escapeHtml(space.address)}</strong>
     </div>
     <div class="info-card">
+      <span>${t('engineer.object.label.server')}</span>
+      <strong>${escapeHtml(space.server ?? '—')}</strong>
+    </div>
+    <div class="info-card">
       <span>${t('engineer.object.label.city')}</span>
       <strong>${escapeHtml(space.city)}</strong>
     </div>
@@ -1027,6 +1084,7 @@ const renderObjectInfo = (space) => {
   if (editForm) {
     editForm.name.value = space.name;
     editForm.address.value = space.address;
+    editForm.server.value = space.server ?? '';
     editForm.city.value = space.city;
   }
 };
@@ -1541,6 +1599,9 @@ const refreshAll = async () => {
   }
   await loadMembers();
   renderAll();
+  if (space) {
+    await checkHubRegistration(space.id);
+  }
 };
 
 if (refreshBtn) {
@@ -2095,6 +2156,7 @@ const initProfileMenu = async () => {
   await syncProfileSettings();
   if (profileNickname) profileNickname.value = state.nickname;
   let confirmedNickname = state.nickname;
+  updateNicknameControls();
   if (profileTimezone) {
     const option = profileTimezone.querySelector(`option[value="${state.timezone}"]`);
     profileTimezone.value = option ? state.timezone : 'UTC';
@@ -2110,18 +2172,43 @@ const initProfileMenu = async () => {
     state.nickname = event.target.value;
     saveProfileSettings();
   });
-  profileNickname?.addEventListener('blur', () => {
-    apiFetch('/api/auth/me', {
-      method: 'PATCH',
-      body: JSON.stringify({ minecraft_nickname: state.nickname }),
-    }).then(() => {
-      confirmedNickname = state.nickname;
-    }).catch((error) => {
+  profileNicknameChange?.addEventListener('click', async () => {
+    if (!profileNickname || profileNickname.disabled) return;
+    const nextNickname = profileNickname.value.trim();
+    if (!nextNickname) {
+      showToast('Введите корректный ник.');
+      return;
+    }
+    if (nextNickname === confirmedNickname) {
+      showToast('Ник уже установлен.');
+      return;
+    }
+    const result = await openActionModal({
+      title: 'Сменить ник?',
+      message: 'Ник нельзя сменить будет в течении следующих 3-х дней.',
+      confirmText: 'Сменить',
+    });
+    if (!result?.confirmed) {
+      profileNickname.value = confirmedNickname;
+      return;
+    }
+    try {
+      const response = await apiFetch('/api/auth/me', {
+        method: 'PATCH',
+        body: JSON.stringify({ minecraft_nickname: nextNickname }),
+      });
+      confirmedNickname = response.user.minecraft_nickname ?? nextNickname;
+      state.nickname = confirmedNickname;
+      state.lastNicknameChangeAt = response.user.last_nickname_change_at ?? new Date().toISOString();
+      profileNickname.value = confirmedNickname;
+      saveProfileSettings();
+      updateNicknameControls();
+    } catch (error) {
       handleApiError(error, 'Не удалось обновить ник.');
       state.nickname = confirmedNickname;
-      if (profileNickname) profileNickname.value = confirmedNickname;
+      profileNickname.value = confirmedNickname;
       saveProfileSettings();
-    });
+    }
   });
   profileTimezone?.addEventListener('change', (event) => {
     state.timezone = event.target.value;
