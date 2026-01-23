@@ -40,6 +40,12 @@ WEBHOOK_URL=http://127.0.0.1:8080/api/hub/events
 Для безопасного доступа извне рекомендуется проксировать WebSocket через TLS (wss)
 и держать порты 5080/8090 закрытыми на фаерволе, оставив доступ только к 8080.
 
+Если сборка падает из-за недоступности Docker Hub, можно указать локальный/зеркальный
+образ Node.js через build-arg:
+```bash
+docker compose build --build-arg BASE_IMAGE=registry.example.com/node:20-alpine
+```
+
 Откройте:
 - Вход: http://localhost:8080/login.html
 - PRO (Режим ПЦН): http://localhost:8080/index.html

@@ -18,6 +18,11 @@
    ```bash
    docker compose up --build -d
    ```
+   Если нет доступа к Docker Hub, используйте локальный/зеркальный образ:
+   ```bash
+   docker compose build --build-arg BASE_IMAGE=registry.example.com/node:20-alpine
+   docker compose up -d
+   ```
 2. Инициализировать БД (единоразово):
    ```bash
    docker compose exec app node backend/seed.js

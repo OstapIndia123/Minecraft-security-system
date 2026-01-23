@@ -1,6 +1,9 @@
 services:
   app:
-    build: .
+    build:
+      context: .
+      args:
+        BASE_IMAGE: node:20-alpine
     environment:
       DATABASE_URL: postgres://postgres:postgres@postgres:5432/minecraft_security
       PORT: 8080
