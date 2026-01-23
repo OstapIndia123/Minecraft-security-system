@@ -23,6 +23,7 @@ CREATE TABLE users (
   discord_avatar_url TEXT,
   language TEXT NOT NULL DEFAULT 'ru',
   timezone TEXT NOT NULL DEFAULT 'UTC',
+  last_nickname_change_at TIMESTAMP,
   created_at TIMESTAMP NOT NULL DEFAULT NOW()
 );
 
@@ -45,6 +46,7 @@ CREATE TABLE spaces (
   status TEXT NOT NULL,
   hub_online BOOLEAN DEFAULT NULL,
   issues BOOLEAN NOT NULL DEFAULT false,
+  server TEXT NOT NULL DEFAULT '—',
   city TEXT NOT NULL,
   timezone TEXT NOT NULL,
   company JSONB NOT NULL,

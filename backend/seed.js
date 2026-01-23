@@ -16,11 +16,12 @@ const seed = async () => {
     {
       id: '261156',
       hub_id: '0008951F',
-      name: 'Без номера объекта',
+      name: 'Без номера',
       address: 'x:-8 y:79 z:23',
       status: 'armed',
       hub_online: true,
       issues: false,
+      server: 'Основной',
       city: 'Калуш',
       timezone: 'Europe/Kyiv',
       company: {
@@ -63,8 +64,8 @@ const seed = async () => {
   for (const space of spaces) {
     await query('INSERT INTO hubs (id, space_id) VALUES ($1,$2)', [space.hub_id.replace('HUB-', ''), space.id]);
     await query(
-      `INSERT INTO spaces (id, hub_id, name, address, status, hub_online, issues, city, timezone, company, contacts, notes, photos)
-       VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13)`,
+      `INSERT INTO spaces (id, hub_id, name, address, status, hub_online, issues, server, city, timezone, company, contacts, notes, photos)
+       VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14)`,
       [
         space.id,
         space.hub_id.replace('HUB-', ''),
@@ -73,6 +74,7 @@ const seed = async () => {
         space.status,
         space.hub_online,
         space.issues,
+        space.server ?? '—',
         space.city,
         space.timezone,
         JSON.stringify(space.company),
@@ -141,8 +143,8 @@ const seed = async () => {
   const userIds = [];
   for (const user of users) {
     const result = await query(
-      `INSERT INTO users (email, password_hash, role, minecraft_nickname, language, timezone, discord_avatar_url)
-       VALUES ($1,$2,$3,$4,$5,$6,$7)
+      `INSERT INTO users (email, password_hash, role, minecraft_nickname, language, timezone, discord_avatar_url, last_nickname_change_at)
+       VALUES ($1,$2,$3,$4,$5,$6,$7,$8)
        RETURNING id`,
       [
         user.email,
@@ -152,6 +154,7 @@ const seed = async () => {
         user.language,
         user.timezone,
         null,
+        new Date(),
       ],
     );
     userIds.push(result.rows[0].id);
