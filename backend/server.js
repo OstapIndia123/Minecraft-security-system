@@ -1,5 +1,6 @@
 import express from 'express';
 import cors from 'cors';
+import crypto from 'node:crypto';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { query } from './db.js';
@@ -14,6 +15,82 @@ const port = Number(process.env.PORT ?? 8080);
 app.use(cors());
 app.use(express.json());
 app.use(express.static(path.resolve(__dirname, '..', 'web')));
+
+const hashPassword = (password, salt) => {
+  const effectiveSalt = salt ?? crypto.randomBytes(16).toString('hex');
+  const hash = crypto.scryptSync(password, effectiveSalt, 64).toString('hex');
+  return { salt: effectiveSalt, hash };
+};
+
+const formatPasswordHash = (password) => {
+  const { salt, hash } = hashPassword(password);
+  return `scrypt$${salt}$${hash}`;
+};
+
+const verifyPassword = (password, stored) => {
+  if (!stored?.startsWith('scrypt$')) return false;
+  const [, salt, hash] = stored.split('$');
+  if (!salt || !hash) return false;
+  const candidate = hashPassword(password, salt).hash;
+  return crypto.timingSafeEqual(Buffer.from(candidate), Buffer.from(hash));
+};
+
+const getAuthToken = (req) => {
+  const header = req.header('authorization');
+  if (header?.startsWith('Bearer ')) {
+    return header.slice(7);
+  }
+  return req.header('x-session-token') ?? null;
+};
+
+const loadSessionUser = async (token) => {
+  if (!token) return null;
+  const result = await query(
+    `SELECT users.id, users.email, users.role, users.minecraft_nickname, users.discord_id, users.language, users.timezone
+     FROM sessions
+     JOIN users ON users.id = sessions.user_id
+     WHERE sessions.token = $1 AND sessions.expires_at > NOW()`,
+    [token],
+  );
+  return result.rows[0] ?? null;
+};
+
+const requireAuth = async (req, res, next) => {
+  const token = getAuthToken(req);
+  const user = await loadSessionUser(token);
+  if (!user) {
+    res.status(401).json({ error: 'unauthorized' });
+    return;
+  }
+  req.user = user;
+  next();
+};
+
+const requireInstaller = (req, res, next) => {
+  if (req.user?.role !== 'installer') {
+    res.status(403).json({ error: 'forbidden' });
+    return;
+  }
+  next();
+};
+
+const ensureSpaceAccess = async (userId, spaceId) => {
+  const result = await query(
+    'SELECT 1 FROM user_spaces WHERE user_id = $1 AND space_id = $2',
+    [userId, spaceId],
+  );
+  return result.rows.length > 0;
+};
+
+const issueSession = async (userId) => {
+  const token = crypto.randomBytes(24).toString('hex');
+  const expiresAt = new Date(Date.now() + 7 * 24 * 60 * 60 * 1000);
+  await query(
+    'INSERT INTO sessions (token, user_id, expires_at) VALUES ($1,$2,$3)',
+    [token, userId, expiresAt],
+  );
+  return { token, expiresAt };
+};
 
 const mapSpace = (row) => ({
   id: row.id,
@@ -383,8 +460,81 @@ setInterval(() => {
   handleExpiredReaderSessions().catch(() => null);
 }, 1000);
 
-app.get('/api/spaces', async (req, res) => {
-  const result = await query('SELECT * FROM spaces ORDER BY id');
+app.post('/api/auth/register', async (req, res) => {
+  const { email, password, role, nickname, language, timezone } = req.body ?? {};
+  if (!email || !password) {
+    res.status(400).json({ error: 'missing_credentials' });
+    return;
+  }
+  const resolvedRole = role === 'installer' ? 'installer' : 'user';
+  const passwordHash = formatPasswordHash(String(password));
+  try {
+    const result = await query(
+      `INSERT INTO users (email, password_hash, role, minecraft_nickname, language, timezone)
+       VALUES ($1,$2,$3,$4,$5,$6)
+       RETURNING id, email, role, minecraft_nickname, language, timezone`,
+      [
+        String(email).toLowerCase(),
+        passwordHash,
+        resolvedRole,
+        nickname ?? null,
+        language ?? 'ru',
+        timezone ?? 'UTC',
+      ],
+    );
+    const session = await issueSession(result.rows[0].id);
+    res.json({ token: session.token, user: result.rows[0] });
+  } catch (error) {
+    res.status(400).json({ error: 'user_exists' });
+  }
+});
+
+app.post('/api/auth/login', async (req, res) => {
+  const { email, password } = req.body ?? {};
+  if (!email || !password) {
+    res.status(400).json({ error: 'missing_credentials' });
+    return;
+  }
+  const result = await query('SELECT * FROM users WHERE email = $1', [String(email).toLowerCase()]);
+  const user = result.rows[0];
+  if (!user || !verifyPassword(String(password), user.password_hash)) {
+    res.status(401).json({ error: 'invalid_credentials' });
+    return;
+  }
+  const session = await issueSession(user.id);
+  res.json({
+    token: session.token,
+    user: {
+      id: user.id,
+      email: user.email,
+      role: user.role,
+      minecraft_nickname: user.minecraft_nickname,
+      language: user.language,
+      timezone: user.timezone,
+    },
+  });
+});
+
+app.get('/api/auth/me', requireAuth, async (req, res) => {
+  res.json({ user: req.user });
+});
+
+app.post('/api/auth/logout', requireAuth, async (req, res) => {
+  const token = getAuthToken(req);
+  if (token) {
+    await query('DELETE FROM sessions WHERE token = $1', [token]);
+  }
+  res.json({ ok: true });
+});
+
+app.get('/api/spaces', requireAuth, async (req, res) => {
+  const result = await query(
+    `SELECT spaces.* FROM spaces
+     JOIN user_spaces ON user_spaces.space_id = spaces.id
+     WHERE user_spaces.user_id = $1
+     ORDER BY spaces.id`,
+    [req.user.id],
+  );
   const spaces = await Promise.all(
     result.rows.map(async (row) => ({
       ...mapSpace(row),
@@ -394,7 +544,12 @@ app.get('/api/spaces', async (req, res) => {
   res.json(spaces);
 });
 
-app.get('/api/spaces/:id', async (req, res) => {
+app.get('/api/spaces/:id', requireAuth, async (req, res) => {
+  const allowed = await ensureSpaceAccess(req.user.id, req.params.id);
+  if (!allowed) {
+    res.status(403).json({ error: 'forbidden' });
+    return;
+  }
   const result = await query('SELECT * FROM spaces WHERE id = $1', [req.params.id]);
   if (!result.rows.length) {
     return res.status(404).json({ error: 'space_not_found' });
@@ -404,7 +559,12 @@ app.get('/api/spaces/:id', async (req, res) => {
   res.json(space);
 });
 
-app.get('/api/spaces/:id/last-key-scan', async (req, res) => {
+app.get('/api/spaces/:id/last-key-scan', requireAuth, requireInstaller, async (req, res) => {
+  const allowed = await ensureSpaceAccess(req.user.id, req.params.id);
+  if (!allowed) {
+    res.status(403).json({ error: 'forbidden' });
+    return;
+  }
   const entry = lastKeyScans.get(req.params.id);
   if (!entry || Date.now() - entry.ts > 60000) {
     return res.status(404).json({ error: 'no_recent_scan' });
@@ -412,7 +572,12 @@ app.get('/api/spaces/:id/last-key-scan', async (req, res) => {
   res.json({ readerId: entry.readerId, keyName: entry.keyName });
 });
 
-app.get('/api/spaces/:id/await-key-scan', async (req, res) => {
+app.get('/api/spaces/:id/await-key-scan', requireAuth, requireInstaller, async (req, res) => {
+  const allowed = await ensureSpaceAccess(req.user.id, req.params.id);
+  if (!allowed) {
+    res.status(403).json({ error: 'forbidden' });
+    return;
+  }
   const spaceId = req.params.id;
   const waiters = keyScanWaiters.get(spaceId) ?? [];
   const timeout = setTimeout(() => {
@@ -434,7 +599,12 @@ app.get('/api/spaces/:id/await-key-scan', async (req, res) => {
   keyScanWaiters.set(spaceId, waiters);
 });
 
-app.get('/api/spaces/:id/logs', async (req, res) => {
+app.get('/api/spaces/:id/logs', requireAuth, async (req, res) => {
+  const allowed = await ensureSpaceAccess(req.user.id, req.params.id);
+  if (!allowed) {
+    res.status(403).json({ error: 'forbidden' });
+    return;
+  }
   const result = await query(
     `SELECT time,
             text,
@@ -450,7 +620,7 @@ app.get('/api/spaces/:id/logs', async (req, res) => {
   res.json(result.rows.map(mapLog));
 });
 
-app.get('/api/logs', async (req, res) => {
+app.get('/api/logs', requireAuth, async (req, res) => {
   const result = await query(
     `SELECT logs.time,
             logs.text,
@@ -461,8 +631,11 @@ app.get('/api/logs', async (req, res) => {
             spaces.id AS space_id
      FROM logs
      JOIN spaces ON spaces.id = logs.space_id
+     JOIN user_spaces ON user_spaces.space_id = spaces.id
+     WHERE user_spaces.user_id = $1
      ORDER BY logs.id DESC
      LIMIT 300`,
+    [req.user.id],
   );
   res.json(result.rows.map((row) => {
     const createdAt = row.created_at;
@@ -480,7 +653,7 @@ app.get('/api/logs', async (req, res) => {
   }));
 });
 
-app.post('/api/spaces', async (req, res) => {
+app.post('/api/spaces', requireAuth, requireInstaller, async (req, res) => {
   const { hubId, name, address, city, timezone } = req.body ?? {};
   if (!hubId || !name) {
     return res.status(400).json({ error: 'missing_fields' });
@@ -520,13 +693,19 @@ app.post('/api/spaces', async (req, res) => {
   );
 
   await appendLog(generatedId, 'Создано пространство', 'UI', 'system');
+  await query('INSERT INTO user_spaces (user_id, space_id) VALUES ($1,$2)', [req.user.id, generatedId]);
   const space = await query('SELECT * FROM spaces WHERE id = $1', [generatedId]);
   const result = mapSpace(space.rows[0]);
   result.devices = await loadDevices(result.id, result.hubId, result.hubOnline);
   res.status(201).json(result);
 });
 
-app.patch('/api/spaces/:id', async (req, res) => {
+app.patch('/api/spaces/:id', requireAuth, requireInstaller, async (req, res) => {
+  const allowed = await ensureSpaceAccess(req.user.id, req.params.id);
+  if (!allowed) {
+    res.status(403).json({ error: 'forbidden' });
+    return;
+  }
   if (!await ensureSpaceDisarmed(req.params.id, res)) return;
   const { name, address, city, timezone } = req.body ?? {};
   const existing = await query('SELECT * FROM spaces WHERE id = $1', [req.params.id]);
@@ -552,7 +731,12 @@ app.patch('/api/spaces/:id', async (req, res) => {
   res.json(result);
 });
 
-app.post('/api/spaces/:id/contacts', async (req, res) => {
+app.post('/api/spaces/:id/contacts', requireAuth, requireInstaller, async (req, res) => {
+  const allowed = await ensureSpaceAccess(req.user.id, req.params.id);
+  if (!allowed) {
+    res.status(403).json({ error: 'forbidden' });
+    return;
+  }
   if (!await ensureSpaceDisarmed(req.params.id, res)) return;
   const { name, role, phone } = req.body ?? {};
   if (!name) return res.status(400).json({ error: 'missing_fields' });
@@ -567,7 +751,12 @@ app.post('/api/spaces/:id/contacts', async (req, res) => {
   res.status(201).json({ ok: true });
 });
 
-app.post('/api/spaces/:id/notes', async (req, res) => {
+app.post('/api/spaces/:id/notes', requireAuth, requireInstaller, async (req, res) => {
+  const allowed = await ensureSpaceAccess(req.user.id, req.params.id);
+  if (!allowed) {
+    res.status(403).json({ error: 'forbidden' });
+    return;
+  }
   if (!await ensureSpaceDisarmed(req.params.id, res)) return;
   const { text } = req.body ?? {};
   if (!text) return res.status(400).json({ error: 'missing_fields' });
@@ -582,7 +771,12 @@ app.post('/api/spaces/:id/notes', async (req, res) => {
   res.status(201).json({ ok: true });
 });
 
-app.post('/api/spaces/:id/photos', async (req, res) => {
+app.post('/api/spaces/:id/photos', requireAuth, requireInstaller, async (req, res) => {
+  const allowed = await ensureSpaceAccess(req.user.id, req.params.id);
+  if (!allowed) {
+    res.status(403).json({ error: 'forbidden' });
+    return;
+  }
   if (!await ensureSpaceDisarmed(req.params.id, res)) return;
   const { url, label } = req.body ?? {};
   if (!url) return res.status(400).json({ error: 'missing_fields' });
@@ -597,7 +791,12 @@ app.post('/api/spaces/:id/photos', async (req, res) => {
   res.status(201).json({ ok: true });
 });
 
-app.post('/api/spaces/:id/attach-hub', async (req, res) => {
+app.post('/api/spaces/:id/attach-hub', requireAuth, requireInstaller, async (req, res) => {
+  const allowed = await ensureSpaceAccess(req.user.id, req.params.id);
+  if (!allowed) {
+    res.status(403).json({ error: 'forbidden' });
+    return;
+  }
   if (!await ensureSpaceDisarmed(req.params.id, res)) return;
   const { hubId } = req.body ?? {};
   if (!hubId) return res.status(400).json({ error: 'missing_hub_id' });
@@ -614,7 +813,12 @@ app.post('/api/spaces/:id/attach-hub', async (req, res) => {
   res.json({ ok: true });
 });
 
-app.delete('/api/spaces/:id/hub', async (req, res) => {
+app.delete('/api/spaces/:id/hub', requireAuth, requireInstaller, async (req, res) => {
+  const allowed = await ensureSpaceAccess(req.user.id, req.params.id);
+  if (!allowed) {
+    res.status(403).json({ error: 'forbidden' });
+    return;
+  }
   if (!await ensureSpaceDisarmed(req.params.id, res)) return;
   const existing = await query('SELECT hub_id FROM spaces WHERE id = $1', [req.params.id]);
   if (!existing.rows.length) return res.status(404).json({ error: 'space_not_found' });
@@ -655,7 +859,12 @@ const deviceConfigFromPayload = (payload) => {
   return {};
 };
 
-app.post('/api/spaces/:id/devices', async (req, res) => {
+app.post('/api/spaces/:id/devices', requireAuth, requireInstaller, async (req, res) => {
+  const allowed = await ensureSpaceAccess(req.user.id, req.params.id);
+  if (!allowed) {
+    res.status(403).json({ error: 'forbidden' });
+    return;
+  }
   if (!await ensureSpaceDisarmed(req.params.id, res)) return;
   const { id, name, room, status, type, side } = req.body ?? {};
   if (!name || !room || !type) {
@@ -692,7 +901,12 @@ app.post('/api/spaces/:id/devices', async (req, res) => {
   res.status(201).json({ ok: true });
 });
 
-app.post('/api/spaces/:id/keys', async (req, res) => {
+app.post('/api/spaces/:id/keys', requireAuth, requireInstaller, async (req, res) => {
+  const allowed = await ensureSpaceAccess(req.user.id, req.params.id);
+  if (!allowed) {
+    res.status(403).json({ error: 'forbidden' });
+    return;
+  }
   if (!await ensureSpaceDisarmed(req.params.id, res)) return;
   const { name, readerId } = req.body ?? {};
   if (!name) return res.status(400).json({ error: 'missing_fields' });
@@ -707,7 +921,12 @@ app.post('/api/spaces/:id/keys', async (req, res) => {
   res.status(201).json({ ok: true });
 });
 
-app.delete('/api/spaces/:id', async (req, res) => {
+app.delete('/api/spaces/:id', requireAuth, requireInstaller, async (req, res) => {
+  const allowed = await ensureSpaceAccess(req.user.id, req.params.id);
+  if (!allowed) {
+    res.status(403).json({ error: 'forbidden' });
+    return;
+  }
   if (!await ensureSpaceDisarmed(req.params.id, res)) return;
   const existing = await query('SELECT id FROM spaces WHERE id = $1', [req.params.id]);
   if (!existing.rows.length) return res.status(404).json({ error: 'space_not_found' });
@@ -718,7 +937,12 @@ app.delete('/api/spaces/:id', async (req, res) => {
   res.json({ ok: true });
 });
 
-app.delete('/api/spaces/:id/devices/:deviceId', async (req, res) => {
+app.delete('/api/spaces/:id/devices/:deviceId', requireAuth, requireInstaller, async (req, res) => {
+  const allowed = await ensureSpaceAccess(req.user.id, req.params.id);
+  if (!allowed) {
+    res.status(403).json({ error: 'forbidden' });
+    return;
+  }
   if (!await ensureSpaceDisarmed(req.params.id, res)) return;
   const { id, deviceId } = req.params;
   const existing = await query('SELECT id, type FROM devices WHERE id = $1 AND space_id = $2', [deviceId, id]);
@@ -737,7 +961,12 @@ app.delete('/api/spaces/:id/devices/:deviceId', async (req, res) => {
   res.json({ ok: true });
 });
 
-app.delete('/api/spaces/:id/keys/:keyId', async (req, res) => {
+app.delete('/api/spaces/:id/keys/:keyId', requireAuth, requireInstaller, async (req, res) => {
+  const allowed = await ensureSpaceAccess(req.user.id, req.params.id);
+  if (!allowed) {
+    res.status(403).json({ error: 'forbidden' });
+    return;
+  }
   if (!await ensureSpaceDisarmed(req.params.id, res)) return;
   const { id, keyId } = req.params;
   const existing = await query('SELECT id FROM keys WHERE id = $1 AND space_id = $2', [keyId, id]);
@@ -748,7 +977,12 @@ app.delete('/api/spaces/:id/keys/:keyId', async (req, res) => {
   res.json({ ok: true });
 });
 
-app.patch('/api/spaces/:id/devices/:deviceId', async (req, res) => {
+app.patch('/api/spaces/:id/devices/:deviceId', requireAuth, requireInstaller, async (req, res) => {
+  const allowed = await ensureSpaceAccess(req.user.id, req.params.id);
+  if (!allowed) {
+    res.status(403).json({ error: 'forbidden' });
+    return;
+  }
   if (!await ensureSpaceDisarmed(req.params.id, res)) return;
   const { id, deviceId } = req.params;
   const existing = await query('SELECT * FROM devices WHERE id = $1 AND space_id = $2', [deviceId, id]);
@@ -769,7 +1003,12 @@ app.patch('/api/spaces/:id/devices/:deviceId', async (req, res) => {
   res.json({ ok: true });
 });
 
-app.patch('/api/spaces/:id/keys/:keyId', async (req, res) => {
+app.patch('/api/spaces/:id/keys/:keyId', requireAuth, requireInstaller, async (req, res) => {
+  const allowed = await ensureSpaceAccess(req.user.id, req.params.id);
+  if (!allowed) {
+    res.status(403).json({ error: 'forbidden' });
+    return;
+  }
   if (!await ensureSpaceDisarmed(req.params.id, res)) return;
   const { id, keyId } = req.params;
   const existing = await query('SELECT * FROM keys WHERE id = $1 AND space_id = $2', [keyId, id]);
@@ -788,7 +1027,12 @@ app.patch('/api/spaces/:id/keys/:keyId', async (req, res) => {
   res.json({ ok: true });
 });
 
-app.delete('/api/spaces/:id/contacts/:index', async (req, res) => {
+app.delete('/api/spaces/:id/contacts/:index', requireAuth, requireInstaller, async (req, res) => {
+  const allowed = await ensureSpaceAccess(req.user.id, req.params.id);
+  if (!allowed) {
+    res.status(403).json({ error: 'forbidden' });
+    return;
+  }
   if (!await ensureSpaceDisarmed(req.params.id, res)) return;
   const index = Number(req.params.index);
   const result = await query('SELECT contacts FROM spaces WHERE id = $1', [req.params.id]);
@@ -804,7 +1048,12 @@ app.delete('/api/spaces/:id/contacts/:index', async (req, res) => {
   res.json({ ok: true });
 });
 
-app.patch('/api/spaces/:id/contacts/:index', async (req, res) => {
+app.patch('/api/spaces/:id/contacts/:index', requireAuth, requireInstaller, async (req, res) => {
+  const allowed = await ensureSpaceAccess(req.user.id, req.params.id);
+  if (!allowed) {
+    res.status(403).json({ error: 'forbidden' });
+    return;
+  }
   if (!await ensureSpaceDisarmed(req.params.id, res)) return;
   const index = Number(req.params.index);
   const result = await query('SELECT contacts FROM spaces WHERE id = $1', [req.params.id]);
@@ -825,7 +1074,12 @@ app.patch('/api/spaces/:id/contacts/:index', async (req, res) => {
   res.json({ ok: true });
 });
 
-app.delete('/api/spaces/:id/notes/:index', async (req, res) => {
+app.delete('/api/spaces/:id/notes/:index', requireAuth, requireInstaller, async (req, res) => {
+  const allowed = await ensureSpaceAccess(req.user.id, req.params.id);
+  if (!allowed) {
+    res.status(403).json({ error: 'forbidden' });
+    return;
+  }
   if (!await ensureSpaceDisarmed(req.params.id, res)) return;
   const index = Number(req.params.index);
   const result = await query('SELECT notes FROM spaces WHERE id = $1', [req.params.id]);
@@ -841,7 +1095,12 @@ app.delete('/api/spaces/:id/notes/:index', async (req, res) => {
   res.json({ ok: true });
 });
 
-app.patch('/api/spaces/:id/notes/:index', async (req, res) => {
+app.patch('/api/spaces/:id/notes/:index', requireAuth, requireInstaller, async (req, res) => {
+  const allowed = await ensureSpaceAccess(req.user.id, req.params.id);
+  if (!allowed) {
+    res.status(403).json({ error: 'forbidden' });
+    return;
+  }
   if (!await ensureSpaceDisarmed(req.params.id, res)) return;
   const index = Number(req.params.index);
   const result = await query('SELECT notes FROM spaces WHERE id = $1', [req.params.id]);
@@ -857,7 +1116,12 @@ app.patch('/api/spaces/:id/notes/:index', async (req, res) => {
   res.json({ ok: true });
 });
 
-app.delete('/api/spaces/:id/photos/:index', async (req, res) => {
+app.delete('/api/spaces/:id/photos/:index', requireAuth, requireInstaller, async (req, res) => {
+  const allowed = await ensureSpaceAccess(req.user.id, req.params.id);
+  if (!allowed) {
+    res.status(403).json({ error: 'forbidden' });
+    return;
+  }
   if (!await ensureSpaceDisarmed(req.params.id, res)) return;
   const index = Number(req.params.index);
   const result = await query('SELECT photos FROM spaces WHERE id = $1', [req.params.id]);
@@ -873,7 +1137,12 @@ app.delete('/api/spaces/:id/photos/:index', async (req, res) => {
   res.json({ ok: true });
 });
 
-app.patch('/api/spaces/:id/photos/:index', async (req, res) => {
+app.patch('/api/spaces/:id/photos/:index', requireAuth, requireInstaller, async (req, res) => {
+  const allowed = await ensureSpaceAccess(req.user.id, req.params.id);
+  if (!allowed) {
+    res.status(403).json({ error: 'forbidden' });
+    return;
+  }
   if (!await ensureSpaceDisarmed(req.params.id, res)) return;
   const index = Number(req.params.index);
   const result = await query('SELECT photos FROM spaces WHERE id = $1', [req.params.id]);
@@ -1024,14 +1293,24 @@ const handleReaderScan = async ({ readerId, payload, ts }) => {
   };
 };
 
-app.post('/api/spaces/:id/arm', async (req, res) => {
-  const updated = await updateStatus(req.params.id, 'armed', 'UI');
+app.post('/api/spaces/:id/arm', requireAuth, async (req, res) => {
+  const allowed = await ensureSpaceAccess(req.user.id, req.params.id);
+  if (!allowed) {
+    res.status(403).json({ error: 'forbidden' });
+    return;
+  }
+  const updated = await updateStatus(req.params.id, 'armed', req.user.minecraft_nickname ?? 'UI');
   if (!updated) return res.status(404).json({ error: 'space_not_found' });
   res.json(updated);
 });
 
-app.post('/api/spaces/:id/disarm', async (req, res) => {
-  const space = await updateStatus(req.params.id, 'disarmed', 'UI');
+app.post('/api/spaces/:id/disarm', requireAuth, async (req, res) => {
+  const allowed = await ensureSpaceAccess(req.user.id, req.params.id);
+  if (!allowed) {
+    res.status(403).json({ error: 'forbidden' });
+    return;
+  }
+  const space = await updateStatus(req.params.id, 'disarmed', req.user.minecraft_nickname ?? 'UI');
   if (!space) return res.status(404).json({ error: 'space_not_found' });
   res.json(space);
 });

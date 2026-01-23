@@ -1,0 +1,64 @@
+<!doctype html>
+<html lang="ru">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Minecraft Security System — Вход</title>
+    <link rel="stylesheet" href="styles.css" />
+  </head>
+  <body>
+    <div class="auth-shell">
+      <div class="auth-card">
+        <div class="auth-header">
+          <div class="brand">
+            <span class="brand__logo">PRO</span>
+            <span class="brand__title">Security</span>
+          </div>
+          <h1>Авторизация</h1>
+          <p>Выберите режим и войдите в систему</p>
+        </div>
+
+        <div class="tabs tabs--top" id="authTabs">
+          <button class="tab tab--active" data-tab="login">Вход</button>
+          <button class="tab" data-tab="register">Регистрация</button>
+        </div>
+
+        <div class="panel panel--active" id="login">
+          <form class="form-grid auth-form" id="loginForm">
+            <input type="email" name="email" placeholder="Email" required />
+            <input type="password" name="password" placeholder="Пароль" required />
+            <button class="button button--primary" type="submit">Войти</button>
+          </form>
+        </div>
+
+        <div class="panel" id="register">
+          <form class="form-grid auth-form" id="registerForm">
+            <input type="email" name="email" placeholder="Email" required />
+            <input type="password" name="password" placeholder="Пароль" required />
+            <input type="text" name="nickname" placeholder="Игровой ник" />
+            <select name="role">
+              <option value="user">Пользователь</option>
+              <option value="installer">Инженер монтажа</option>
+            </select>
+            <select name="language">
+              <option value="ru">Русский</option>
+              <option value="en-US">English (US)</option>
+            </select>
+            <select name="timezone">
+              <option value="UTC">UTC</option>
+              <option value="Europe/Moscow">Europe/Moscow</option>
+              <option value="Europe/Kyiv">Europe/Kyiv</option>
+              <option value="Europe/Warsaw">Europe/Warsaw</option>
+              <option value="America/New_York">America/New_York</option>
+            </select>
+            <button class="button button--primary" type="submit">Создать аккаунт</button>
+          </form>
+        </div>
+
+        <div class="auth-error" id="authError"></div>
+      </div>
+    </div>
+
+    <script src="login.js"></script>
+  </body>
+</html>

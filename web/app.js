@@ -324,12 +324,22 @@ const handleApiError = (error, fallbackMessage) => {
   }
 };
 
+const getAuthToken = () => localStorage.getItem('authToken');
+
 const apiFetch = async (path, options = {}) => {
-  const response = await fetch(path, {
-    headers: { 'Content-Type': 'application/json' },
-    ...options,
-  });
+  const token = getAuthToken();
+  const headers = {
+    'Content-Type': 'application/json',
+    ...(token ? { Authorization: `Bearer ${token}` } : {}),
+    ...(options.headers ?? {}),
+  };
+  const response = await fetch(path, { ...options, headers });
   if (!response.ok) {
+    if (response.status === 401) {
+      localStorage.removeItem('authToken');
+      window.location.href = 'login.html';
+      throw new Error('unauthorized');
+    }
     const payload = await response.json().catch(() => ({}));
     throw new Error(payload.error ?? `API error: ${response.status}`);
   }
@@ -1544,14 +1554,25 @@ const initProfileMenu = () => {
     saveProfileSettings();
     applyTranslations();
   });
-  profileLogout?.addEventListener('click', () => {
+  profileLogout?.addEventListener('click', async () => {
     state.nickname = '';
     saveProfileSettings();
+    try {
+      await apiFetch('/api/auth/logout', { method: 'POST' });
+    } catch {
+      // ignore
+    }
+    localStorage.removeItem('authToken');
     toggle(false);
+    window.location.href = 'login.html';
   });
 };
 
 const init = async () => {
+  if (!getAuthToken()) {
+    window.location.href = 'login.html';
+    return;
+  }
   initProfileMenu();
   await loadSpaces();
   if (state.selectedSpaceId) {

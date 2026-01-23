@@ -100,8 +100,16 @@ const saveProfileSettings = () => {
 };
 
 const apiFetch = async (path) => {
-  const response = await fetch(path);
+  const token = localStorage.getItem('authToken');
+  const response = await fetch(path, {
+    headers: token ? { Authorization: `Bearer ${token}` } : {},
+  });
   if (!response.ok) {
+    if (response.status === 401) {
+      localStorage.removeItem('authToken');
+      window.location.href = 'login.html';
+      throw new Error('unauthorized');
+    }
     throw new Error(`API error: ${response.status}`);
   }
   return response.json();
@@ -332,17 +340,31 @@ const initProfileMenu = () => {
     applyTranslations();
     refresh().catch(() => null);
   });
-  profileLogout?.addEventListener('click', () => {
+  profileLogout?.addEventListener('click', async () => {
     state.nickname = '';
     saveProfileSettings();
+    try {
+      await fetch('/api/auth/logout', {
+        method: 'POST',
+        headers: { Authorization: `Bearer ${localStorage.getItem('authToken') ?? ''}` },
+      });
+    } catch {
+      // ignore
+    }
+    localStorage.removeItem('authToken');
     toggle(false);
+    window.location.href = 'login.html';
   });
 };
 
-initProfileMenu();
-applyTranslations();
+if (!localStorage.getItem('authToken')) {
+  window.location.href = 'login.html';
+} else {
+  initProfileMenu();
+  applyTranslations();
 
-refresh().catch(() => null);
-setInterval(() => {
   refresh().catch(() => null);
-}, 5000);
+  setInterval(() => {
+    refresh().catch(() => null);
+  }, 5000);
+}

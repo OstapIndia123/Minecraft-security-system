@@ -19,7 +19,15 @@ npm run dev
 
 Примечание: `npm run seed` пересоздаёт таблицы и сбрасывает данные.
 
-Откройте: http://localhost:8080
+Откройте:
+- Вход: http://localhost:8080/login.html
+- PRO (Режим ПЦН): http://localhost:8080/index.html
+- Инженер (полный режим): http://localhost:8080/main.html
+- Пользователь: http://localhost:8080/user.html
+
+Демо-аккаунты (создаются при `npm run seed`):
+- Инженер монтажа: `pro@example.com` / `pro-demo`
+- Пользователь: `user@example.com` / `user-demo`
 
 ## Webhook от модов
 Хабы и читатели присылают события на:
