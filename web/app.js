@@ -6,6 +6,9 @@ const state = {
   search: '',
   deviceSearch: '',
   lastLogKey: '',
+  language: 'ru',
+  timezone: 'UTC',
+  nickname: '',
 };
 
 let spaces = [];
@@ -62,6 +65,12 @@ const guardModal = document.getElementById('guardModal');
 const guardModalClose = document.getElementById('closeGuardModal');
 const guardModalOk = document.getElementById('guardModalOk');
 const backToMain = document.getElementById('backToMain');
+const avatarButton = document.getElementById('avatarButton');
+const profileDropdown = document.getElementById('profileDropdown');
+const profileNickname = document.getElementById('profileNickname');
+const profileTimezone = document.getElementById('profileTimezone');
+const profileLanguage = document.getElementById('profileLanguage');
+const profileLogout = document.getElementById('profileLogout');
 
 const statusMap = {
   armed: 'Под охраной',
@@ -78,6 +87,74 @@ const statusTone = {
 const chipActions = document.querySelectorAll('.status-actions .chip');
 const filterButtons = document.querySelectorAll('.nav-pill');
 const logFilters = document.querySelectorAll('#logFilters .chip');
+
+const translations = {
+  ru: {
+    'engineer.title': 'Объекты',
+    'engineer.subtitle': 'Управление пространствами и событиями',
+    'engineer.tabs.users': 'Пользователи',
+    'engineer.tabs.installers': 'Инженеры монтажа',
+    'engineer.users.title': 'Пользователи',
+    'engineer.users.placeholder': 'Добавление пользователей появится вместе с системой аккаунтов.',
+    'engineer.installers.title': 'Инженеры монтажа',
+    'engineer.installers.placeholder': 'Управление доступами инженеров появится вместе с авторизацией.',
+    'engineer.actions.refresh': 'Обновить',
+    'engineer.actions.add': 'Добавить объект',
+    'profile.title': 'Профиль',
+    'profile.nickname': 'Игровой ник',
+    'profile.timezone': 'Таймзона',
+    'profile.language': 'Язык',
+    'profile.logout': 'Выйти',
+  },
+  'en-US': {
+    'engineer.title': 'Objects',
+    'engineer.subtitle': 'Space and event management',
+    'engineer.tabs.users': 'Users',
+    'engineer.tabs.installers': 'Installers',
+    'engineer.users.title': 'Users',
+    'engineer.users.placeholder': 'User access will appear after authentication is connected.',
+    'engineer.installers.title': 'Installers',
+    'engineer.installers.placeholder': 'Installer access will appear with authorization.',
+    'engineer.actions.refresh': 'Refresh',
+    'engineer.actions.add': 'Add object',
+    'profile.title': 'Profile',
+    'profile.nickname': 'Game nickname',
+    'profile.timezone': 'Timezone',
+    'profile.language': 'Language',
+    'profile.logout': 'Sign out',
+  },
+};
+
+const applyTranslations = () => {
+  const dict = translations[state.language] ?? translations.ru;
+  document.querySelectorAll('[data-i18n]').forEach((node) => {
+    const key = node.dataset.i18n;
+    if (dict[key]) {
+      node.textContent = dict[key];
+    }
+  });
+};
+
+const loadProfileSettings = () => {
+  const raw = localStorage.getItem('profileSettings');
+  if (!raw) return;
+  try {
+    const parsed = JSON.parse(raw);
+    state.language = parsed.language ?? state.language;
+    state.timezone = parsed.timezone ?? state.timezone;
+    state.nickname = parsed.nickname ?? state.nickname;
+  } catch {
+    // ignore
+  }
+};
+
+const saveProfileSettings = () => {
+  localStorage.setItem('profileSettings', JSON.stringify({
+    language: state.language,
+    timezone: state.timezone,
+    nickname: state.nickname,
+  }));
+};
 
 const showToast = (message) => {
   toast.textContent = message;
@@ -1434,7 +1511,48 @@ tabs.forEach((tab) => {
   });
 });
 
+const initProfileMenu = () => {
+  if (!avatarButton || !profileDropdown) return;
+  const toggle = (open) => {
+    profileDropdown.setAttribute('aria-hidden', open ? 'false' : 'true');
+    profileDropdown.classList.toggle('profile-dropdown--open', open);
+  };
+  avatarButton.addEventListener('click', (event) => {
+    event.stopPropagation();
+    const isOpen = profileDropdown.classList.contains('profile-dropdown--open');
+    toggle(!isOpen);
+  });
+  document.addEventListener('click', () => toggle(false));
+  profileDropdown.addEventListener('click', (event) => event.stopPropagation());
+
+  loadProfileSettings();
+  if (profileNickname) profileNickname.value = state.nickname;
+  if (profileTimezone) profileTimezone.value = state.timezone;
+  if (profileLanguage) profileLanguage.value = state.language;
+  applyTranslations();
+
+  profileNickname?.addEventListener('input', (event) => {
+    state.nickname = event.target.value;
+    saveProfileSettings();
+  });
+  profileTimezone?.addEventListener('change', (event) => {
+    state.timezone = event.target.value;
+    saveProfileSettings();
+  });
+  profileLanguage?.addEventListener('change', (event) => {
+    state.language = event.target.value;
+    saveProfileSettings();
+    applyTranslations();
+  });
+  profileLogout?.addEventListener('click', () => {
+    state.nickname = '';
+    saveProfileSettings();
+    toggle(false);
+  });
+};
+
 const init = async () => {
+  initProfileMenu();
   await loadSpaces();
   if (state.selectedSpaceId) {
     await loadLogs(state.selectedSpaceId);

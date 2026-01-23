@@ -12,20 +12,64 @@
         <header class="topbar">
           <div class="topbar__left">
             <div class="topbar__title">
-              <h1>Режим ПЦН</h1>
-              <p>Объекты и общий журнал событий</p>
+              <h1 data-i18n="pcn.title">Режим ПЦН</h1>
+              <p data-i18n="pcn.subtitle">Объекты и общий журнал событий</p>
             </div>
           </div>
           <div class="topbar__right">
-            <button class="button button--ghost" id="mainRefresh">Обновить</button>
-            <button class="button button--primary" id="mainAddSpace">Добавить объект</button>
+            <button class="button button--ghost" id="mainRefresh" data-i18n="pcn.actions.refresh">Обновить</button>
+            <button class="button button--primary" id="mainAddSpace" data-i18n="pcn.actions.add">Добавить объект</button>
+            <div class="profile-menu" id="profileMenu">
+              <button class="avatar-button" id="avatarButton" aria-label="Профиль">
+                <span class="avatar-button__circle">DS</span>
+              </button>
+              <div class="profile-dropdown" id="profileDropdown" aria-hidden="true">
+                <div class="profile-dropdown__header">
+                  <div class="avatar-button__circle">DS</div>
+                  <div>
+                    <div class="profile-dropdown__title" data-i18n="profile.title">Профиль</div>
+                    <div class="profile-dropdown__subtitle">Discord</div>
+                  </div>
+                </div>
+                <label class="profile-field">
+                  <span data-i18n="profile.nickname">Игровой ник</span>
+                  <input type="text" id="profileNickname" placeholder="PlayerName" />
+                </label>
+                <label class="profile-field">
+                  <span data-i18n="profile.timezone">Таймзона</span>
+                  <select id="profileTimezone">
+                    <option value="UTC">UTC</option>
+                    <option value="Europe/Moscow">Europe/Moscow</option>
+                    <option value="Europe/Kyiv">Europe/Kyiv</option>
+                    <option value="Europe/Warsaw">Europe/Warsaw</option>
+                    <option value="America/New_York">America/New_York</option>
+                  </select>
+                </label>
+                <label class="profile-field">
+                  <span data-i18n="profile.language">Язык</span>
+                  <select id="profileLanguage">
+                    <option value="ru">Русский</option>
+                    <option value="en-US">English (US)</option>
+                  </select>
+                </label>
+                <button class="button button--ghost profile-logout" id="profileLogout" data-i18n="profile.logout">
+                  Выйти
+                </button>
+              </div>
+            </div>
           </div>
         </header>
 
-        <div class="pcn-layout">
+        <div class="tabs tabs--top" id="pcnTabs">
+          <button class="tab tab--active" data-tab="pcn-objects" data-i18n="pcn.tabs.objects">Объекты</button>
+          <button class="tab" data-tab="pcn-users" data-i18n="pcn.tabs.users">Пользователи</button>
+          <button class="tab" data-tab="pcn-installers" data-i18n="pcn.tabs.installers">Инженеры монтажа</button>
+        </div>
+
+        <div class="pcn-layout panel panel--active" id="pcn-objects">
           <section class="content pcn-layout__panel">
             <div class="panel__header">
-              <h2>Объекты</h2>
+              <h2 data-i18n="pcn.objects.title">Объекты</h2>
               <div class="filters" id="mainFilters">
                 <button class="chip chip--active" data-filter="all">Все</button>
                 <button class="chip" data-filter="offline">С хабами не в сети</button>
@@ -41,7 +85,7 @@
 
           <section class="content pcn-layout__panel pcn-layout__panel--wide">
             <div class="panel__header">
-              <h2>Общий журнал событий</h2>
+              <h2 data-i18n="pcn.logs.title">Общий журнал событий</h2>
               <div class="filters" id="mainLogFilters">
                 <button class="chip chip--active" data-log="all">Все</button>
                 <button class="chip" data-log="security">Охранные</button>
@@ -52,6 +96,26 @@
             </div>
             <div class="log-table" id="mainLogTable"></div>
           </section>
+        </div>
+
+        <div class="panel" id="pcn-users">
+          <div class="panel__header">
+            <h2 data-i18n="pcn.users.title">Пользователи</h2>
+          </div>
+          <div class="empty-state">
+            <div class="empty-state__icon">👥</div>
+            <div data-i18n="pcn.users.placeholder">Раздел пользователей появится после подключения авторизации.</div>
+          </div>
+        </div>
+
+        <div class="panel" id="pcn-installers">
+          <div class="panel__header">
+            <h2 data-i18n="pcn.installers.title">Инженеры монтажа</h2>
+          </div>
+          <div class="empty-state">
+            <div class="empty-state__icon">🛠️</div>
+            <div data-i18n="pcn.installers.placeholder">Раздел инженеров монтажа появится вместе с PRO-аккаунтами.</div>
+          </div>
         </div>
       </main>
     </div>

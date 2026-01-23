@@ -38,8 +38,8 @@
         <header class="topbar">
           <div class="topbar__left">
             <div class="topbar__title">
-              <h1>Объекты</h1>
-              <p>Управление пространствами и событиями</p>
+              <h1 data-i18n="engineer.title">Объекты</h1>
+              <p data-i18n="engineer.subtitle">Управление пространствами и событиями</p>
             </div>
             <div class="search">
               <span class="icon">🔍</span>
@@ -47,8 +47,44 @@
             </div>
           </div>
           <div class="topbar__right">
-            <button class="button button--ghost" id="refreshBtn">Обновить</button>
-            <button class="button button--primary" id="openCreate">Добавить объект</button>
+            <button class="button button--ghost" id="refreshBtn" data-i18n="engineer.actions.refresh">Обновить</button>
+            <button class="button button--primary" id="openCreate" data-i18n="engineer.actions.add">Добавить объект</button>
+            <div class="profile-menu" id="profileMenu">
+              <button class="avatar-button" id="avatarButton" aria-label="Профиль">
+                <span class="avatar-button__circle">DS</span>
+              </button>
+              <div class="profile-dropdown" id="profileDropdown" aria-hidden="true">
+                <div class="profile-dropdown__header">
+                  <div class="avatar-button__circle">DS</div>
+                  <div>
+                    <div class="profile-dropdown__title" data-i18n="profile.title">Профиль</div>
+                    <div class="profile-dropdown__subtitle">Discord</div>
+                  </div>
+                </div>
+                <label class="profile-field">
+                  <span data-i18n="profile.nickname">Игровой ник</span>
+                  <input type="text" id="profileNickname" placeholder="PlayerName" />
+                </label>
+                <label class="profile-field">
+                  <span data-i18n="profile.timezone">Таймзона</span>
+                  <select id="profileTimezone">
+                    <option value="UTC">UTC</option>
+                    <option value="Europe/Moscow">Europe/Moscow</option>
+                    <option value="Europe/Kyiv">Europe/Kyiv</option>
+                    <option value="Europe/Warsaw">Europe/Warsaw</option>
+                    <option value="America/New_York">America/New_York</option>
+                  </select>
+                </label>
+                <label class="profile-field">
+                  <span data-i18n="profile.language">Язык</span>
+                  <select id="profileLanguage">
+                    <option value="ru">Русский</option>
+                    <option value="en-US">English (US)</option>
+                  </select>
+                </label>
+                <button class="button button--ghost profile-logout" id="profileLogout" data-i18n="profile.logout">Выйти</button>
+              </div>
+            </div>
           </div>
         </header>
 
@@ -71,8 +107,8 @@
             <button class="tab" data-tab="contacts">Контактные лица</button>
             <button class="tab" data-tab="photos">Фото</button>
             <button class="tab" data-tab="notes">Примечания</button>
-            <button class="tab" data-tab="users">Пользователи</button>
-            <button class="tab" data-tab="installers">Инженеры монтажа</button>
+            <button class="tab" data-tab="users" data-i18n="engineer.tabs.users">Пользователи</button>
+            <button class="tab" data-tab="installers" data-i18n="engineer.tabs.installers">Инженеры монтажа</button>
             <button class="tab" data-tab="log">Лог</button>
           </div>
 
@@ -167,21 +203,21 @@
 
           <div class="panel" id="users">
             <div class="panel__header">
-              <h2>Пользователи</h2>
+              <h2 data-i18n="engineer.users.title">Пользователи</h2>
             </div>
             <div class="empty-state">
               <div class="empty-state__icon">👥</div>
-              <div>Добавление пользователей появится вместе с системой аккаунтов.</div>
+              <div data-i18n="engineer.users.placeholder">Добавление пользователей появится вместе с системой аккаунтов.</div>
             </div>
           </div>
 
           <div class="panel" id="installers">
             <div class="panel__header">
-              <h2>Инженеры монтажа</h2>
+              <h2 data-i18n="engineer.installers.title">Инженеры монтажа</h2>
             </div>
             <div class="empty-state">
               <div class="empty-state__icon">🛠️</div>
-              <div>Управление доступами инженеров появится вместе с авторизацией.</div>
+              <div data-i18n="engineer.installers.placeholder">Управление доступами инженеров появится вместе с авторизацией.</div>
             </div>
           </div>
 

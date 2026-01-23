@@ -1,6 +1,9 @@
 const state = {
   filter: 'all',
   logFilter: 'all',
+  language: 'ru',
+  timezone: 'UTC',
+  nickname: '',
 };
 
 const FLASH_DURATION_MS = 15000;
@@ -13,6 +16,88 @@ const addSpaceBtn = document.getElementById('mainAddSpace');
 const filterButtons = document.querySelectorAll('#mainFilters .chip');
 const logFilters = document.querySelectorAll('#mainLogFilters .chip');
 const searchInput = document.getElementById('mainSearch');
+const tabs = document.querySelectorAll('#pcnTabs .tab');
+const panels = document.querySelectorAll('.panel');
+const avatarButton = document.getElementById('avatarButton');
+const profileDropdown = document.getElementById('profileDropdown');
+const profileNickname = document.getElementById('profileNickname');
+const profileTimezone = document.getElementById('profileTimezone');
+const profileLanguage = document.getElementById('profileLanguage');
+const profileLogout = document.getElementById('profileLogout');
+
+const translations = {
+  ru: {
+    'pcn.title': 'Режим ПЦН',
+    'pcn.subtitle': 'Объекты и общий журнал событий',
+    'pcn.tabs.objects': 'Объекты',
+    'pcn.tabs.users': 'Пользователи',
+    'pcn.tabs.installers': 'Инженеры монтажа',
+    'pcn.objects.title': 'Объекты',
+    'pcn.logs.title': 'Общий журнал событий',
+    'pcn.actions.refresh': 'Обновить',
+    'pcn.actions.add': 'Добавить объект',
+    'pcn.users.title': 'Пользователи',
+    'pcn.users.placeholder': 'Раздел пользователей появится после подключения авторизации.',
+    'pcn.installers.title': 'Инженеры монтажа',
+    'pcn.installers.placeholder': 'Раздел инженеров монтажа появится вместе с PRO-аккаунтами.',
+    'profile.title': 'Профиль',
+    'profile.nickname': 'Игровой ник',
+    'profile.timezone': 'Таймзона',
+    'profile.language': 'Язык',
+    'profile.logout': 'Выйти',
+  },
+  'en-US': {
+    'pcn.title': 'PCN Mode',
+    'pcn.subtitle': 'Objects and global event log',
+    'pcn.tabs.objects': 'Objects',
+    'pcn.tabs.users': 'Users',
+    'pcn.tabs.installers': 'Installers',
+    'pcn.objects.title': 'Objects',
+    'pcn.logs.title': 'Global event log',
+    'pcn.actions.refresh': 'Refresh',
+    'pcn.actions.add': 'Add object',
+    'pcn.users.title': 'Users',
+    'pcn.users.placeholder': 'User access will appear after authentication is connected.',
+    'pcn.installers.title': 'Installers',
+    'pcn.installers.placeholder': 'Installer access will appear with PRO accounts.',
+    'profile.title': 'Profile',
+    'profile.nickname': 'Game nickname',
+    'profile.timezone': 'Timezone',
+    'profile.language': 'Language',
+    'profile.logout': 'Sign out',
+  },
+};
+
+const applyTranslations = () => {
+  const dict = translations[state.language] ?? translations.ru;
+  document.querySelectorAll('[data-i18n]').forEach((node) => {
+    const key = node.dataset.i18n;
+    if (dict[key]) {
+      node.textContent = dict[key];
+    }
+  });
+};
+
+const loadProfileSettings = () => {
+  const raw = localStorage.getItem('profileSettings');
+  if (!raw) return;
+  try {
+    const parsed = JSON.parse(raw);
+    state.language = parsed.language ?? state.language;
+    state.timezone = parsed.timezone ?? state.timezone;
+    state.nickname = parsed.nickname ?? state.nickname;
+  } catch {
+    // ignore
+  }
+};
+
+const saveProfileSettings = () => {
+  localStorage.setItem('profileSettings', JSON.stringify({
+    language: state.language,
+    timezone: state.timezone,
+    nickname: state.nickname,
+  }));
+};
 
 const apiFetch = async (path) => {
   const response = await fetch(path);
@@ -35,7 +120,7 @@ const formatLogDate = (timestamp) => {
   if (!timestamp) return null;
   const date = new Date(timestamp);
   if (Number.isNaN(date.getTime())) return null;
-  return date.toLocaleDateString('ru-RU', {
+  return date.toLocaleDateString(state.language === 'en-US' ? 'en-US' : 'ru-RU', {
     day: '2-digit',
     month: '2-digit',
     year: 'numeric',
@@ -46,7 +131,7 @@ const formatLogTime = (timestamp) => {
   if (!timestamp) return null;
   const date = new Date(timestamp);
   if (Number.isNaN(date.getTime())) return null;
-  return date.toLocaleTimeString('ru-RU', {
+  return date.toLocaleTimeString(state.language === 'en-US' ? 'en-US' : 'ru-RU', {
     hour: '2-digit',
     minute: '2-digit',
     second: '2-digit',
@@ -199,6 +284,63 @@ if (searchInput) {
     refresh().catch(() => null);
   });
 }
+
+tabs.forEach((tab) => {
+  tab.addEventListener('click', () => {
+    tabs.forEach((btn) => btn.classList.remove('tab--active'));
+    panels.forEach((panel) => panel.classList.remove('panel--active'));
+
+    tab.classList.add('tab--active');
+    const target = document.getElementById(tab.dataset.tab);
+    if (target) {
+      target.classList.add('panel--active');
+    }
+  });
+});
+
+const initProfileMenu = () => {
+  if (!avatarButton || !profileDropdown) return;
+  const toggle = (open) => {
+    profileDropdown.setAttribute('aria-hidden', open ? 'false' : 'true');
+    profileDropdown.classList.toggle('profile-dropdown--open', open);
+  };
+  avatarButton.addEventListener('click', (event) => {
+    event.stopPropagation();
+    const isOpen = profileDropdown.classList.contains('profile-dropdown--open');
+    toggle(!isOpen);
+  });
+  document.addEventListener('click', () => toggle(false));
+  profileDropdown.addEventListener('click', (event) => event.stopPropagation());
+
+  loadProfileSettings();
+  if (profileNickname) profileNickname.value = state.nickname;
+  if (profileTimezone) profileTimezone.value = state.timezone;
+  if (profileLanguage) profileLanguage.value = state.language;
+  applyTranslations();
+
+  profileNickname?.addEventListener('input', (event) => {
+    state.nickname = event.target.value;
+    saveProfileSettings();
+  });
+  profileTimezone?.addEventListener('change', (event) => {
+    state.timezone = event.target.value;
+    saveProfileSettings();
+  });
+  profileLanguage?.addEventListener('change', (event) => {
+    state.language = event.target.value;
+    saveProfileSettings();
+    applyTranslations();
+    refresh().catch(() => null);
+  });
+  profileLogout?.addEventListener('click', () => {
+    state.nickname = '';
+    saveProfileSettings();
+    toggle(false);
+  });
+};
+
+initProfileMenu();
+applyTranslations();
 
 refresh().catch(() => null);
 setInterval(() => {
