@@ -41,13 +41,18 @@ const mapDevice = (row) => ({
   config: row.config,
 });
 
-const mapLog = (row) => ({
-  time: row.time,
-  text: row.text,
-  who: row.who,
-  type: row.type,
-  createdAt: row.created_at,
-});
+const mapLog = (row) => {
+  const createdAt = row.created_at;
+  const createdAtMs = createdAt ? new Date(createdAt).getTime() : null;
+  return {
+    time: row.time,
+    text: row.text,
+    who: row.who,
+    type: row.type,
+    createdAt,
+    createdAtMs,
+  };
+};
 
 const normalizeHubId = (hubId) => (hubId?.startsWith('HUB-') ? hubId.replace('HUB-', '') : hubId);
 const formatHubIdForSend = (hubId) => (hubId?.startsWith('HUB-') ? hubId : `HUB-${hubId}`);
@@ -459,15 +464,20 @@ app.get('/api/logs', async (req, res) => {
      ORDER BY logs.id DESC
      LIMIT 300`,
   );
-  res.json(result.rows.map((row) => ({
-    time: row.time,
-    text: row.text,
-    who: row.who,
-    type: row.type,
-    createdAt: row.created_at,
-    spaceName: row.space_name,
-    spaceId: row.space_id,
-  })));
+  res.json(result.rows.map((row) => {
+    const createdAt = row.created_at;
+    const createdAtMs = createdAt ? new Date(createdAt).getTime() : null;
+    return {
+      time: row.time,
+      text: row.text,
+      who: row.who,
+      type: row.type,
+      createdAt,
+      createdAtMs,
+      spaceName: row.space_name,
+      spaceId: row.space_id,
+    };
+  }));
 });
 
 app.post('/api/spaces', async (req, res) => {

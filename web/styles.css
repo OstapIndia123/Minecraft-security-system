@@ -677,7 +677,7 @@ body {
 }
 
 .log-row--alarm-flash {
-  animation: alarm-row 1s steps(2) 10;
+  animation: alarm-row 1s steps(2) 15;
 }
 
 .log-row--restore {
@@ -788,8 +788,17 @@ body {
 }
 
 @keyframes alarm-row {
-  50% {
+  0% {
     background: rgba(255, 77, 77, 0.12);
+    box-shadow: inset 0 0 0 1px rgba(255, 77, 77, 0.3);
+  }
+  50% {
+    background: rgba(255, 77, 77, 0.45);
+    box-shadow: inset 0 0 0 1px rgba(255, 77, 77, 0.9);
+  }
+  100% {
+    background: rgba(255, 77, 77, 0.12);
+    box-shadow: inset 0 0 0 1px rgba(255, 77, 77, 0.3);
   }
 }
 

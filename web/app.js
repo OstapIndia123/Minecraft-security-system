@@ -191,14 +191,34 @@ const setupZoneDelayFields = (form) => {
   update();
 };
 
-const formatLogDate = (dateValue) => {
-  if (!dateValue) return null;
-  const date = new Date(dateValue);
+const getLogTimestamp = (log) => {
+  if (log.createdAtMs) return log.createdAtMs;
+  const raw = log.createdAt ?? log.created_at;
+  if (!raw) return null;
+  const parsed = new Date(raw);
+  if (Number.isNaN(parsed.getTime())) return null;
+  return parsed.getTime();
+};
+
+const formatLogDate = (timestamp) => {
+  if (!timestamp) return null;
+  const date = new Date(timestamp);
   if (Number.isNaN(date.getTime())) return null;
   return date.toLocaleDateString('ru-RU', {
     day: '2-digit',
     month: '2-digit',
     year: 'numeric',
+  });
+};
+
+const formatLogTime = (timestamp) => {
+  if (!timestamp) return null;
+  const date = new Date(timestamp);
+  if (Number.isNaN(date.getTime())) return null;
+  return date.toLocaleTimeString('ru-RU', {
+    hour: '2-digit',
+    minute: '2-digit',
+    second: '2-digit',
   });
 };
 
@@ -798,7 +818,8 @@ const renderLogs = (space) => {
   logTable.innerHTML = '';
   let lastDate = null;
   logs.forEach((log) => {
-    const dateLabel = formatLogDate(log.createdAt ?? log.created_at);
+    const logTimestamp = getLogTimestamp(log);
+    const dateLabel = formatLogDate(logTimestamp);
     if (dateLabel && dateLabel !== lastDate) {
       const divider = document.createElement('div');
       divider.className = 'log-divider';
@@ -810,10 +831,9 @@ const renderLogs = (space) => {
     const isAlarm = log.type === 'alarm';
     const isRestore = log.type === 'restore';
     const isHub = log.type === 'hub_raw';
-    const createdAt = log.createdAt ?? log.created_at;
-    const flashKey = `logFlash:${space.id}:${createdAt ?? log.time}:${log.text}`;
+    const flashKey = `logFlash:${space.id}:${logTimestamp ?? log.time}:${log.text}`;
     const hasSeen = localStorage.getItem(flashKey);
-    if (isAlarm && createdAt && !hasSeen) {
+    if (isAlarm && logTimestamp && !hasSeen) {
       localStorage.setItem(flashKey, String(Date.now()));
       logFlashActive.set(flashKey, Date.now() + FLASH_DURATION_MS);
     }
@@ -823,8 +843,9 @@ const renderLogs = (space) => {
     }
     row.className = `log-row ${isAlarm ? 'log-row--alarm' : ''} ${shouldFlash ? 'log-row--alarm-flash' : ''} ${isRestore ? 'log-row--restore' : ''} ${isHub ? 'log-row--hub' : ''}`;
     const text = isHub ? log.text.replace(/\n/g, '<br />') : log.text;
+    const timeLabel = formatLogTime(logTimestamp) ?? log.time;
     row.innerHTML = `
-      <span>${log.time}</span>
+      <span>${timeLabel}</span>
       <span>${text}</span>
       <span class="muted">${log.who}</span>
     `;
