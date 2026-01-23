@@ -23,6 +23,11 @@
    docker compose build --build-arg BASE_IMAGE=registry.example.com/node:20-alpine
    docker compose up -d
    ```
+   Если нет доступа к npm registry, можно заранее положить `backend/node_modules` и
+   `hub-backend/node_modules` в каталог сборки или указать свой registry:
+   ```bash
+   docker compose build --build-arg NPM_REGISTRY=https://registry.npmjs.org
+   ```
 2. Инициализировать БД (единоразово):
    ```bash
    docker compose exec app node backend/seed.js

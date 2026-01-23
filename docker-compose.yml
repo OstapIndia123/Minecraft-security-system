@@ -4,6 +4,7 @@ services:
       context: .
       args:
         BASE_IMAGE: node:20-alpine
+        NPM_REGISTRY: ""
     environment:
       DATABASE_URL: postgres://postgres:postgres@postgres:5432/minecraft_security
       PORT: 8080

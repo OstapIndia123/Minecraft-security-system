@@ -46,6 +46,13 @@ WEBHOOK_URL=http://127.0.0.1:8080/api/hub/events
 docker compose build --build-arg BASE_IMAGE=registry.example.com/node:20-alpine
 ```
 
+Если недоступен npm registry, можно:
+1) положить `backend/node_modules` и `hub-backend/node_modules` в репозиторий/каталог сборки (они будут скопированы в образ),
+2) либо указать свой npm registry:
+```bash
+docker compose build --build-arg NPM_REGISTRY=https://registry.npmjs.org
+```
+
 Откройте:
 - Вход: http://localhost:8080/login.html
 - PRO (Режим ПЦН): http://localhost:8080/index.html

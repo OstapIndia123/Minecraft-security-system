@@ -3,16 +3,16 @@ FROM ${BASE_IMAGE}
 
 WORKDIR /app
 
-COPY backend/package.json backend/
-RUN npm --prefix backend install --omit=dev
-
-COPY hub-backend/package.json hub-backend/
-RUN npm --prefix hub-backend install --omit=dev
+ARG NPM_REGISTRY=
 
 COPY backend backend
 COPY hub-backend hub-backend
 COPY web web
 COPY docker/start.sh /app/start.sh
+
+RUN if [ -n "$NPM_REGISTRY" ]; then npm config set registry "$NPM_REGISTRY"; fi \
+  && if [ ! -d backend/node_modules ]; then npm --prefix backend install --omit=dev; fi \
+  && if [ ! -d hub-backend/node_modules ]; then npm --prefix hub-backend install --omit=dev; fi
 
 RUN chmod +x /app/start.sh && mkdir -p /data
 
