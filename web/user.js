@@ -209,7 +209,15 @@ const initProfileMenu = async () => {
   applyProfileSettings(settings);
   setAvatar(state.avatarUrl);
   if (profileNickname) profileNickname.value = settings.nickname ?? '';
-  if (profileTimezone) profileTimezone.value = settings.timezone ?? 'UTC';
+  if (profileTimezone) {
+    const desired = settings.timezone ?? 'UTC';
+    const option = profileTimezone.querySelector(`option[value="${desired}"]`);
+    profileTimezone.value = option ? desired : 'UTC';
+    if (!option) {
+      saveProfileSettings({ ...settings, timezone: 'UTC', avatarUrl: state.avatarUrl });
+      state.timezone = 'UTC';
+    }
+  }
   if (profileLanguage) profileLanguage.value = settings.language ?? 'ru';
   await syncProfileSettings();
   applyTranslations();

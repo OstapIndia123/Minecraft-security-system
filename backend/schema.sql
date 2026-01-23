@@ -26,6 +26,10 @@ CREATE TABLE users (
   created_at TIMESTAMP NOT NULL DEFAULT NOW()
 );
 
+CREATE UNIQUE INDEX users_minecraft_nickname_lower_uniq
+  ON users (lower(minecraft_nickname))
+  WHERE minecraft_nickname IS NOT NULL;
+
 CREATE TABLE sessions (
   token TEXT PRIMARY KEY,
   user_id INT NOT NULL REFERENCES users(id) ON DELETE CASCADE,

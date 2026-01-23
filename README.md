@@ -42,6 +42,33 @@ DISCORD_REDIRECT_URI=http://localhost:8080/api/auth/discord/callback
 
 После этого на странице входа появится кнопка входа/регистрации через Discord.
 
+## Авторизация через лаунчер
+Сайт можно открывать из лаунчера через WebView по URL:
+```
+https://your-domain.com/login.html?token=LAUNCHER_TOKEN
+```
+
+Backend обменяет `token` на данные пользователя через внешний API:
+```
+GET {LAUNCHER_API_URL}/Key/AccountData/{token}
+```
+
+В `.env` для backend укажите:
+```
+LAUNCHER_API_URL=http://127.0.0.1:8090
+```
+
+### Эмуляция лаунчера локально
+Запустите простой мок‑сервер:
+```bash
+node -e "require('http').createServer((req,res)=>{ if(req.url.startsWith('/Key/AccountData/')){ res.writeHead(200,{'Content-Type':'application/json'}); res.end(JSON.stringify({ minecraft:{ uuid:'00000000-0000-0000-0000-000000000000', nickname:'PlayerNickname', skin:{ url:'https://example.com/skin.png', variant:'classic'} }, discord:{ id:'123456789012345678', nickname:'DiscordNick', avatar:{ url:'https://cdn.discordapp.com/avatars/.../....png'} }, device:{ hwid:'123' }, lastMinecraftServer:{ serverId:'Satirize' }, servers:[] })); } else { res.writeHead(404); res.end(); } }).listen(8090,()=>console.log('Mock launcher API on :8090'))"
+```
+
+Далее откройте:
+```
+http://localhost:8080/login.html?token=TEST_TOKEN
+```
+
 ## Webhook от модов
 Хабы и читатели присылают события на:
 - `POST /api/hub/events`

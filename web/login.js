@@ -15,6 +15,8 @@ const translations = {
     'auth.nickname.placeholder': 'Игровой ник',
     'auth.nickname.save': 'Сохранить',
     'auth.errors.discord': 'Не удалось войти через Discord.',
+    'auth.errors.launcher': 'Не удалось войти через лаунчер.',
+    'auth.errors.nickname_taken': 'Такой ник уже занят.',
   },
   'en-US': {
     'auth.actions.discordOnly': 'Sign in with Discord',
@@ -26,6 +28,8 @@ const translations = {
     'auth.nickname.placeholder': 'Game nickname',
     'auth.nickname.save': 'Save',
     'auth.errors.discord': 'Unable to sign in with Discord.',
+    'auth.errors.launcher': 'Unable to sign in with the launcher.',
+    'auth.errors.nickname_taken': 'That nickname is already taken.',
   },
 };
 
@@ -77,7 +81,7 @@ const showNicknameModal = (role, token) => {
     const nickname = new FormData(nicknameForm).get('nickname')?.toString().trim();
     if (!nickname) return;
     try {
-      await fetch('/api/auth/me', {
+      const response = await fetch('/api/auth/me', {
         method: 'PATCH',
         headers: {
           'Content-Type': 'application/json',
@@ -85,6 +89,13 @@ const showNicknameModal = (role, token) => {
         },
         body: JSON.stringify({ minecraft_nickname: nickname }),
       });
+      if (!response.ok) {
+        if (response.status === 409) {
+          showError(translations[language]?.['auth.errors.nickname_taken'] ?? 'Nickname already taken.');
+          return;
+        }
+        throw new Error('nickname_update_failed');
+      }
       let timezoneValue = 'UTC';
       let avatarUrl = '';
       const rawSettings = localStorage.getItem('profileSettings');
@@ -113,12 +124,54 @@ const showNicknameModal = (role, token) => {
   }, { once: true });
 };
 
+const handleLauncherLogin = async (launcherToken) => {
+  try {
+    const response = await fetch(`/api/auth/launcher?token=${encodeURIComponent(launcherToken)}`);
+    if (!response.ok) {
+      if (response.status === 409) {
+        showError(translations[language]?.['auth.errors.nickname_taken'] ?? 'Nickname already taken.');
+      } else {
+        showError(translations[language]?.['auth.errors.launcher'] ?? 'Launcher login failed.');
+      }
+      return;
+    }
+    const payload = await response.json();
+    const authToken = payload.token;
+    const user = payload.user ?? {};
+    if (!authToken) {
+      showError(translations[language]?.['auth.errors.launcher'] ?? 'Launcher login failed.');
+      return;
+    }
+    localStorage.setItem('authToken', authToken);
+    const nickname = user.minecraft_nickname ?? '';
+    const profileSettings = {
+      nickname,
+      language: user.language ?? 'ru',
+      timezone: user.timezone ?? 'UTC',
+      avatarUrl: user.discord_avatar_url ?? '',
+    };
+    localStorage.setItem('profileSettings', JSON.stringify(profileSettings));
+    const resolvedRole = user.role ?? 'user';
+    if (!nickname) {
+      showNicknameModal(resolvedRole, authToken);
+      return;
+    }
+    window.location.href = resolvedRole === 'installer' ? 'index.html' : 'user.html';
+  } catch {
+    showError(translations[language]?.['auth.errors.launcher'] ?? 'Launcher login failed.');
+  }
+};
+
 const handleDiscordRedirect = async () => {
   const token = urlParams.get('token');
   const role = urlParams.get('role');
   const error = urlParams.get('error');
   if (error) {
     showError(translations[language]?.['auth.errors.discord'] ?? 'Discord login failed.');
+    return;
+  }
+  if (token && !role) {
+    await handleLauncherLogin(token);
     return;
   }
   if (token) {

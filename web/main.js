@@ -427,7 +427,14 @@ const initProfileMenu = async () => {
   setAvatar(state.avatarUrl);
   await syncProfileSettings();
   if (profileNickname) profileNickname.value = state.nickname;
-  if (profileTimezone) profileTimezone.value = state.timezone;
+  if (profileTimezone) {
+    const option = profileTimezone.querySelector(`option[value="${state.timezone}"]`);
+    profileTimezone.value = option ? state.timezone : 'UTC';
+    if (!option) {
+      state.timezone = 'UTC';
+      saveProfileSettings();
+    }
+  }
   if (profileLanguage) profileLanguage.value = state.language;
   applyTranslations();
 

@@ -13,6 +13,7 @@ const hubApiUrl = process.env.HUB_API_URL ?? 'http://127.0.0.1:8090';
 const discordClientId = process.env.DISCORD_CLIENT_ID;
 const discordClientSecret = process.env.DISCORD_CLIENT_SECRET;
 const discordRedirectUri = process.env.DISCORD_REDIRECT_URI;
+const launcherApiUrl = process.env.LAUNCHER_API_URL;
 const port = Number(process.env.PORT ?? 8080);
 
 app.use(cors());
@@ -93,6 +94,16 @@ const ensureSpaceRole = async (userId, spaceId, role) => {
     [userId, spaceId, role],
   );
   return result.rows.length > 0;
+};
+
+const ensureNicknameAvailable = async (nickname, userId) => {
+  if (!nickname) return true;
+  const result = await query(
+    `SELECT id FROM users
+     WHERE lower(minecraft_nickname) = lower($1) AND id <> $2`,
+    [nickname, userId ?? 0],
+  );
+  return result.rows.length === 0;
 };
 
 const issueSession = async (userId) => {
@@ -609,6 +620,13 @@ app.get('/api/auth/me', requireAuth, async (req, res) => {
 
 app.patch('/api/auth/me', requireAuth, async (req, res) => {
   const { minecraft_nickname, language, timezone } = req.body ?? {};
+  if (minecraft_nickname) {
+    const available = await ensureNicknameAvailable(minecraft_nickname, req.user.id);
+    if (!available) {
+      res.status(409).json({ error: 'nickname_taken' });
+      return;
+    }
+  }
   const updated = await query(
     `UPDATE users
      SET minecraft_nickname = $1,
@@ -632,6 +650,95 @@ app.post('/api/auth/logout', requireAuth, async (req, res) => {
     await query('DELETE FROM sessions WHERE token = $1', [token]);
   }
   res.json({ ok: true });
+});
+
+app.get('/api/auth/launcher', async (req, res) => {
+  if (!launcherApiUrl) {
+    res.status(500).json({ error: 'launcher_not_configured' });
+    return;
+  }
+  const token = req.query.token;
+  if (!token) {
+    res.status(400).json({ error: 'missing_token' });
+    return;
+  }
+  try {
+    const controller = new AbortController();
+    const timeout = setTimeout(() => controller.abort(), 5000);
+    const response = await fetch(
+      `${launcherApiUrl.replace(/\\/$/, '')}/Key/AccountData/${encodeURIComponent(String(token))}`,
+      { signal: controller.signal },
+    );
+    clearTimeout(timeout);
+    if (!response.ok) {
+      res.status(502).json({ error: 'launcher_fetch_failed' });
+      return;
+    }
+    const payload = await response.json();
+    const minecraft = payload?.minecraft ?? {};
+    const discord = payload?.discord ?? {};
+    const nickname = minecraft.nickname?.toString().trim();
+    if (!nickname) {
+      res.status(400).json({ error: 'nickname_missing' });
+      return;
+    }
+    const discordId = discord.id ? String(discord.id) : null;
+    const discordAvatarUrl = discord.avatar?.url ?? null;
+
+    let user = null;
+    if (discordId) {
+      const byDiscord = await query('SELECT * FROM users WHERE discord_id = $1', [discordId]);
+      user = byDiscord.rows[0] ?? null;
+    }
+    if (!user) {
+      const byNickname = await query(
+        'SELECT * FROM users WHERE lower(minecraft_nickname) = lower($1)',
+        [nickname],
+      );
+      user = byNickname.rows[0] ?? null;
+    }
+
+    if (user) {
+      const available = await ensureNicknameAvailable(nickname, user.id);
+      if (!available) {
+        res.status(409).json({ error: 'nickname_taken' });
+        return;
+      }
+      const updated = await query(
+        `UPDATE users
+         SET minecraft_nickname = $1,
+             discord_id = COALESCE($2, discord_id),
+             discord_avatar_url = COALESCE($3, discord_avatar_url)
+         WHERE id = $4
+         RETURNING id, email, role, minecraft_nickname, language, timezone, discord_avatar_url`,
+        [nickname, discordId, discordAvatarUrl, user.id],
+      );
+      user = updated.rows[0];
+    } else {
+      const email = `launcher:${minecraft.uuid ?? token}`;
+      const insert = await query(
+        `INSERT INTO users (email, password_hash, role, minecraft_nickname, discord_id, discord_avatar_url, language, timezone)
+         VALUES ($1,$2,$3,$4,$5,$6,$7,$8)
+         RETURNING id, email, role, minecraft_nickname, language, timezone, discord_avatar_url`,
+        [
+          email,
+          formatPasswordHash(crypto.randomUUID()),
+          'user',
+          nickname,
+          discordId,
+          discordAvatarUrl,
+          'ru',
+          'UTC',
+        ],
+      );
+      user = insert.rows[0];
+    }
+
+    const session = await issueSession(user.id);
+    res.json({ token: session.token, role: user.role, user });
+  } catch (error) {
+    res.status(502).json({ error: 'launcher_fetch_failed' });
+  }
 });
 
 app.get('/api/spaces', requireAuth, async (req, res) => {
