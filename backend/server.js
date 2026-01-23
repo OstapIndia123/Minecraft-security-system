@@ -185,7 +185,7 @@ const mapDevice = (row) => ({
 
 const mapLog = (row) => {
   const createdAt = row.created_at;
-  const createdAtMs = createdAt ? new Date(createdAt).getTime() : null;
+  const createdAtMs = createdAt ? Date.parse(`${createdAt}Z`) : null;
   return {
     time: row.time,
     text: row.text,
@@ -752,7 +752,7 @@ app.get('/api/logs', requireAuth, async (req, res) => {
   );
   res.json(result.rows.map((row) => {
     const createdAt = row.created_at;
-    const createdAtMs = createdAt ? new Date(createdAt).getTime() : null;
+    const createdAtMs = createdAt ? Date.parse(`${createdAt}Z`) : null;
     return {
       time: row.time,
       text: row.text,

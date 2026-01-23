@@ -46,7 +46,7 @@ const translations = {
     'status.night': 'Ночной режим',
     'profile.title': 'Профиль',
     'profile.nickname': 'Игровой ник',
-    'profile.timezone': 'Таймзона',
+    'profile.timezone': 'Часовой пояс',
     'profile.language': 'Язык',
     'profile.switchPro': 'Перейти на PRO',
     'profile.logout': 'Выйти',
@@ -67,7 +67,7 @@ const translations = {
     'status.night': 'Night mode',
     'profile.title': 'Profile',
     'profile.nickname': 'Game nickname',
-    'profile.timezone': 'Timezone',
+    'profile.timezone': 'Time zone',
     'profile.language': 'Language',
     'profile.switchPro': 'Go to PRO',
     'profile.logout': 'Sign out',
@@ -334,6 +334,45 @@ const renderDevices = (devices) => {
   }
 };
 
+const translateLogText = (text) => {
+  if (state.language !== 'en-US' || !text) return text;
+  const translations = [
+    { pattern: /^Создано пространство$/, replacement: 'Space created' },
+    { pattern: /^Обновлена информация об объекте$/, replacement: 'Space details updated' },
+    { pattern: /^Объект поставлен под охрану$/, replacement: 'Object armed' },
+    { pattern: /^Объект снят с охраны$/, replacement: 'Object disarmed' },
+    { pattern: /^Начало снятия$/, replacement: 'Disarm started' },
+    { pattern: /^Неудачная попытка постановки под охрану$/, replacement: 'Failed to arm' },
+    { pattern: /^Неудачная постановка \(зоны не в норме\): (.+)$/, replacement: 'Failed to arm (zones not ready): $1' },
+    { pattern: /^Тревога шлейфа: (.+)$/, replacement: 'Zone alarm: $1' },
+    { pattern: /^Восстановление шлейфа: (.+)$/, replacement: 'Zone restored: $1' },
+    { pattern: /^Неизвестный ключ: (.+)$/, replacement: 'Unknown key: $1' },
+    { pattern: /^Добавлено контактное лицо: (.+)$/, replacement: 'Contact added: $1' },
+    { pattern: /^Удалено контактное лицо: (.+)$/, replacement: 'Contact removed: $1' },
+    { pattern: /^Обновлено контактное лицо: (.+)$/, replacement: 'Contact updated: $1' },
+    { pattern: /^Добавлено примечание$/, replacement: 'Note added' },
+    { pattern: /^Удалено примечание: (.+)$/, replacement: 'Note removed: $1' },
+    { pattern: /^Обновлено примечание$/, replacement: 'Note updated' },
+    { pattern: /^Добавлено фото$/, replacement: 'Photo added' },
+    { pattern: /^Удалено фото: (.+)$/, replacement: 'Photo removed: $1' },
+    { pattern: /^Обновлено фото$/, replacement: 'Photo updated' },
+    { pattern: /^Хаб привязан к пространству$/, replacement: 'Hub attached to space' },
+    { pattern: /^Хаб удалён из пространства$/, replacement: 'Hub removed from space' },
+    { pattern: /^Добавлено устройство: (.+)$/, replacement: 'Device added: $1' },
+    { pattern: /^Удалено устройство: (.+)$/, replacement: 'Device removed: $1' },
+    { pattern: /^Обновлено устройство: (.+)$/, replacement: 'Device updated: $1' },
+    { pattern: /^Добавлен ключ: (.+)$/, replacement: 'Key added: $1' },
+    { pattern: /^Удалён ключ: (.+)$/, replacement: 'Key removed: $1' },
+    { pattern: /^Обновлён ключ: (.+)$/, replacement: 'Key updated: $1' },
+  ];
+  for (const entry of translations) {
+    if (entry.pattern.test(text)) {
+      return text.replace(entry.pattern, entry.replacement);
+    }
+  }
+  return text;
+};
+
 const renderLogs = (logs) => {
   logTable.innerHTML = '';
   if (!logs.length) {
@@ -343,11 +382,12 @@ const renderLogs = (logs) => {
   logs.forEach((log) => {
     const row = document.createElement('div');
     row.className = `log-row ${log.type === 'alarm' ? 'log-row--alarm' : ''}`;
-    const timestamp = log.createdAtMs ?? (log.createdAt ? new Date(log.createdAt).getTime() : null);
+    const timestamp = log.createdAtMs ?? (log.createdAt ? new Date(`${log.createdAt}Z`).getTime() : null);
     const timeLabel = formatLogTime(timestamp) ?? log.time;
+    const text = translateLogText(log.text);
     row.innerHTML = `
       <span>${timeLabel}</span>
-      <span>${log.text}</span>
+      <span>${text}</span>
       <span class="muted">${log.who}</span>
     `;
     logTable.appendChild(row);
