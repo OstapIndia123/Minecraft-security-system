@@ -4,6 +4,7 @@ const state = {
   language: 'ru',
   timezone: 'UTC',
   nickname: '',
+  role: null,
 };
 
 const FLASH_DURATION_MS = 15000;
@@ -22,6 +23,7 @@ const profileNickname = document.getElementById('profileNickname');
 const profileTimezone = document.getElementById('profileTimezone');
 const profileLanguage = document.getElementById('profileLanguage');
 const profileLogout = document.getElementById('profileLogout');
+const profileSwitch = document.getElementById('profileSwitch');
 
 const translations = {
   ru: {
@@ -44,6 +46,7 @@ const translations = {
     'profile.nickname': 'Игровой ник',
     'profile.timezone': 'Таймзона',
     'profile.language': 'Язык',
+    'profile.switchUser': 'Перейти на обычный',
     'profile.logout': 'Выйти',
   },
   'en-US': {
@@ -66,6 +69,7 @@ const translations = {
     'profile.nickname': 'Game nickname',
     'profile.timezone': 'Timezone',
     'profile.language': 'Language',
+    'profile.switchUser': 'Switch to user mode',
     'profile.logout': 'Sign out',
   },
 };
@@ -110,10 +114,43 @@ const syncProfileSettings = async () => {
     state.language = payload.user.language ?? state.language;
     state.timezone = payload.user.timezone ?? state.timezone;
     state.nickname = payload.user.minecraft_nickname ?? state.nickname;
+    state.role = payload.user.role ?? state.role;
     saveProfileSettings();
   } catch {
     // ignore
   }
+};
+
+const ensureNickname = async () => {
+  if (state.nickname && state.nickname.trim()) return;
+  const overlay = document.createElement('div');
+  overlay.className = 'nickname-modal';
+  overlay.innerHTML = `
+    <div class="nickname-modal__content">
+      <h3>Укажите игровой ник</h3>
+      <p>Без игрового ника доступ к объектам не выдаётся.</p>
+      <input type="text" id="nicknameInput" placeholder="Игровой ник" />
+      <button class="button button--primary" id="nicknameSubmit">Сохранить</button>
+    </div>
+  `;
+  document.body.appendChild(overlay);
+  const input = overlay.querySelector('#nicknameInput');
+  const submit = overlay.querySelector('#nicknameSubmit');
+  submit.addEventListener('click', async () => {
+    const value = input.value.trim();
+    if (!value) return;
+    state.nickname = value;
+    saveProfileSettings();
+    await fetch('/api/auth/me', {
+      method: 'PATCH',
+      headers: {
+        'Content-Type': 'application/json',
+        Authorization: `Bearer ${localStorage.getItem('authToken') ?? ''}`,
+      },
+      body: JSON.stringify({ minecraft_nickname: value }),
+    });
+    overlay.remove();
+  });
 };
 
 const saveProfileSettings = () => {
@@ -397,12 +434,20 @@ const initProfileMenu = async () => {
     toggle(false);
     window.location.href = 'login.html';
   });
+  profileSwitch?.addEventListener('click', () => {
+    window.location.href = 'user.html';
+  });
 };
 
 if (!localStorage.getItem('authToken')) {
   window.location.href = 'login.html';
 } else {
   initProfileMenu().then(() => {
+    if (state.role && state.role !== 'installer') {
+      window.location.href = 'user.html';
+      return;
+    }
+    ensureNickname().catch(() => null);
     refresh().catch(() => null);
   });
   applyTranslations();

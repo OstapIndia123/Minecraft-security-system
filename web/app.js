@@ -9,6 +9,7 @@ const state = {
   language: 'ru',
   timezone: 'UTC',
   nickname: '',
+  role: null,
 };
 
 let spaces = [];
@@ -71,6 +72,7 @@ const profileNickname = document.getElementById('profileNickname');
 const profileTimezone = document.getElementById('profileTimezone');
 const profileLanguage = document.getElementById('profileLanguage');
 const profileLogout = document.getElementById('profileLogout');
+const profileSwitch = document.getElementById('profileSwitch');
 const usersList = document.getElementById('usersList');
 const usersForm = document.getElementById('usersForm');
 const installersList = document.getElementById('installersList');
@@ -150,15 +152,16 @@ const translations = {
     'engineer.search.device': 'Поиск по названию или ID',
     'engineer.users.title': 'Пользователи',
     'engineer.users.add': 'Добавить пользователя',
-    'engineer.users.email': 'Email пользователя',
+    'engineer.users.email': 'Игровой ник пользователя',
     'engineer.installers.title': 'Инженеры монтажа',
     'engineer.installers.add': 'Добавить инженера',
-    'engineer.installers.email': 'Email инженера',
+    'engineer.installers.email': 'Игровой ник инженера',
     'engineer.installers.note': 'Покинуть объект можно только если есть хотя бы ещё один инженер монтажа.',
     'profile.title': 'Профиль',
     'profile.nickname': 'Игровой ник',
     'profile.timezone': 'Таймзона',
     'profile.language': 'Язык',
+    'profile.switchUser': 'Перейти на обычный',
     'profile.logout': 'Выйти',
   },
   'en-US': {
@@ -218,15 +221,16 @@ const translations = {
     'engineer.search.device': 'Search by name or ID',
     'engineer.users.title': 'Users',
     'engineer.users.add': 'Add user',
-    'engineer.users.email': 'User email',
+    'engineer.users.email': 'User nickname',
     'engineer.installers.title': 'Installers',
     'engineer.installers.add': 'Add installer',
-    'engineer.installers.email': 'Installer email',
+    'engineer.installers.email': 'Installer nickname',
     'engineer.installers.note': 'You can leave only if another installer still has access.',
     'profile.title': 'Profile',
     'profile.nickname': 'Game nickname',
     'profile.timezone': 'Timezone',
     'profile.language': 'Language',
+    'profile.switchUser': 'Switch to user mode',
     'profile.logout': 'Sign out',
   },
 };
@@ -275,6 +279,7 @@ const syncProfileSettings = async () => {
     state.language = result.user.language ?? state.language;
     state.timezone = result.user.timezone ?? state.timezone;
     state.nickname = result.user.minecraft_nickname ?? state.nickname;
+    state.role = result.user.role ?? state.role;
     saveProfileSettings();
   } catch {
     // ignore
@@ -905,11 +910,11 @@ const loadMembers = async () => {
   renderMembers(members);
 };
 
-const addMember = async (role, email) => {
+const addMember = async (role, nickname) => {
   if (!state.selectedSpaceId) return;
   await apiFetch(`/api/spaces/${state.selectedSpaceId}/members`, {
     method: 'POST',
-    body: JSON.stringify({ email, role }),
+    body: JSON.stringify({ nickname, role }),
   });
   await loadMembers();
 };
@@ -918,6 +923,28 @@ const removeMember = async (userId) => {
   if (!state.selectedSpaceId) return;
   await apiFetch(`/api/spaces/${state.selectedSpaceId}/members/${userId}`, { method: 'DELETE' });
   await loadMembers();
+};
+
+const ensureNickname = async () => {
+  if (state.nickname && state.nickname.trim()) return;
+  const result = await promptAction({
+    title: 'Укажите игровой ник',
+    message: 'Без игрового ника доступ к объектам не выдаётся.',
+    fields: [{ name: 'nickname', placeholder: 'Игровой ник', required: true }],
+  });
+  if (!result?.confirmed) {
+    return ensureNickname();
+  }
+  const nickname = result.values.nickname.trim();
+  if (!nickname) {
+    return ensureNickname();
+  }
+  state.nickname = nickname;
+  saveProfileSettings();
+  await apiFetch('/api/auth/me', {
+    method: 'PATCH',
+    body: JSON.stringify({ minecraft_nickname: nickname }),
+  });
 };
 
 const renderContacts = (space) => {
@@ -1580,11 +1607,11 @@ if (usersForm) {
   usersForm.addEventListener('submit', async (event) => {
     event.preventDefault();
     if (!state.selectedSpaceId) return;
-    const email = usersForm.email.value.trim();
-    if (!email) return;
+    const nickname = usersForm.email.value.trim();
+    if (!nickname) return;
     try {
       showLoading();
-      await addMember('user', email);
+      await addMember('user', nickname);
       usersForm.reset();
       showToast('Пользователь добавлен.');
     } catch (error) {
@@ -1599,11 +1626,11 @@ if (installersForm) {
   installersForm.addEventListener('submit', async (event) => {
     event.preventDefault();
     if (!state.selectedSpaceId) return;
-    const email = installersForm.email.value.trim();
-    if (!email) return;
+    const nickname = installersForm.email.value.trim();
+    if (!nickname) return;
     try {
       showLoading();
-      await addMember('installer', email);
+      await addMember('installer', nickname);
       installersForm.reset();
       showToast('Инженер добавлен.');
     } catch (error) {
@@ -1826,6 +1853,9 @@ const initProfileMenu = async () => {
     applyTranslations();
     apiFetch('/api/auth/me', { method: 'PATCH', body: JSON.stringify({ language: state.language }) }).catch(() => null);
   });
+  profileSwitch?.addEventListener('click', () => {
+    window.location.href = 'user.html';
+  });
   profileLogout?.addEventListener('click', async () => {
     state.nickname = '';
     saveProfileSettings();
@@ -1846,6 +1876,11 @@ const init = async () => {
     return;
   }
   await initProfileMenu();
+  if (state.role && state.role !== 'installer') {
+    window.location.href = 'user.html';
+    return;
+  }
+  await ensureNickname();
   await loadSpaces();
   if (state.selectedSpaceId) {
     await loadLogs(state.selectedSpaceId);

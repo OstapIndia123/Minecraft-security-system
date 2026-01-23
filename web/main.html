@@ -82,6 +82,9 @@
                     <option value="en-US">English (US)</option>
                   </select>
                 </label>
+                <button class="button button--ghost profile-switch" id="profileSwitch" data-i18n="profile.switchUser">
+                  Перейти на обычный
+                </button>
                 <button class="button button--ghost profile-logout" id="profileLogout" data-i18n="profile.logout">Выйти</button>
               </div>
             </div>
@@ -208,7 +211,7 @@
             <div class="members-panel">
               <div class="members-list" id="usersList"></div>
               <form class="form-grid" id="usersForm">
-                <input type="email" name="email" data-i18n-placeholder="engineer.users.email" placeholder="Email пользователя" required />
+                <input type="text" name="email" data-i18n-placeholder="engineer.users.email" placeholder="Игровой ник пользователя" required />
                 <button class="button button--primary" type="submit" data-i18n="engineer.users.add">Добавить пользователя</button>
               </form>
             </div>
@@ -221,7 +224,7 @@
             <div class="members-panel">
               <div class="members-list" id="installersList"></div>
               <form class="form-grid" id="installersForm">
-                <input type="email" name="email" data-i18n-placeholder="engineer.installers.email" placeholder="Email инженера" required />
+                <input type="text" name="email" data-i18n-placeholder="engineer.installers.email" placeholder="Игровой ник инженера" required />
                 <button class="button button--primary" type="submit" data-i18n="engineer.installers.add">Добавить инженера</button>
               </form>
               <p class="muted" data-i18n="engineer.installers.note">Покинуть объект можно только если есть хотя бы ещё один инженер монтажа.</p>

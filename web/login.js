@@ -6,14 +6,14 @@ const translations = {
   ru: {
     'auth.actions.discordOnly': 'Войти через Discord',
     'auth.title': 'Авторизация',
-    'auth.subtitle': 'Вход в систему через Discord',
+    'auth.subtitle': 'Мы поддерживаем авторизацию только через Discrod/наш лаучер.',
     'auth.discord.note': 'Мы поддерживаем только авторизацию через Discord.',
     'auth.errors.discord': 'Не удалось войти через Discord.',
   },
   'en-US': {
     'auth.actions.discordOnly': 'Sign in with Discord',
     'auth.title': 'Sign in',
-    'auth.subtitle': 'Sign in with Discord',
+    'auth.subtitle': 'We only support Discord/launcher authentication.',
     'auth.discord.note': 'We only support Discord authentication.',
     'auth.errors.discord': 'Unable to sign in with Discord.',
   },

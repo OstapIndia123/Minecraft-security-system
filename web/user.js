@@ -3,6 +3,7 @@ const state = {
   selectedDeviceId: null,
   language: 'ru',
   timezone: 'UTC',
+  role: null,
 };
 
 const objectList = document.getElementById('userObjectList');
@@ -21,6 +22,7 @@ const profileNickname = document.getElementById('profileNickname');
 const profileTimezone = document.getElementById('profileTimezone');
 const profileLanguage = document.getElementById('profileLanguage');
 const profileLogout = document.getElementById('profileLogout');
+const profileSwitch = document.getElementById('profileSwitch');
 
 const translations = {
   ru: {
@@ -36,6 +38,7 @@ const translations = {
     'profile.nickname': 'Игровой ник',
     'profile.timezone': 'Таймзона',
     'profile.language': 'Язык',
+    'profile.switchPro': 'Перейти на PRO',
     'profile.logout': 'Выйти',
   },
   'en-US': {
@@ -51,6 +54,7 @@ const translations = {
     'profile.nickname': 'Game nickname',
     'profile.timezone': 'Timezone',
     'profile.language': 'Language',
+    'profile.switchPro': 'Switch to PRO',
     'profile.logout': 'Sign out',
   },
 };
@@ -118,7 +122,7 @@ const formatLogTime = (timestamp) => {
   });
 };
 
-const initProfileMenu = () => {
+const initProfileMenu = async () => {
   if (!avatarButton || !profileDropdown) return;
   const toggle = (open) => {
     profileDropdown.setAttribute('aria-hidden', open ? 'false' : 'true');
@@ -138,6 +142,24 @@ const initProfileMenu = () => {
   if (profileTimezone) profileTimezone.value = settings.timezone ?? 'UTC';
   if (profileLanguage) profileLanguage.value = settings.language ?? 'ru';
   applyTranslations();
+  try {
+    const profile = await apiFetch('/api/auth/me');
+    state.role = profile.user?.role ?? state.role;
+    if (profile.user?.language || profile.user?.timezone || profile.user?.minecraft_nickname) {
+      saveProfileSettings({
+        nickname: profile.user.minecraft_nickname ?? settings.nickname ?? '',
+        language: profile.user.language ?? settings.language ?? 'ru',
+        timezone: profile.user.timezone ?? settings.timezone ?? 'UTC',
+      });
+      applyProfileSettings(loadProfileSettings());
+      if (profileNickname) profileNickname.value = profile.user.minecraft_nickname ?? '';
+      if (profileTimezone) profileTimezone.value = profile.user.timezone ?? 'UTC';
+      if (profileLanguage) profileLanguage.value = profile.user.language ?? 'ru';
+      applyTranslations();
+    }
+  } catch {
+    // ignore
+  }
 
   profileNickname?.addEventListener('input', (event) => {
     saveProfileSettings({ ...settings, nickname: event.target.value });
@@ -178,6 +200,9 @@ const initProfileMenu = () => {
     }).catch(() => null);
     applyTranslations();
   });
+  profileSwitch?.addEventListener('click', () => {
+    window.location.href = 'index.html';
+  });
   profileLogout?.addEventListener('click', async () => {
     try {
       await apiFetch('/api/auth/logout', { method: 'POST' });
@@ -187,6 +212,38 @@ const initProfileMenu = () => {
     localStorage.removeItem('authToken');
     toggle(false);
     window.location.href = 'login.html';
+  });
+};
+
+const ensureNickname = async () => {
+  if (state.nickname && state.nickname.trim()) return;
+  const overlay = document.createElement('div');
+  overlay.className = 'nickname-modal';
+  overlay.innerHTML = `
+    <div class="nickname-modal__content">
+      <h3>Укажите игровой ник</h3>
+      <p>Без игрового ника доступ к объектам не выдаётся.</p>
+      <input type="text" id="nicknameInput" placeholder="Игровой ник" />
+      <button class="button button--primary" id="nicknameSubmit">Сохранить</button>
+    </div>
+  `;
+  document.body.appendChild(overlay);
+  const input = overlay.querySelector('#nicknameInput');
+  const submit = overlay.querySelector('#nicknameSubmit');
+  submit.addEventListener('click', async () => {
+    const value = input.value.trim();
+    if (!value) return;
+    state.nickname = value;
+    saveProfileSettings({
+      nickname: value,
+      language: state.language,
+      timezone: state.timezone,
+    });
+    await apiFetch('/api/auth/me', {
+      method: 'PATCH',
+      body: JSON.stringify({ minecraft_nickname: value }),
+    });
+    overlay.remove();
   });
 };
 
@@ -316,7 +373,11 @@ const init = async () => {
     window.location.href = 'login.html';
     return;
   }
-  initProfileMenu();
+  await initProfileMenu();
+  if (state.role && state.role === 'installer') {
+    // installers can still use user view, but provide switch
+  }
+  await ensureNickname();
   await loadSpaces();
 };
 

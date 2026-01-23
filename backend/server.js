@@ -891,12 +891,14 @@ app.post('/api/spaces/:id/members', requireAuth, requireInstaller, async (req, r
     res.status(403).json({ error: 'forbidden' });
     return;
   }
-  const { email, role } = req.body ?? {};
-  if (!email) {
-    res.status(400).json({ error: 'missing_email' });
+  const { email, nickname, role } = req.body ?? {};
+  if (!email && !nickname) {
+    res.status(400).json({ error: 'missing_identifier' });
     return;
   }
-  const userResult = await query('SELECT id, role FROM users WHERE email = $1', [String(email).toLowerCase()]);
+  const userResult = email
+    ? await query('SELECT id, role FROM users WHERE email = $1', [String(email).toLowerCase()])
+    : await query('SELECT id, role FROM users WHERE LOWER(minecraft_nickname) = LOWER($1)', [String(nickname)]);
   if (!userResult.rows.length) {
     res.status(404).json({ error: 'user_not_found' });
     return;
