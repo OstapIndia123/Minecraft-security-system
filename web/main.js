@@ -32,6 +32,14 @@ const translations = {
     'pcn.actions.refresh': 'Обновить',
     'pcn.actions.add': 'Добавить объект',
     'pcn.search': 'Поиск по объекту или ID',
+    'pcn.filters.all': 'Все',
+    'pcn.filters.offline': 'С хабами не в сети',
+    'pcn.filters.issues': 'С тревогой',
+    'pcn.log.filters.all': 'Все',
+    'pcn.log.filters.security': 'Охранные',
+    'pcn.log.filters.access': 'Доступ',
+    'pcn.log.filters.system': 'Система',
+    'pcn.log.filters.hub': 'События хаба',
     'profile.title': 'Профиль',
     'profile.nickname': 'Игровой ник',
     'profile.timezone': 'Таймзона',
@@ -46,6 +54,14 @@ const translations = {
     'pcn.actions.refresh': 'Refresh',
     'pcn.actions.add': 'Add object',
     'pcn.search': 'Search by object or ID',
+    'pcn.filters.all': 'All',
+    'pcn.filters.offline': 'Offline hubs',
+    'pcn.filters.issues': 'With alarms',
+    'pcn.log.filters.all': 'All',
+    'pcn.log.filters.security': 'Security',
+    'pcn.log.filters.access': 'Access',
+    'pcn.log.filters.system': 'System',
+    'pcn.log.filters.hub': 'Hub events',
     'profile.title': 'Profile',
     'profile.nickname': 'Game nickname',
     'profile.timezone': 'Timezone',
@@ -304,7 +320,7 @@ if (searchInput) {
   });
 }
 
-const initProfileMenu = () => {
+const initProfileMenu = async () => {
   if (!avatarButton || !profileDropdown) return;
   const toggle = (open) => {
     profileDropdown.setAttribute('aria-hidden', open ? 'false' : 'true');
@@ -319,7 +335,7 @@ const initProfileMenu = () => {
   profileDropdown.addEventListener('click', (event) => event.stopPropagation());
 
   loadProfileSettings();
-  syncProfileSettings();
+  await syncProfileSettings();
   if (profileNickname) profileNickname.value = state.nickname;
   if (profileTimezone) profileTimezone.value = state.timezone;
   if (profileLanguage) profileLanguage.value = state.language;
@@ -386,10 +402,11 @@ const initProfileMenu = () => {
 if (!localStorage.getItem('authToken')) {
   window.location.href = 'login.html';
 } else {
-  initProfileMenu();
+  initProfileMenu().then(() => {
+    refresh().catch(() => null);
+  });
   applyTranslations();
 
-  refresh().catch(() => null);
   setInterval(() => {
     refresh().catch(() => null);
   }, 5000);

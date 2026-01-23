@@ -96,6 +96,48 @@ const translations = {
   ru: {
     'engineer.title': 'Объекты',
     'engineer.subtitle': 'Управление пространствами и событиями',
+    'engineer.actions.arm': 'Под охрану',
+    'engineer.actions.disarm': 'С охраны',
+    'engineer.tabs.equipment': 'Оборудование',
+    'engineer.tabs.object': 'Про объект',
+    'engineer.tabs.contacts': 'Контактные лица',
+    'engineer.tabs.photos': 'Фото',
+    'engineer.tabs.notes': 'Примечания',
+    'engineer.tabs.log': 'Лог',
+    'engineer.equipment.title': 'Оборудование',
+    'engineer.equipment.add': 'Добавить устройство',
+    'engineer.object.title': 'Информация об объекте',
+    'engineer.object.edit': 'Редактировать объект',
+    'engineer.object.name': 'Название',
+    'engineer.object.coords': 'Координаты',
+    'engineer.object.city': 'Город',
+    'engineer.object.save': 'Сохранить',
+    'engineer.object.removeHub': 'Удалить хаб',
+    'engineer.object.delete': 'Удалить объект',
+    'engineer.object.attachHub': 'Привязать хаб',
+    'engineer.object.hubId': 'ID хаба',
+    'engineer.object.attach': 'Привязать',
+    'engineer.contacts.title': 'Контактные лица',
+    'engineer.contacts.addTitle': 'Добавить контактное лицо',
+    'engineer.contacts.name': 'Имя',
+    'engineer.contacts.role': 'Роль',
+    'engineer.contacts.phone': 'Телефон',
+    'engineer.contacts.add': 'Добавить',
+    'engineer.photos.title': 'Фото объекта',
+    'engineer.photos.addTitle': 'Добавить фото',
+    'engineer.photos.url': 'URL изображения',
+    'engineer.photos.label': 'Подпись',
+    'engineer.photos.add': 'Добавить',
+    'engineer.notes.title': 'Примечания',
+    'engineer.notes.addTitle': 'Добавить примечание',
+    'engineer.notes.text': 'Текст примечания',
+    'engineer.notes.add': 'Добавить',
+    'engineer.log.title': 'Лог событий',
+    'engineer.log.filters.all': 'Все',
+    'engineer.log.filters.security': 'Охранные',
+    'engineer.log.filters.access': 'Доступ',
+    'engineer.log.filters.system': 'Система',
+    'engineer.log.filters.hub': 'События хаба',
     'engineer.tabs.users': 'Пользователи',
     'engineer.tabs.installers': 'Инженеры монтажа',
     'engineer.users.title': 'Пользователи',
@@ -122,6 +164,48 @@ const translations = {
   'en-US': {
     'engineer.title': 'Objects',
     'engineer.subtitle': 'Space and event management',
+    'engineer.actions.arm': 'Arm',
+    'engineer.actions.disarm': 'Disarm',
+    'engineer.tabs.equipment': 'Equipment',
+    'engineer.tabs.object': 'Object',
+    'engineer.tabs.contacts': 'Contacts',
+    'engineer.tabs.photos': 'Photos',
+    'engineer.tabs.notes': 'Notes',
+    'engineer.tabs.log': 'Log',
+    'engineer.equipment.title': 'Equipment',
+    'engineer.equipment.add': 'Add device',
+    'engineer.object.title': 'Object information',
+    'engineer.object.edit': 'Edit object',
+    'engineer.object.name': 'Name',
+    'engineer.object.coords': 'Coordinates',
+    'engineer.object.city': 'City',
+    'engineer.object.save': 'Save',
+    'engineer.object.removeHub': 'Remove hub',
+    'engineer.object.delete': 'Delete object',
+    'engineer.object.attachHub': 'Attach hub',
+    'engineer.object.hubId': 'Hub ID',
+    'engineer.object.attach': 'Attach',
+    'engineer.contacts.title': 'Contacts',
+    'engineer.contacts.addTitle': 'Add contact',
+    'engineer.contacts.name': 'Name',
+    'engineer.contacts.role': 'Role',
+    'engineer.contacts.phone': 'Phone',
+    'engineer.contacts.add': 'Add',
+    'engineer.photos.title': 'Object photos',
+    'engineer.photos.addTitle': 'Add photo',
+    'engineer.photos.url': 'Image URL',
+    'engineer.photos.label': 'Caption',
+    'engineer.photos.add': 'Add',
+    'engineer.notes.title': 'Notes',
+    'engineer.notes.addTitle': 'Add note',
+    'engineer.notes.text': 'Note text',
+    'engineer.notes.add': 'Add',
+    'engineer.log.title': 'Event log',
+    'engineer.log.filters.all': 'All',
+    'engineer.log.filters.security': 'Security',
+    'engineer.log.filters.access': 'Access',
+    'engineer.log.filters.system': 'System',
+    'engineer.log.filters.hub': 'Hub events',
     'engineer.tabs.users': 'Users',
     'engineer.tabs.installers': 'Installers',
     'engineer.users.title': 'Users',
@@ -1699,7 +1783,7 @@ tabs.forEach((tab) => {
   });
 });
 
-const initProfileMenu = () => {
+const initProfileMenu = async () => {
   if (!avatarButton || !profileDropdown) return;
   const toggle = (open) => {
     profileDropdown.setAttribute('aria-hidden', open ? 'false' : 'true');
@@ -1714,7 +1798,7 @@ const initProfileMenu = () => {
   profileDropdown.addEventListener('click', (event) => event.stopPropagation());
 
   loadProfileSettings();
-  syncProfileSettings();
+  await syncProfileSettings();
   if (profileNickname) profileNickname.value = state.nickname;
   if (profileTimezone) profileTimezone.value = state.timezone;
   if (profileLanguage) profileLanguage.value = state.language;
@@ -1761,7 +1845,7 @@ const init = async () => {
     window.location.href = 'login.html';
     return;
   }
-  initProfileMenu();
+  await initProfileMenu();
   await loadSpaces();
   if (state.selectedSpaceId) {
     await loadLogs(state.selectedSpaceId);

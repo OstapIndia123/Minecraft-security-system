@@ -25,9 +25,7 @@ npm run dev
 - Инженер (полный режим): http://localhost:8080/main.html
 - Пользователь: http://localhost:8080/user.html
 
-Демо-аккаунты (создаются при `npm run seed`):
-- Инженер монтажа: `pro@example.com` / `pro-demo`
-- Пользователь: `user@example.com` / `user-demo`
+Вход выполняется только через Discord OAuth (email/пароль отключены).
 
 ## Discord OAuth (минимальная интеграция)
 Нужно создать приложение в Discord Developer Portal и добавить redirect URI:

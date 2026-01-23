@@ -771,6 +771,11 @@ body {
   justify-content: center;
 }
 
+.auth-note {
+  text-align: center;
+  font-size: 12px;
+}
+
 .object-item {
   width: 100%;
   text-align: left;

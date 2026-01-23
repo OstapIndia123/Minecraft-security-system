@@ -95,26 +95,26 @@
             <div class="status-card__meta" id="spaceMeta">—</div>
           </div>
           <div class="status-actions">
-            <button class="chip chip--danger" data-action="arm">Под охрану</button>
-            <button class="chip chip--success" data-action="disarm">С охраны</button>
+            <button class="chip chip--danger" data-action="arm" data-i18n="engineer.actions.arm">Под охрану</button>
+            <button class="chip chip--success" data-action="disarm" data-i18n="engineer.actions.disarm">С охраны</button>
           </div>
         </section>
 
         <section class="content">
           <div class="tabs">
-            <button class="tab tab--active" data-tab="equipment">Оборудование</button>
-            <button class="tab" data-tab="object">Про объект</button>
-            <button class="tab" data-tab="contacts">Контактные лица</button>
-            <button class="tab" data-tab="photos">Фото</button>
-            <button class="tab" data-tab="notes">Примечания</button>
+            <button class="tab tab--active" data-tab="equipment" data-i18n="engineer.tabs.equipment">Оборудование</button>
+            <button class="tab" data-tab="object" data-i18n="engineer.tabs.object">Про объект</button>
+            <button class="tab" data-tab="contacts" data-i18n="engineer.tabs.contacts">Контактные лица</button>
+            <button class="tab" data-tab="photos" data-i18n="engineer.tabs.photos">Фото</button>
+            <button class="tab" data-tab="notes" data-i18n="engineer.tabs.notes">Примечания</button>
             <button class="tab" data-tab="users" data-i18n="engineer.tabs.users">Пользователи</button>
             <button class="tab" data-tab="installers" data-i18n="engineer.tabs.installers">Инженеры монтажа</button>
-            <button class="tab" data-tab="log">Лог</button>
+            <button class="tab" data-tab="log" data-i18n="engineer.tabs.log">Лог</button>
           </div>
 
           <div class="panel panel--active" id="equipment">
             <div class="panel__header">
-              <h2>Оборудование</h2>
+              <h2 data-i18n="engineer.equipment.title">Оборудование</h2>
               <span class="muted" id="hubLabel">—</span>
             </div>
             <div class="panel__grid">
@@ -125,32 +125,32 @@
               <div class="device-details" id="deviceDetails"></div>
             </div>
             <div class="panel__footer panel__footer--action">
-              <button class="button button--primary" id="openDeviceModal">Добавить устройство</button>
+              <button class="button button--primary" id="openDeviceModal" data-i18n="engineer.equipment.add">Добавить устройство</button>
             </div>
           </div>
 
           <div class="panel" id="object">
             <div class="panel__header">
-              <h2>Информация об объекте</h2>
+              <h2 data-i18n="engineer.object.title">Информация об объекте</h2>
             </div>
             <div class="object-grid" id="objectInfo"></div>
             <div class="panel__footer">
-              <h3>Редактировать объект</h3>
+              <h3 data-i18n="engineer.object.edit">Редактировать объект</h3>
               <form class="form-grid" id="editForm">
-                <input type="text" name="name" placeholder="Название" required />
-                <input type="text" name="address" placeholder="Координаты" />
-                <input type="text" name="city" placeholder="Город" />
-                <button class="button button--primary" type="submit">Сохранить</button>
+                <input type="text" name="name" data-i18n-placeholder="engineer.object.name" placeholder="Название" required />
+                <input type="text" name="address" data-i18n-placeholder="engineer.object.coords" placeholder="Координаты" />
+                <input type="text" name="city" data-i18n-placeholder="engineer.object.city" placeholder="Город" />
+                <button class="button button--primary" type="submit" data-i18n="engineer.object.save">Сохранить</button>
               </form>
               <div class="danger-actions">
-                <button class="button button--ghost button--danger" id="detachHub" type="button">Удалить хаб</button>
-                <button class="button button--ghost button--danger" id="deleteSpace" type="button">Удалить объект</button>
+                <button class="button button--ghost button--danger" id="detachHub" type="button" data-i18n="engineer.object.removeHub">Удалить хаб</button>
+                <button class="button button--ghost button--danger" id="deleteSpace" type="button" data-i18n="engineer.object.delete">Удалить объект</button>
               </div>
               <div class="attach-hub">
-                <h4>Привязать хаб</h4>
+                <h4 data-i18n="engineer.object.attachHub">Привязать хаб</h4>
                 <form class="form-grid" id="attachHubForm">
-                  <input type="text" name="hubId" placeholder="ID хаба" required />
-                  <button class="button button--primary" type="submit">Привязать</button>
+                  <input type="text" name="hubId" data-i18n-placeholder="engineer.object.hubId" placeholder="ID хаба" required />
+                  <button class="button button--primary" type="submit" data-i18n="engineer.object.attach">Привязать</button>
                 </form>
               </div>
             </div>
@@ -158,45 +158,45 @@
 
           <div class="panel" id="contacts">
             <div class="panel__header">
-              <h2>Контактные лица</h2>
+              <h2 data-i18n="engineer.contacts.title">Контактные лица</h2>
             </div>
             <div class="contacts" id="contactsList"></div>
             <div class="panel__footer">
-              <h3>Добавить контактное лицо</h3>
+              <h3 data-i18n="engineer.contacts.addTitle">Добавить контактное лицо</h3>
               <form class="form-grid" id="contactForm">
-                <input type="text" name="name" placeholder="Имя" required />
-                <input type="text" name="role" placeholder="Роль" />
-                <input type="text" name="phone" placeholder="Телефон" />
-                <button class="button button--primary" type="submit">Добавить</button>
+                <input type="text" name="name" data-i18n-placeholder="engineer.contacts.name" placeholder="Имя" required />
+                <input type="text" name="role" data-i18n-placeholder="engineer.contacts.role" placeholder="Роль" />
+                <input type="text" name="phone" data-i18n-placeholder="engineer.contacts.phone" placeholder="Телефон" />
+                <button class="button button--primary" type="submit" data-i18n="engineer.contacts.add">Добавить</button>
               </form>
             </div>
           </div>
 
           <div class="panel" id="photos">
             <div class="panel__header">
-              <h2>Фото объекта</h2>
+              <h2 data-i18n="engineer.photos.title">Фото объекта</h2>
             </div>
             <div class="photos" id="photosList"></div>
             <div class="panel__footer">
-              <h3>Добавить фото</h3>
+              <h3 data-i18n="engineer.photos.addTitle">Добавить фото</h3>
               <form class="form-grid" id="photoForm">
-                <input type="url" name="url" placeholder="URL изображения" required />
-                <input type="text" name="label" placeholder="Подпись" />
-                <button class="button button--primary" type="submit">Добавить</button>
+                <input type="url" name="url" data-i18n-placeholder="engineer.photos.url" placeholder="URL изображения" required />
+                <input type="text" name="label" data-i18n-placeholder="engineer.photos.label" placeholder="Подпись" />
+                <button class="button button--primary" type="submit" data-i18n="engineer.photos.add">Добавить</button>
               </form>
             </div>
           </div>
 
           <div class="panel" id="notes">
             <div class="panel__header">
-              <h2>Примечания</h2>
+              <h2 data-i18n="engineer.notes.title">Примечания</h2>
             </div>
             <div class="notes" id="notesList"></div>
             <div class="panel__footer">
-              <h3>Добавить примечание</h3>
+              <h3 data-i18n="engineer.notes.addTitle">Добавить примечание</h3>
               <form class="form-grid" id="noteForm">
-                <input type="text" name="text" placeholder="Текст примечания" required />
-                <button class="button button--primary" type="submit">Добавить</button>
+                <input type="text" name="text" data-i18n-placeholder="engineer.notes.text" placeholder="Текст примечания" required />
+                <button class="button button--primary" type="submit" data-i18n="engineer.notes.add">Добавить</button>
               </form>
             </div>
           </div>
@@ -230,13 +230,13 @@
 
           <div class="panel" id="log">
             <div class="panel__header">
-              <h2>Лог событий</h2>
+              <h2 data-i18n="engineer.log.title">Лог событий</h2>
               <div class="filters" id="logFilters">
-                <button class="chip chip--active" data-log="all">Все</button>
-                <button class="chip" data-log="security">Охранные</button>
-                <button class="chip" data-log="access">Доступ</button>
-                <button class="chip" data-log="system">Система</button>
-                <button class="chip" data-log="hub">События хаба</button>
+                <button class="chip chip--active" data-log="all" data-i18n="engineer.log.filters.all">Все</button>
+                <button class="chip" data-log="security" data-i18n="engineer.log.filters.security">Охранные</button>
+                <button class="chip" data-log="access" data-i18n="engineer.log.filters.access">Доступ</button>
+                <button class="chip" data-log="system" data-i18n="engineer.log.filters.system">Система</button>
+                <button class="chip" data-log="hub" data-i18n="engineer.log.filters.hub">События хаба</button>
               </div>
             </div>
             <div class="log-table" id="logTable"></div>

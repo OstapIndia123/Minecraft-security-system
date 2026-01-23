@@ -506,32 +506,7 @@ setInterval(() => {
 }, 1000);
 
 app.post('/api/auth/register', async (req, res) => {
-  const { email, password, role, nickname, language, timezone } = req.body ?? {};
-  if (!email || !password) {
-    res.status(400).json({ error: 'missing_credentials' });
-    return;
-  }
-  const resolvedRole = role === 'installer' ? 'installer' : 'user';
-  const passwordHash = formatPasswordHash(String(password));
-  try {
-    const result = await query(
-      `INSERT INTO users (email, password_hash, role, minecraft_nickname, language, timezone)
-       VALUES ($1,$2,$3,$4,$5,$6)
-       RETURNING id, email, role, minecraft_nickname, language, timezone`,
-      [
-        String(email).toLowerCase(),
-        passwordHash,
-        resolvedRole,
-        nickname ?? null,
-        language ?? 'ru',
-        timezone ?? 'UTC',
-      ],
-    );
-    const session = await issueSession(result.rows[0].id);
-    res.json({ token: session.token, user: result.rows[0] });
-  } catch (error) {
-    res.status(400).json({ error: 'user_exists' });
-  }
+  res.status(410).json({ error: 'discord_only' });
 });
 
 app.get('/api/auth/discord/start', async (req, res) => {
@@ -539,8 +514,7 @@ app.get('/api/auth/discord/start', async (req, res) => {
     res.status(500).json({ error: 'discord_not_configured' });
     return;
   }
-  const mode = req.query.mode === 'register' ? 'register' : 'login';
-  res.redirect(buildDiscordAuthUrl(mode));
+  res.redirect(buildDiscordAuthUrl('login'));
 });
 
 app.get('/api/auth/discord/callback', async (req, res) => {
@@ -567,8 +541,7 @@ app.get('/api/auth/discord/callback', async (req, res) => {
     const discordId = String(discordUser.id);
     const userResult = await query('SELECT * FROM users WHERE discord_id = $1', [discordId]);
     if (!userResult.rows.length && mode === 'login') {
-      res.redirect('/login.html?error=discord-not-linked');
-      return;
+      mode = 'register';
     }
     let user = userResult.rows[0];
     if (!user) {
@@ -597,29 +570,7 @@ app.get('/api/auth/discord/callback', async (req, res) => {
 });
 
 app.post('/api/auth/login', async (req, res) => {
-  const { email, password } = req.body ?? {};
-  if (!email || !password) {
-    res.status(400).json({ error: 'missing_credentials' });
-    return;
-  }
-  const result = await query('SELECT * FROM users WHERE email = $1', [String(email).toLowerCase()]);
-  const user = result.rows[0];
-  if (!user || !verifyPassword(String(password), user.password_hash)) {
-    res.status(401).json({ error: 'invalid_credentials' });
-    return;
-  }
-  const session = await issueSession(user.id);
-  res.json({
-    token: session.token,
-    user: {
-      id: user.id,
-      email: user.email,
-      role: user.role,
-      minecraft_nickname: user.minecraft_nickname,
-      language: user.language,
-      timezone: user.timezone,
-    },
-  });
+  res.status(410).json({ error: 'discord_only' });
 });
 
 app.get('/api/auth/me', requireAuth, async (req, res) => {

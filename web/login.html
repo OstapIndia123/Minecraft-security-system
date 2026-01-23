@@ -14,53 +14,17 @@
             <span class="brand__logo">PRO</span>
             <span class="brand__title">Security</span>
           </div>
-          <h1>Авторизация</h1>
-          <p>Выберите режим и войдите в систему</p>
+          <h1 data-i18n="auth.title">Авторизация</h1>
+          <p data-i18n="auth.subtitle">Вход в систему через Discord</p>
         </div>
 
-        <div class="tabs tabs--top" id="authTabs">
-          <button class="tab tab--active" data-tab="login" data-i18n="auth.tabs.login">Вход</button>
-          <button class="tab" data-tab="register" data-i18n="auth.tabs.register">Регистрация</button>
-        </div>
-
-        <div class="panel panel--active" id="login">
-          <form class="form-grid auth-form" id="loginForm">
-            <input type="email" name="email" data-i18n-placeholder="auth.fields.email" placeholder="Email" required />
-            <input type="password" name="password" data-i18n-placeholder="auth.fields.password" placeholder="Пароль" required />
-            <button class="button button--primary" type="submit" data-i18n="auth.actions.login">Войти</button>
-          </form>
-          <div class="auth-divider" data-i18n="auth.divider">или</div>
-          <button class="button button--ghost auth-discord" id="discordLogin" data-i18n="auth.actions.discordLogin">
+        <div class="panel panel--active" id="discordOnly">
+          <button class="button button--primary auth-discord" id="discordLogin" data-i18n="auth.actions.discordOnly">
             Войти через Discord
           </button>
-        </div>
-
-        <div class="panel" id="register">
-          <form class="form-grid auth-form" id="registerForm">
-            <input type="email" name="email" data-i18n-placeholder="auth.fields.email" placeholder="Email" required />
-            <input type="password" name="password" data-i18n-placeholder="auth.fields.password" placeholder="Пароль" required />
-            <input type="text" name="nickname" data-i18n-placeholder="auth.fields.nickname" placeholder="Игровой ник" />
-            <select name="role">
-              <option value="user" data-i18n="auth.roles.user">Пользователь</option>
-              <option value="installer" data-i18n="auth.roles.installer">Инженер монтажа</option>
-            </select>
-            <select name="language">
-              <option value="ru" data-i18n="auth.languages.ru">Русский</option>
-              <option value="en-US" data-i18n="auth.languages.en">English (US)</option>
-            </select>
-            <select name="timezone">
-              <option value="UTC">UTC</option>
-              <option value="Europe/Moscow">Europe/Moscow</option>
-              <option value="Europe/Kyiv">Europe/Kyiv</option>
-              <option value="Europe/Warsaw">Europe/Warsaw</option>
-              <option value="America/New_York">America/New_York</option>
-            </select>
-            <button class="button button--primary" type="submit" data-i18n="auth.actions.register">Создать аккаунт</button>
-          </form>
-          <div class="auth-divider" data-i18n="auth.divider">или</div>
-          <button class="button button--ghost auth-discord" id="discordRegister" data-i18n="auth.actions.discordRegister">
-            Зарегистрироваться через Discord
-          </button>
+          <p class="muted auth-note" data-i18n="auth.discord.note">
+            Мы поддерживаем только авторизацию через Discord.
+          </p>
         </div>
 
         <div class="auth-error" id="authError"></div>
