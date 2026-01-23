@@ -70,21 +70,49 @@ const requireAuth = async (req, res, next) => {
   next();
 };
 
-const requireInstaller = (req, res, next) => {
-  const isProMode = req.header('x-app-mode') === 'pro';
-  if (req.user?.role !== 'installer' && !isProMode) {
+const getAppMode = (req) => (req.header('x-app-mode') === 'pro' ? 'pro' : 'user');
+
+const ensureSpaceAccess = async (userId, spaceId, requiredRole = null) => {
+  const result = await query(
+    'SELECT role FROM user_spaces WHERE user_id = $1 AND space_id = $2',
+    [userId, spaceId],
+  );
+  const row = result.rows[0];
+  if (!row) return { ok: false, role: null };
+  if (requiredRole && row.role !== requiredRole) {
+    return { ok: false, role: row.role };
+  }
+  return { ok: true, role: row.role };
+};
+
+const requireInstaller = async (req, res, next) => {
+  const isProMode = getAppMode(req) === 'pro';
+  if (!isProMode) {
     res.status(403).json({ error: 'forbidden' });
     return;
   }
-  next();
-};
-
-const ensureSpaceAccess = async (userId, spaceId) => {
-  const result = await query(
-    'SELECT 1 FROM user_spaces WHERE user_id = $1 AND space_id = $2',
-    [userId, spaceId],
-  );
-  return result.rows.length > 0;
+  if (req.user?.role === 'installer') {
+    next();
+    return;
+  }
+  const spaceId = req.params.id;
+  if (spaceId) {
+    const access = await ensureSpaceAccess(req.user.id, spaceId, 'installer');
+    if (access.ok) {
+      next();
+      return;
+    }
+  } else {
+    const anyInstaller = await query(
+      'SELECT 1 FROM user_spaces WHERE user_id = $1 AND role = $2 LIMIT 1',
+      [req.user.id, 'installer'],
+    );
+    if (anyInstaller.rows.length) {
+      next();
+      return;
+    }
+  }
+  res.status(403).json({ error: 'forbidden' });
 };
 
 const issueSession = async (userId) => {
@@ -625,12 +653,14 @@ app.post('/api/auth/logout', requireAuth, async (req, res) => {
 });
 
 app.get('/api/spaces', requireAuth, async (req, res) => {
+  const mode = getAppMode(req);
+  const roleFilter = mode === 'pro' ? 'installer' : 'user';
   const result = await query(
     `SELECT spaces.* FROM spaces
      JOIN user_spaces ON user_spaces.space_id = spaces.id
-     WHERE user_spaces.user_id = $1
+     WHERE user_spaces.user_id = $1 AND user_spaces.role = $2
      ORDER BY spaces.id`,
-    [req.user.id],
+    [req.user.id, roleFilter],
   );
   const spaces = await Promise.all(
     result.rows.map(async (row) => ({
@@ -642,8 +672,10 @@ app.get('/api/spaces', requireAuth, async (req, res) => {
 });
 
 app.get('/api/spaces/:id', requireAuth, async (req, res) => {
-  const allowed = await ensureSpaceAccess(req.user.id, req.params.id);
-  if (!allowed) {
+  const mode = getAppMode(req);
+  const roleFilter = mode === 'pro' ? 'installer' : 'user';
+  const access = await ensureSpaceAccess(req.user.id, req.params.id, roleFilter);
+  if (!access.ok) {
     res.status(403).json({ error: 'forbidden' });
     return;
   }
@@ -657,8 +689,8 @@ app.get('/api/spaces/:id', requireAuth, async (req, res) => {
 });
 
 app.get('/api/spaces/:id/last-key-scan', requireAuth, requireInstaller, async (req, res) => {
-  const allowed = await ensureSpaceAccess(req.user.id, req.params.id);
-  if (!allowed) {
+  const access = await ensureSpaceAccess(req.user.id, req.params.id, 'installer');
+  if (!access.ok) {
     res.status(403).json({ error: 'forbidden' });
     return;
   }
@@ -670,8 +702,8 @@ app.get('/api/spaces/:id/last-key-scan', requireAuth, requireInstaller, async (r
 });
 
 app.get('/api/spaces/:id/await-key-scan', requireAuth, requireInstaller, async (req, res) => {
-  const allowed = await ensureSpaceAccess(req.user.id, req.params.id);
-  if (!allowed) {
+  const access = await ensureSpaceAccess(req.user.id, req.params.id, 'installer');
+  if (!access.ok) {
     res.status(403).json({ error: 'forbidden' });
     return;
   }
@@ -697,8 +729,10 @@ app.get('/api/spaces/:id/await-key-scan', requireAuth, requireInstaller, async (
 });
 
 app.get('/api/spaces/:id/logs', requireAuth, async (req, res) => {
-  const allowed = await ensureSpaceAccess(req.user.id, req.params.id);
-  if (!allowed) {
+  const mode = getAppMode(req);
+  const roleFilter = mode === 'pro' ? 'installer' : 'user';
+  const access = await ensureSpaceAccess(req.user.id, req.params.id, roleFilter);
+  if (!access.ok) {
     res.status(403).json({ error: 'forbidden' });
     return;
   }
@@ -718,6 +752,8 @@ app.get('/api/spaces/:id/logs', requireAuth, async (req, res) => {
 });
 
 app.get('/api/logs', requireAuth, async (req, res) => {
+  const mode = getAppMode(req);
+  const roleFilter = mode === 'pro' ? 'installer' : 'user';
   const result = await query(
     `SELECT logs.time,
             logs.text,
@@ -729,10 +765,10 @@ app.get('/api/logs', requireAuth, async (req, res) => {
      FROM logs
      JOIN spaces ON spaces.id = logs.space_id
      JOIN user_spaces ON user_spaces.space_id = spaces.id
-     WHERE user_spaces.user_id = $1
+     WHERE user_spaces.user_id = $1 AND user_spaces.role = $2
      ORDER BY logs.id DESC
      LIMIT 300`,
-    [req.user.id],
+    [req.user.id, roleFilter],
   );
   res.json(result.rows.map((row) => {
     const createdAt = row.created_at;
@@ -790,7 +826,7 @@ app.post('/api/spaces', requireAuth, requireInstaller, async (req, res) => {
   );
 
   await appendLog(generatedId, 'Создано пространство', 'UI', 'system');
-  await query('INSERT INTO user_spaces (user_id, space_id) VALUES ($1,$2)', [req.user.id, generatedId]);
+  await query('INSERT INTO user_spaces (user_id, space_id, role) VALUES ($1,$2,$3)', [req.user.id, generatedId, 'installer']);
   const space = await query('SELECT * FROM spaces WHERE id = $1', [generatedId]);
   const result = mapSpace(space.rows[0]);
   result.devices = await loadDevices(result.id, result.hubId, result.hubOnline);
@@ -798,8 +834,8 @@ app.post('/api/spaces', requireAuth, requireInstaller, async (req, res) => {
 });
 
 app.patch('/api/spaces/:id', requireAuth, requireInstaller, async (req, res) => {
-  const allowed = await ensureSpaceAccess(req.user.id, req.params.id);
-  if (!allowed) {
+  const access = await ensureSpaceAccess(req.user.id, req.params.id, 'installer');
+  if (!access.ok) {
     res.status(403).json({ error: 'forbidden' });
     return;
   }
@@ -829,8 +865,8 @@ app.patch('/api/spaces/:id', requireAuth, requireInstaller, async (req, res) => 
 });
 
 app.post('/api/spaces/:id/contacts', requireAuth, requireInstaller, async (req, res) => {
-  const allowed = await ensureSpaceAccess(req.user.id, req.params.id);
-  if (!allowed) {
+  const access = await ensureSpaceAccess(req.user.id, req.params.id, 'installer');
+  if (!access.ok) {
     res.status(403).json({ error: 'forbidden' });
     return;
   }
@@ -849,8 +885,8 @@ app.post('/api/spaces/:id/contacts', requireAuth, requireInstaller, async (req, 
 });
 
 app.post('/api/spaces/:id/notes', requireAuth, requireInstaller, async (req, res) => {
-  const allowed = await ensureSpaceAccess(req.user.id, req.params.id);
-  if (!allowed) {
+  const access = await ensureSpaceAccess(req.user.id, req.params.id, 'installer');
+  if (!access.ok) {
     res.status(403).json({ error: 'forbidden' });
     return;
   }
@@ -869,8 +905,8 @@ app.post('/api/spaces/:id/notes', requireAuth, requireInstaller, async (req, res
 });
 
 app.post('/api/spaces/:id/photos', requireAuth, requireInstaller, async (req, res) => {
-  const allowed = await ensureSpaceAccess(req.user.id, req.params.id);
-  if (!allowed) {
+  const access = await ensureSpaceAccess(req.user.id, req.params.id, 'installer');
+  if (!access.ok) {
     res.status(403).json({ error: 'forbidden' });
     return;
   }
@@ -889,17 +925,17 @@ app.post('/api/spaces/:id/photos', requireAuth, requireInstaller, async (req, re
 });
 
 app.get('/api/spaces/:id/members', requireAuth, requireInstaller, async (req, res) => {
-  const allowed = await ensureSpaceAccess(req.user.id, req.params.id);
-  if (!allowed) {
+  const access = await ensureSpaceAccess(req.user.id, req.params.id, 'installer');
+  if (!access.ok) {
     res.status(403).json({ error: 'forbidden' });
     return;
   }
   const members = await query(
-    `SELECT users.id, users.email, users.role, users.minecraft_nickname, users.discord_id
+    `SELECT users.id, users.email, user_spaces.role, users.minecraft_nickname, users.discord_id
      FROM user_spaces
      JOIN users ON users.id = user_spaces.user_id
      WHERE user_spaces.space_id = $1
-     ORDER BY users.role, users.id`,
+     ORDER BY user_spaces.role, users.id`,
     [req.params.id],
   );
   res.json(members.rows.map((member) => ({
@@ -909,8 +945,8 @@ app.get('/api/spaces/:id/members', requireAuth, requireInstaller, async (req, re
 });
 
 app.post('/api/spaces/:id/members', requireAuth, requireInstaller, async (req, res) => {
-  const allowed = await ensureSpaceAccess(req.user.id, req.params.id);
-  if (!allowed) {
+  const access = await ensureSpaceAccess(req.user.id, req.params.id, 'installer');
+  if (!access.ok) {
     res.status(403).json({ error: 'forbidden' });
     return;
   }
@@ -923,7 +959,7 @@ app.post('/api/spaces/:id/members', requireAuth, requireInstaller, async (req, r
   const normalized = String(value).trim();
   const desiredRole = role === 'installer' ? 'installer' : 'user';
   const userResult = await query(
-    'SELECT id, role FROM users WHERE lower(minecraft_nickname) = lower($1)',
+    'SELECT id FROM users WHERE lower(minecraft_nickname) = lower($1)',
     [normalized],
   );
   let target = userResult.rows[0];
@@ -946,28 +982,28 @@ app.post('/api/spaces/:id/members', requireAuth, requireInstaller, async (req, r
     );
     target = insert.rows[0];
   }
-  if (target.role !== desiredRole) {
-    await query('UPDATE users SET role = $1 WHERE id = $2', [desiredRole, target.id]);
-  }
   await query(
-    'INSERT INTO user_spaces (user_id, space_id) VALUES ($1,$2) ON CONFLICT DO NOTHING',
-    [target.id, req.params.id],
+    `INSERT INTO user_spaces (user_id, space_id, role)
+     VALUES ($1,$2,$3)
+     ON CONFLICT (user_id, space_id)
+     DO UPDATE SET role = EXCLUDED.role`,
+    [target.id, req.params.id, desiredRole],
   );
   res.json({ ok: true });
 });
 
 app.post('/api/spaces/:id/leave', requireAuth, async (req, res) => {
-  const allowed = await ensureSpaceAccess(req.user.id, req.params.id);
-  if (!allowed) {
+  const access = await ensureSpaceAccess(req.user.id, req.params.id);
+  if (!access.ok) {
     res.status(403).json({ error: 'forbidden' });
     return;
   }
-  if (req.user.role === 'installer') {
+  if (access.role === 'installer') {
     const installers = await query(
       `SELECT COUNT(*)::int AS count
        FROM user_spaces
        JOIN users ON users.id = user_spaces.user_id
-       WHERE user_spaces.space_id = $1 AND users.role = 'installer'`,
+       WHERE user_spaces.space_id = $1 AND user_spaces.role = 'installer'`,
       [req.params.id],
     );
     if (installers.rows[0].count <= 1) {
@@ -980,8 +1016,8 @@ app.post('/api/spaces/:id/leave', requireAuth, async (req, res) => {
 });
 
 app.delete('/api/spaces/:id/members/:userId', requireAuth, requireInstaller, async (req, res) => {
-  const allowed = await ensureSpaceAccess(req.user.id, req.params.id);
-  if (!allowed) {
+  const access = await ensureSpaceAccess(req.user.id, req.params.id, 'installer');
+  if (!access.ok) {
     res.status(403).json({ error: 'forbidden' });
     return;
   }
@@ -990,7 +1026,10 @@ app.delete('/api/spaces/:id/members/:userId', requireAuth, requireInstaller, asy
     res.status(400).json({ error: 'invalid_user' });
     return;
   }
-  const targetResult = await query('SELECT id, role FROM users WHERE id = $1', [userId]);
+  const targetResult = await query(
+    'SELECT role FROM user_spaces WHERE user_id = $1 AND space_id = $2',
+    [userId, req.params.id],
+  );
   if (!targetResult.rows.length) {
     res.status(404).json({ error: 'user_not_found' });
     return;
@@ -1001,7 +1040,7 @@ app.delete('/api/spaces/:id/members/:userId', requireAuth, requireInstaller, asy
       `SELECT COUNT(*)::int AS count
        FROM user_spaces
        JOIN users ON users.id = user_spaces.user_id
-       WHERE user_spaces.space_id = $1 AND users.role = 'installer'`,
+       WHERE user_spaces.space_id = $1 AND user_spaces.role = 'installer'`,
       [req.params.id],
     );
     if (installers.rows[0].count <= 1) {
@@ -1014,8 +1053,8 @@ app.delete('/api/spaces/:id/members/:userId', requireAuth, requireInstaller, asy
 });
 
 app.post('/api/spaces/:id/attach-hub', requireAuth, requireInstaller, async (req, res) => {
-  const allowed = await ensureSpaceAccess(req.user.id, req.params.id);
-  if (!allowed) {
+  const access = await ensureSpaceAccess(req.user.id, req.params.id, 'installer');
+  if (!access.ok) {
     res.status(403).json({ error: 'forbidden' });
     return;
   }
@@ -1036,8 +1075,8 @@ app.post('/api/spaces/:id/attach-hub', requireAuth, requireInstaller, async (req
 });
 
 app.delete('/api/spaces/:id/hub', requireAuth, requireInstaller, async (req, res) => {
-  const allowed = await ensureSpaceAccess(req.user.id, req.params.id);
-  if (!allowed) {
+  const access = await ensureSpaceAccess(req.user.id, req.params.id, 'installer');
+  if (!access.ok) {
     res.status(403).json({ error: 'forbidden' });
     return;
   }
@@ -1082,8 +1121,8 @@ const deviceConfigFromPayload = (payload) => {
 };
 
 app.post('/api/spaces/:id/devices', requireAuth, requireInstaller, async (req, res) => {
-  const allowed = await ensureSpaceAccess(req.user.id, req.params.id);
-  if (!allowed) {
+  const access = await ensureSpaceAccess(req.user.id, req.params.id, 'installer');
+  if (!access.ok) {
     res.status(403).json({ error: 'forbidden' });
     return;
   }
@@ -1124,8 +1163,8 @@ app.post('/api/spaces/:id/devices', requireAuth, requireInstaller, async (req, r
 });
 
 app.post('/api/spaces/:id/keys', requireAuth, requireInstaller, async (req, res) => {
-  const allowed = await ensureSpaceAccess(req.user.id, req.params.id);
-  if (!allowed) {
+  const access = await ensureSpaceAccess(req.user.id, req.params.id, 'installer');
+  if (!access.ok) {
     res.status(403).json({ error: 'forbidden' });
     return;
   }
@@ -1144,8 +1183,8 @@ app.post('/api/spaces/:id/keys', requireAuth, requireInstaller, async (req, res)
 });
 
 app.delete('/api/spaces/:id', requireAuth, requireInstaller, async (req, res) => {
-  const allowed = await ensureSpaceAccess(req.user.id, req.params.id);
-  if (!allowed) {
+  const access = await ensureSpaceAccess(req.user.id, req.params.id, 'installer');
+  if (!access.ok) {
     res.status(403).json({ error: 'forbidden' });
     return;
   }
@@ -1160,8 +1199,8 @@ app.delete('/api/spaces/:id', requireAuth, requireInstaller, async (req, res) =>
 });
 
 app.delete('/api/spaces/:id/devices/:deviceId', requireAuth, requireInstaller, async (req, res) => {
-  const allowed = await ensureSpaceAccess(req.user.id, req.params.id);
-  if (!allowed) {
+  const access = await ensureSpaceAccess(req.user.id, req.params.id, 'installer');
+  if (!access.ok) {
     res.status(403).json({ error: 'forbidden' });
     return;
   }
@@ -1184,8 +1223,8 @@ app.delete('/api/spaces/:id/devices/:deviceId', requireAuth, requireInstaller, a
 });
 
 app.delete('/api/spaces/:id/keys/:keyId', requireAuth, requireInstaller, async (req, res) => {
-  const allowed = await ensureSpaceAccess(req.user.id, req.params.id);
-  if (!allowed) {
+  const access = await ensureSpaceAccess(req.user.id, req.params.id, 'installer');
+  if (!access.ok) {
     res.status(403).json({ error: 'forbidden' });
     return;
   }
@@ -1200,8 +1239,8 @@ app.delete('/api/spaces/:id/keys/:keyId', requireAuth, requireInstaller, async (
 });
 
 app.patch('/api/spaces/:id/devices/:deviceId', requireAuth, requireInstaller, async (req, res) => {
-  const allowed = await ensureSpaceAccess(req.user.id, req.params.id);
-  if (!allowed) {
+  const access = await ensureSpaceAccess(req.user.id, req.params.id, 'installer');
+  if (!access.ok) {
     res.status(403).json({ error: 'forbidden' });
     return;
   }
@@ -1226,8 +1265,8 @@ app.patch('/api/spaces/:id/devices/:deviceId', requireAuth, requireInstaller, as
 });
 
 app.patch('/api/spaces/:id/keys/:keyId', requireAuth, requireInstaller, async (req, res) => {
-  const allowed = await ensureSpaceAccess(req.user.id, req.params.id);
-  if (!allowed) {
+  const access = await ensureSpaceAccess(req.user.id, req.params.id, 'installer');
+  if (!access.ok) {
     res.status(403).json({ error: 'forbidden' });
     return;
   }
@@ -1250,8 +1289,8 @@ app.patch('/api/spaces/:id/keys/:keyId', requireAuth, requireInstaller, async (r
 });
 
 app.delete('/api/spaces/:id/contacts/:index', requireAuth, requireInstaller, async (req, res) => {
-  const allowed = await ensureSpaceAccess(req.user.id, req.params.id);
-  if (!allowed) {
+  const access = await ensureSpaceAccess(req.user.id, req.params.id, 'installer');
+  if (!access.ok) {
     res.status(403).json({ error: 'forbidden' });
     return;
   }
@@ -1271,8 +1310,8 @@ app.delete('/api/spaces/:id/contacts/:index', requireAuth, requireInstaller, asy
 });
 
 app.patch('/api/spaces/:id/contacts/:index', requireAuth, requireInstaller, async (req, res) => {
-  const allowed = await ensureSpaceAccess(req.user.id, req.params.id);
-  if (!allowed) {
+  const access = await ensureSpaceAccess(req.user.id, req.params.id, 'installer');
+  if (!access.ok) {
     res.status(403).json({ error: 'forbidden' });
     return;
   }
@@ -1297,8 +1336,8 @@ app.patch('/api/spaces/:id/contacts/:index', requireAuth, requireInstaller, asyn
 });
 
 app.delete('/api/spaces/:id/notes/:index', requireAuth, requireInstaller, async (req, res) => {
-  const allowed = await ensureSpaceAccess(req.user.id, req.params.id);
-  if (!allowed) {
+  const access = await ensureSpaceAccess(req.user.id, req.params.id, 'installer');
+  if (!access.ok) {
     res.status(403).json({ error: 'forbidden' });
     return;
   }
@@ -1318,8 +1357,8 @@ app.delete('/api/spaces/:id/notes/:index', requireAuth, requireInstaller, async 
 });
 
 app.patch('/api/spaces/:id/notes/:index', requireAuth, requireInstaller, async (req, res) => {
-  const allowed = await ensureSpaceAccess(req.user.id, req.params.id);
-  if (!allowed) {
+  const access = await ensureSpaceAccess(req.user.id, req.params.id, 'installer');
+  if (!access.ok) {
     res.status(403).json({ error: 'forbidden' });
     return;
   }
@@ -1339,8 +1378,8 @@ app.patch('/api/spaces/:id/notes/:index', requireAuth, requireInstaller, async (
 });
 
 app.delete('/api/spaces/:id/photos/:index', requireAuth, requireInstaller, async (req, res) => {
-  const allowed = await ensureSpaceAccess(req.user.id, req.params.id);
-  if (!allowed) {
+  const access = await ensureSpaceAccess(req.user.id, req.params.id, 'installer');
+  if (!access.ok) {
     res.status(403).json({ error: 'forbidden' });
     return;
   }
@@ -1360,8 +1399,8 @@ app.delete('/api/spaces/:id/photos/:index', requireAuth, requireInstaller, async
 });
 
 app.patch('/api/spaces/:id/photos/:index', requireAuth, requireInstaller, async (req, res) => {
-  const allowed = await ensureSpaceAccess(req.user.id, req.params.id);
-  if (!allowed) {
+  const access = await ensureSpaceAccess(req.user.id, req.params.id, 'installer');
+  if (!access.ok) {
     res.status(403).json({ error: 'forbidden' });
     return;
   }
@@ -1516,8 +1555,9 @@ const handleReaderScan = async ({ readerId, payload, ts }) => {
 };
 
 app.post('/api/spaces/:id/arm', requireAuth, async (req, res) => {
-  const allowed = await ensureSpaceAccess(req.user.id, req.params.id);
-  if (!allowed) {
+  const roleFilter = getAppMode(req) === 'pro' ? 'installer' : 'user';
+  const access = await ensureSpaceAccess(req.user.id, req.params.id, roleFilter);
+  if (!access.ok) {
     res.status(403).json({ error: 'forbidden' });
     return;
   }
@@ -1527,8 +1567,9 @@ app.post('/api/spaces/:id/arm', requireAuth, async (req, res) => {
 });
 
 app.post('/api/spaces/:id/disarm', requireAuth, async (req, res) => {
-  const allowed = await ensureSpaceAccess(req.user.id, req.params.id);
-  if (!allowed) {
+  const roleFilter = getAppMode(req) === 'pro' ? 'installer' : 'user';
+  const access = await ensureSpaceAccess(req.user.id, req.params.id, roleFilter);
+  if (!access.ok) {
     res.status(403).json({ error: 'forbidden' });
     return;
   }

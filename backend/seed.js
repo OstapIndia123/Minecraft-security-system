@@ -154,12 +154,12 @@ const seed = async () => {
         null,
       ],
     );
-    userIds.push(result.rows[0].id);
+    userIds.push({ id: result.rows[0].id, role: user.role });
   }
 
-  for (const userId of userIds) {
+  for (const user of userIds) {
     for (const space of spaces) {
-      await query('INSERT INTO user_spaces (user_id, space_id) VALUES ($1,$2)', [userId, space.id]);
+      await query('INSERT INTO user_spaces (user_id, space_id, role) VALUES ($1,$2,$3)', [user.id, space.id, user.role]);
     }
   }
 

@@ -174,7 +174,10 @@ const setAvatar = (avatarUrl) => {
 const apiFetch = async (path) => {
   const token = localStorage.getItem('authToken');
   const response = await fetch(path, {
-    headers: token ? { Authorization: `Bearer ${token}` } : {},
+    headers: {
+      'X-App-Mode': 'pro',
+      ...(token ? { Authorization: `Bearer ${token}` } : {}),
+    },
   });
   if (!response.ok) {
     if (response.status === 401) {
