@@ -39,7 +39,7 @@ CREATE TABLE spaces (
   name TEXT NOT NULL,
   address TEXT NOT NULL,
   status TEXT NOT NULL,
-  hub_online BOOLEAN NOT NULL DEFAULT true,
+  hub_online BOOLEAN DEFAULT NULL,
   issues BOOLEAN NOT NULL DEFAULT false,
   city TEXT NOT NULL,
   timezone TEXT NOT NULL,

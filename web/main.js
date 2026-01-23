@@ -226,7 +226,7 @@ const renderObjects = (spaces) => {
   const query = (searchInput?.value ?? '').trim().toLowerCase();
   const filtered = spaces.filter((space) => {
     if (state.filter === 'offline') {
-      return !space.hubOnline;
+      return space.hubOnline === false;
     }
     if (state.filter === 'issues') {
       return space.issues;

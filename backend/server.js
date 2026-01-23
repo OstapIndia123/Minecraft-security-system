@@ -204,7 +204,9 @@ const loadDevices = async (spaceId, hubId, hubOnline) => {
   const keys = await query('SELECT id, name, reader_id FROM keys WHERE space_id = $1 ORDER BY id', [spaceId]);
 
   const hubLabel = hubId ? `Хаб ${hubId}` : 'Хаб не привязан';
-  const hubStatus = hubId ? (hubOnline ? 'В сети' : 'Не в сети') : 'Не привязан';
+  const hubStatus = hubId
+    ? (hubOnline === null ? '— —' : (hubOnline ? 'В сети' : 'Не в сети'))
+    : 'Не привязан';
   const hubDevice = {
     id: hubId ? `hub-${hubId}` : 'hub-none',
     name: hubLabel,
@@ -794,7 +796,7 @@ app.post('/api/spaces', requireAuth, requireInstaller, async (req, res) => {
       name,
       address ?? '—',
       'disarmed',
-      true,
+      null,
       false,
       city ?? '—',
       timezone ?? 'Europe/Kyiv',

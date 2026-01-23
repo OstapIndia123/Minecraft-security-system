@@ -601,7 +601,7 @@ const loadLogs = async (spaceId) => {
 
 const applyFilter = (list) => {
   if (state.filter === 'offline') {
-    return list.filter((space) => !space.hubOnline);
+    return list.filter((space) => space.hubOnline === false);
   }
   if (state.filter === 'issues') {
     return list.filter((space) => space.issues);
@@ -623,7 +623,7 @@ const applySearch = (list) => {
 
 const renderCounts = () => {
   const allCount = spaces.length;
-  const offlineCount = spaces.filter((space) => !space.hubOnline).length;
+  const offlineCount = spaces.filter((space) => space.hubOnline === false).length;
   const issuesCount = spaces.filter((space) => space.issues).length;
 
   document.querySelector('[data-count="all"]').textContent = allCount;
@@ -893,7 +893,7 @@ const renderObjectInfo = (space) => {
     </div>
     <div class="info-card">
       <span>${t('engineer.object.label.hubStatus')}</span>
-      <strong>${space.hubId ? (space.hubOnline ? t('engineer.hub.online') : t('engineer.hub.offline')) : t('engineer.hub.none')}</strong>
+      <strong>${space.hubId ? (space.hubOnline === null ? '— —' : (space.hubOnline ? t('engineer.hub.online') : t('engineer.hub.offline'))) : t('engineer.hub.none')}</strong>
     </div>
     <div class="info-card">
       <span>${t('engineer.object.label.mode')}</span>
