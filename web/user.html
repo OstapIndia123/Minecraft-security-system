@@ -3,23 +3,31 @@
   <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
-    <title>Minecraft Security System — Режим ПЦН</title>
+    <title>Minecraft Security System — Режим пользователя</title>
     <link rel="stylesheet" href="styles.css" />
   </head>
   <body>
-    <div class="app-shell app-shell--single">
+    <div class="app-shell">
+      <aside class="sidebar">
+        <div class="sidebar__header">
+          <div class="brand">
+            <span class="brand__logo">USR</span>
+            <span class="brand__title">Security</span>
+          </div>
+        </div>
+        <div class="sidebar__list" id="userObjectList"></div>
+      </aside>
+
       <main class="main">
         <header class="topbar">
           <div class="topbar__left">
             <div class="topbar__title">
-              <h1 data-i18n="pcn.title">Режим ПЦН</h1>
-              <p data-i18n="pcn.subtitle">Объекты и общий журнал событий</p>
+              <h1 data-i18n="user.title">Режим пользователя</h1>
+              <p data-i18n="user.subtitle">Охрана и журнал событий</p>
             </div>
           </div>
           <div class="topbar__right">
-            <button class="button button--ghost" id="mainRefresh" data-i18n="pcn.actions.refresh">Обновить</button>
-            <button class="button button--primary" id="mainAddSpace" data-i18n="pcn.actions.add">Добавить объект</button>
-            <div class="profile-menu" id="profileMenu">
+            <div class="profile-menu">
               <button class="avatar-button" id="avatarButton" aria-label="Профиль">
                 <img class="avatar-button__image" data-avatar alt="Discord avatar" />
                 <span class="avatar-button__circle" data-avatar-fallback>DS</span>
@@ -56,51 +64,55 @@
                     <option value="en-US">English (US)</option>
                   </select>
                 </label>
-                <button class="button button--ghost profile-switch" id="switchToUser" data-i18n="profile.switchUser">
-                  Перейти на обычный
+                <button class="button button--ghost profile-switch" id="switchToPro" data-i18n="profile.switchPro">
+                  Перейти на PRO
                 </button>
-                <button class="button button--ghost profile-logout" id="profileLogout" data-i18n="profile.logout">
-                  Выйти
-                </button>
+                <button class="button button--ghost profile-logout" id="profileLogout" data-i18n="profile.logout">Выйти</button>
               </div>
             </div>
           </div>
         </header>
 
-        <div class="pcn-layout">
-          <section class="content pcn-layout__panel">
-            <div class="panel__header">
-              <h2 data-i18n="pcn.objects.title">Объекты</h2>
-              <div class="filters" id="mainFilters">
-                <button class="chip chip--active" data-filter="all" data-i18n="pcn.filters.all">Все</button>
-                <button class="chip" data-filter="offline" data-i18n="pcn.filters.offline">С хабами не в сети</button>
-                <button class="chip" data-filter="issues" data-i18n="pcn.filters.issues">С тревогой</button>
-              </div>
-            </div>
-            <div class="main-search">
-              <span class="icon">🔍</span>
-              <input type="text" id="mainSearch" data-i18n-placeholder="pcn.search" placeholder="Поиск по объекту или ID" />
-            </div>
-            <div class="tiles-grid" id="mainObjectGrid"></div>
-          </section>
+        <section class="status-panel">
+          <div class="status-card">
+            <div class="status-card__id" id="userSpaceId">—</div>
+            <div class="status-card__state" id="userSpaceState">—</div>
+            <div class="status-card__meta" id="userSpaceMeta">—</div>
+          </div>
+          <div class="status-actions">
+            <button class="chip chip--danger" data-action="arm" data-i18n="user.actions.arm">Под охрану</button>
+            <button class="chip chip--success" data-action="disarm" data-i18n="user.actions.disarm">С охраны</button>
+          </div>
+        </section>
 
-          <section class="content pcn-layout__panel pcn-layout__panel--wide">
+        <section class="content">
+          <div class="tabs">
+            <button class="tab tab--active" data-tab="user-equipment" data-i18n="user.tabs.equipment">Оборудование</button>
+            <button class="tab" data-tab="user-log" data-i18n="user.tabs.log">Лог</button>
+          </div>
+
+          <div class="panel panel--active" id="user-equipment">
             <div class="panel__header">
-              <h2 data-i18n="pcn.logs.title">Общий журнал событий</h2>
-              <div class="filters" id="mainLogFilters">
-                <button class="chip chip--active" data-log="all" data-i18n="pcn.log.filters.all">Все</button>
-                <button class="chip" data-log="security" data-i18n="pcn.log.filters.security">Охранные</button>
-                <button class="chip" data-log="access" data-i18n="pcn.log.filters.access">Доступ</button>
-                <button class="chip" data-log="system" data-i18n="pcn.log.filters.system">Система</button>
-                <button class="chip" data-log="hub" data-i18n="pcn.log.filters.hub">События хаба</button>
-              </div>
+              <h2 data-i18n="user.equipment.title">Оборудование</h2>
             </div>
-            <div class="log-table" id="mainLogTable"></div>
-          </section>
-        </div>
+            <div class="panel__grid">
+              <div class="device-list">
+                <div id="userDeviceList"></div>
+              </div>
+              <div class="device-details" id="userDeviceDetails"></div>
+            </div>
+          </div>
+
+          <div class="panel" id="user-log">
+            <div class="panel__header">
+              <h2 data-i18n="user.log.title">Лог событий</h2>
+            </div>
+            <div class="log-table" id="userLogTable"></div>
+          </div>
+        </section>
       </main>
     </div>
 
-    <script src="main.js"></script>
+    <script src="user.js"></script>
   </body>
 </html>

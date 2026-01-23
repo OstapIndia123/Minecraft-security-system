@@ -1,5 +1,12 @@
 import { readFile } from 'node:fs/promises';
+import crypto from 'node:crypto';
 import { query } from './db.js';
+
+const hashPassword = (password) => {
+  const salt = crypto.randomBytes(16).toString('hex');
+  const hash = crypto.scryptSync(password, salt, 64).toString('hex');
+  return `scrypt$${salt}$${hash}`;
+};
 
 const seed = async () => {
   const schema = await readFile(new URL('./schema.sql', import.meta.url));
@@ -37,7 +44,7 @@ const seed = async () => {
           status: 'Норма',
           type: 'zone',
           side: 'north',
-          config: { zoneType: 'instant', bypass: false, normalLevel: 15 },
+          config: { zoneType: 'instant', bypass: false, silent: false, normalLevel: 15 },
         },
         {
           id: 'reader-key',
@@ -110,6 +117,50 @@ const seed = async () => {
       'INSERT INTO logs (space_id, time, text, who, type) VALUES ($1,$2,$3,$4,$5)',
       [spaceId, time, text, who, type],
     );
+  }
+
+  const users = [
+    {
+      email: 'pro@example.com',
+      password: 'pro-demo',
+      role: 'installer',
+      nickname: 'Installer',
+      language: 'ru',
+      timezone: 'Europe/Kyiv',
+    },
+    {
+      email: 'user@example.com',
+      password: 'user-demo',
+      role: 'user',
+      nickname: 'User',
+      language: 'ru',
+      timezone: 'Europe/Kyiv',
+    },
+  ];
+
+  const userIds = [];
+  for (const user of users) {
+    const result = await query(
+      `INSERT INTO users (email, password_hash, role, minecraft_nickname, language, timezone, discord_avatar_url)
+       VALUES ($1,$2,$3,$4,$5,$6,$7)
+       RETURNING id`,
+      [
+        user.email,
+        hashPassword(user.password),
+        user.role,
+        user.nickname,
+        user.language,
+        user.timezone,
+        null,
+      ],
+    );
+    userIds.push(result.rows[0].id);
+  }
+
+  for (const userId of userIds) {
+    for (const space of spaces) {
+      await query('INSERT INTO user_spaces (user_id, space_id, role) VALUES ($1,$2,$3)', [userId, space.id, 'installer']);
+    }
   }
 
   console.log('Seed completed');
