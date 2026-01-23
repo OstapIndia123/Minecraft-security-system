@@ -19,6 +19,27 @@ npm run dev
 
 Примечание: `npm run seed` пересоздаёт таблицы и сбрасывает данные.
 
+## Docker Compose (backend + hub-backend + Postgres)
+```bash
+docker compose up --build
+```
+
+По умолчанию контейнер поднимает:
+- UI + backend: http://localhost:8080
+- Hub API: http://localhost:8090
+- WebSocket модов: ws://localhost:5080?token=dev-secret-change-me
+
+При необходимости задайте свои значения через переменные окружения в `docker-compose.yml`
+или файле `.env`. Например:
+```
+WEBHOOK_TOKEN=change-me
+WS_AUTH_TOKEN=change-me
+WEBHOOK_URL=http://127.0.0.1:8080/api/hub/events
+```
+
+Для безопасного доступа извне рекомендуется проксировать WebSocket через TLS (wss)
+и держать порты 5080/8090 закрытыми на фаерволе, оставив доступ только к 8080.
+
 Откройте:
 - Вход: http://localhost:8080/login.html
 - PRO (Режим ПЦН): http://localhost:8080/index.html
