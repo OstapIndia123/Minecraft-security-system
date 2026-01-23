@@ -666,7 +666,7 @@ app.get('/api/auth/launcher', async (req, res) => {
     const controller = new AbortController();
     const timeout = setTimeout(() => controller.abort(), 5000);
     const response = await fetch(
-      `${launcherApiUrl.replace(/\\/$/, '')}/Key/AccountData/${encodeURIComponent(String(token))}`,
+      `${launcherApiUrl.replace(/\/$/, '')}/Key/AccountData/${encodeURIComponent(String(token))}`,
       { signal: controller.signal },
     );
     clearTimeout(timeout);
