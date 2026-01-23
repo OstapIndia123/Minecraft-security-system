@@ -86,11 +86,13 @@ const showNicknameModal = (role, token) => {
         body: JSON.stringify({ minecraft_nickname: nickname }),
       });
       let timezoneValue = 'UTC';
+      let avatarUrl = '';
       const rawSettings = localStorage.getItem('profileSettings');
       if (rawSettings) {
         try {
           const parsed = JSON.parse(rawSettings);
           timezoneValue = parsed.timezone ?? timezoneValue;
+          avatarUrl = parsed.avatarUrl ?? avatarUrl;
         } catch {
           // ignore
         }
@@ -99,6 +101,7 @@ const showNicknameModal = (role, token) => {
         nickname,
         language,
         timezone: timezoneValue,
+        avatarUrl,
       };
       localStorage.setItem('profileSettings', JSON.stringify(profileSettings));
       nicknameModal.classList.remove('modal--open');
@@ -131,6 +134,7 @@ const handleDiscordRedirect = async () => {
           nickname,
           language: payload.user?.language ?? 'ru',
           timezone: payload.user?.timezone ?? 'UTC',
+          avatarUrl: payload.user?.discord_avatar_url ?? '',
         };
         localStorage.setItem('profileSettings', JSON.stringify(profileSettings));
         const resolvedRole = payload.user?.role ?? role ?? 'user';

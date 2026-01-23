@@ -4,6 +4,7 @@ const state = {
   language: 'ru',
   timezone: 'UTC',
   nickname: '',
+  avatarUrl: '',
   role: 'user',
 };
 
@@ -24,6 +25,8 @@ const profileTimezone = document.getElementById('profileTimezone');
 const profileLanguage = document.getElementById('profileLanguage');
 const profileLogout = document.getElementById('profileLogout');
 const switchToUser = document.getElementById('switchToUser');
+const avatarImages = document.querySelectorAll('[data-avatar]');
+const avatarFallbacks = document.querySelectorAll('[data-avatar-fallback]');
 
 const translations = {
   ru: {
@@ -112,6 +115,7 @@ const loadProfileSettings = () => {
     state.language = parsed.language ?? state.language;
     state.timezone = parsed.timezone ?? state.timezone;
     state.nickname = parsed.nickname ?? state.nickname;
+    state.avatarUrl = parsed.avatarUrl ?? state.avatarUrl;
   } catch {
     // ignore
   }
@@ -128,8 +132,10 @@ const syncProfileSettings = async () => {
     state.language = payload.user.language ?? state.language;
     state.timezone = payload.user.timezone ?? state.timezone;
     state.nickname = payload.user.minecraft_nickname ?? state.nickname;
+    state.avatarUrl = payload.user.discord_avatar_url ?? state.avatarUrl;
     state.role = payload.user.role ?? state.role;
     saveProfileSettings();
+    setAvatar(state.avatarUrl);
   } catch {
     // ignore
   }
@@ -140,7 +146,29 @@ const saveProfileSettings = () => {
     language: state.language,
     timezone: state.timezone,
     nickname: state.nickname,
+    avatarUrl: state.avatarUrl,
   }));
+};
+
+const setAvatar = (avatarUrl) => {
+  if (!avatarImages.length) return;
+  if (avatarUrl) {
+    avatarImages.forEach((img) => {
+      img.src = avatarUrl;
+      img.style.display = 'block';
+    });
+    avatarFallbacks.forEach((node) => {
+      node.style.display = 'none';
+    });
+    return;
+  }
+  avatarImages.forEach((img) => {
+    img.removeAttribute('src');
+    img.style.display = 'none';
+  });
+  avatarFallbacks.forEach((node) => {
+    node.style.display = '';
+  });
 };
 
 const apiFetch = async (path) => {
@@ -354,6 +382,7 @@ const initProfileMenu = async () => {
   profileDropdown.addEventListener('click', (event) => event.stopPropagation());
 
   loadProfileSettings();
+  setAvatar(state.avatarUrl);
   await syncProfileSettings();
   if (profileNickname) profileNickname.value = state.nickname;
   if (profileTimezone) profileTimezone.value = state.timezone;
@@ -403,6 +432,7 @@ const initProfileMenu = async () => {
   });
   profileLogout?.addEventListener('click', async () => {
     state.nickname = '';
+    state.avatarUrl = '';
     saveProfileSettings();
     try {
       await fetch('/api/auth/logout', {
@@ -425,10 +455,6 @@ if (!localStorage.getItem('authToken')) {
   window.location.href = 'login.html';
 } else {
   initProfileMenu().then(() => {
-    if (state.role !== 'installer') {
-      window.location.href = 'user.html';
-      return;
-    }
     refresh().catch(() => null);
   });
   applyTranslations();

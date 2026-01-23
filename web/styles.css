@@ -649,6 +649,12 @@ body {
   padding: 0;
 }
 
+.avatar-stack {
+  position: relative;
+  display: grid;
+  place-items: center;
+}
+
 .avatar-button__circle {
   width: 36px;
   height: 36px;
@@ -659,6 +665,25 @@ body {
   display: grid;
   place-items: center;
   border: 1px solid rgba(213, 0, 255, 0.4);
+}
+
+.avatar-button__circle--large {
+  width: 44px;
+  height: 44px;
+}
+
+.avatar-button__image {
+  width: 36px;
+  height: 36px;
+  border-radius: 50%;
+  object-fit: cover;
+  border: 1px solid rgba(213, 0, 255, 0.4);
+  display: none;
+}
+
+.avatar-button__image--large {
+  width: 44px;
+  height: 44px;
 }
 
 .profile-dropdown {

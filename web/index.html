@@ -21,11 +21,15 @@
             <button class="button button--primary" id="mainAddSpace" data-i18n="pcn.actions.add">Добавить объект</button>
             <div class="profile-menu" id="profileMenu">
               <button class="avatar-button" id="avatarButton" aria-label="Профиль">
-                <span class="avatar-button__circle">DS</span>
+                <img class="avatar-button__image" data-avatar alt="Discord avatar" />
+                <span class="avatar-button__circle" data-avatar-fallback>DS</span>
               </button>
               <div class="profile-dropdown" id="profileDropdown" aria-hidden="true">
                 <div class="profile-dropdown__header">
-                  <div class="avatar-button__circle">DS</div>
+                  <div class="avatar-stack">
+                    <img class="avatar-button__image avatar-button__image--large" data-avatar alt="Discord avatar" />
+                    <div class="avatar-button__circle avatar-button__circle--large" data-avatar-fallback>DS</div>
+                  </div>
                   <div>
                     <div class="profile-dropdown__title" data-i18n="profile.title">Профиль</div>
                     <div class="profile-dropdown__subtitle">Discord</div>

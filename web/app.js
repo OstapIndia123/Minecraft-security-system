@@ -9,6 +9,7 @@ const state = {
   language: 'ru',
   timezone: 'UTC',
   nickname: '',
+  avatarUrl: '',
   role: 'user',
 };
 
@@ -73,6 +74,8 @@ const profileTimezone = document.getElementById('profileTimezone');
 const profileLanguage = document.getElementById('profileLanguage');
 const profileLogout = document.getElementById('profileLogout');
 const switchToUser = document.getElementById('switchToUser');
+const avatarImages = document.querySelectorAll('[data-avatar]');
+const avatarFallbacks = document.querySelectorAll('[data-avatar-fallback]');
 const usersList = document.getElementById('usersList');
 const usersForm = document.getElementById('usersForm');
 const installersList = document.getElementById('installersList');
@@ -305,6 +308,7 @@ const loadProfileSettings = () => {
     state.language = parsed.language ?? state.language;
     state.timezone = parsed.timezone ?? state.timezone;
     state.nickname = parsed.nickname ?? state.nickname;
+    state.avatarUrl = parsed.avatarUrl ?? state.avatarUrl;
   } catch {
     // ignore
   }
@@ -315,7 +319,29 @@ const saveProfileSettings = () => {
     language: state.language,
     timezone: state.timezone,
     nickname: state.nickname,
+    avatarUrl: state.avatarUrl,
   }));
+};
+
+const setAvatar = (avatarUrl) => {
+  if (!avatarImages.length) return;
+  if (avatarUrl) {
+    avatarImages.forEach((img) => {
+      img.src = avatarUrl;
+      img.style.display = 'block';
+    });
+    avatarFallbacks.forEach((node) => {
+      node.style.display = 'none';
+    });
+    return;
+  }
+  avatarImages.forEach((img) => {
+    img.removeAttribute('src');
+    img.style.display = 'none';
+  });
+  avatarFallbacks.forEach((node) => {
+    node.style.display = '';
+  });
 };
 
 const syncProfileSettings = async () => {
@@ -325,8 +351,10 @@ const syncProfileSettings = async () => {
     state.language = result.user.language ?? state.language;
     state.timezone = result.user.timezone ?? state.timezone;
     state.nickname = result.user.minecraft_nickname ?? state.nickname;
+    state.avatarUrl = result.user.discord_avatar_url ?? state.avatarUrl;
     state.role = result.user.role ?? state.role;
     saveProfileSettings();
+    setAvatar(state.avatarUrl);
   } catch {
     // ignore
   }
@@ -1849,6 +1877,7 @@ const initProfileMenu = async () => {
   profileDropdown.addEventListener('click', (event) => event.stopPropagation());
 
   loadProfileSettings();
+  setAvatar(state.avatarUrl);
   await syncProfileSettings();
   if (profileNickname) profileNickname.value = state.nickname;
   if (profileTimezone) profileTimezone.value = state.timezone;
@@ -1879,6 +1908,7 @@ const initProfileMenu = async () => {
   });
   profileLogout?.addEventListener('click', async () => {
     state.nickname = '';
+    state.avatarUrl = '';
     saveProfileSettings();
     try {
       await apiFetch('/api/auth/logout', { method: 'POST' });
@@ -1900,10 +1930,7 @@ const init = async () => {
     return;
   }
   await initProfileMenu();
-  if (state.role !== 'installer') {
-    window.location.href = 'user.html';
-    return;
-  }
+  setAvatar(state.avatarUrl);
   await loadSpaces();
   if (state.selectedSpaceId) {
     await loadLogs(state.selectedSpaceId);

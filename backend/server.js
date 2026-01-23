@@ -49,7 +49,8 @@ const getAuthToken = (req) => {
 const loadSessionUser = async (token) => {
   if (!token) return null;
   const result = await query(
-    `SELECT users.id, users.email, users.role, users.minecraft_nickname, users.discord_id, users.language, users.timezone
+    `SELECT users.id, users.email, users.role, users.minecraft_nickname, users.discord_id, users.discord_avatar_url,
+            users.language, users.timezone
      FROM sessions
      JOIN users ON users.id = sessions.user_id
      WHERE sessions.token = $1 AND sessions.expires_at > NOW()`,
@@ -135,6 +136,16 @@ const fetchDiscordUser = async (tokenType, accessToken) => {
     throw new Error('discord_user_failed');
   }
   return response.json();
+};
+
+const buildDiscordAvatarUrl = (discordUser) => {
+  if (!discordUser?.id) return null;
+  if (discordUser.avatar) {
+    const extension = discordUser.avatar.startsWith('a_') ? 'gif' : 'png';
+    return `https://cdn.discordapp.com/avatars/${discordUser.id}/${discordUser.avatar}.${extension}?size=128`;
+  }
+  const fallbackIndex = Number(BigInt(discordUser.id) % 5n);
+  return `https://cdn.discordapp.com/embed/avatars/${fallbackIndex}.png`;
 };
 
 const mapSpace = (row) => ({
@@ -539,6 +550,7 @@ app.get('/api/auth/discord/callback', async (req, res) => {
     const tokenPayload = await exchangeDiscordCode(String(code));
     const discordUser = await fetchDiscordUser(tokenPayload.token_type, tokenPayload.access_token);
     const discordId = String(discordUser.id);
+    const discordAvatarUrl = buildDiscordAvatarUrl(discordUser);
     const userResult = await query('SELECT * FROM users WHERE discord_id = $1', [discordId]);
     if (!userResult.rows.length && mode === 'login') {
       mode = 'register';
@@ -546,20 +558,27 @@ app.get('/api/auth/discord/callback', async (req, res) => {
     let user = userResult.rows[0];
     if (!user) {
       const insert = await query(
-        `INSERT INTO users (email, password_hash, role, minecraft_nickname, discord_id, language, timezone)
-         VALUES ($1,$2,$3,$4,$5,$6,$7)
-         RETURNING id, email, role, minecraft_nickname, language, timezone`,
+        `INSERT INTO users (email, password_hash, role, minecraft_nickname, discord_id, discord_avatar_url, language, timezone)
+         VALUES ($1,$2,$3,$4,$5,$6,$7,$8)
+         RETURNING id, email, role, minecraft_nickname, language, timezone, discord_avatar_url`,
         [
           `discord:${discordId}`,
           formatPasswordHash(crypto.randomUUID()),
           'user',
           null,
           discordId,
+          discordAvatarUrl,
           'ru',
           'UTC',
         ],
       );
       user = insert.rows[0];
+    } else if (discordAvatarUrl && user.discord_avatar_url !== discordAvatarUrl) {
+      const update = await query(
+        'UPDATE users SET discord_avatar_url = $1 WHERE id = $2 RETURNING id, email, role, minecraft_nickname, language, timezone, discord_avatar_url',
+        [discordAvatarUrl, user.id],
+      );
+      user = update.rows[0] ?? user;
     }
     const session = await issueSession(user.id);
     const params = new URLSearchParams({ token: session.token, role: user.role });
@@ -585,7 +604,7 @@ app.patch('/api/auth/me', requireAuth, async (req, res) => {
          language = $2,
          timezone = $3
      WHERE id = $4
-     RETURNING id, email, role, minecraft_nickname, language, timezone`,
+     RETURNING id, email, role, minecraft_nickname, language, timezone, discord_avatar_url`,
     [
       minecraft_nickname ?? req.user.minecraft_nickname,
       language ?? req.user.language,

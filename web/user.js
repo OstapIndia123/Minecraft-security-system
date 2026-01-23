@@ -4,6 +4,7 @@ const state = {
   language: 'ru',
   timezone: 'UTC',
   role: 'user',
+  avatarUrl: '',
 };
 
 const objectList = document.getElementById('userObjectList');
@@ -23,6 +24,8 @@ const profileTimezone = document.getElementById('profileTimezone');
 const profileLanguage = document.getElementById('profileLanguage');
 const profileLogout = document.getElementById('profileLogout');
 const switchToPro = document.getElementById('switchToPro');
+const avatarImages = document.querySelectorAll('[data-avatar]');
+const avatarFallbacks = document.querySelectorAll('[data-avatar-fallback]');
 
 const translations = {
   ru: {
@@ -120,6 +123,28 @@ const saveProfileSettings = (settings) => {
 const applyProfileSettings = (settings) => {
   state.language = settings.language ?? state.language;
   state.timezone = settings.timezone ?? state.timezone;
+  state.avatarUrl = settings.avatarUrl ?? state.avatarUrl;
+};
+
+const setAvatar = (avatarUrl) => {
+  if (!avatarImages.length) return;
+  if (avatarUrl) {
+    avatarImages.forEach((img) => {
+      img.src = avatarUrl;
+      img.style.display = 'block';
+    });
+    avatarFallbacks.forEach((node) => {
+      node.style.display = 'none';
+    });
+    return;
+  }
+  avatarImages.forEach((img) => {
+    img.removeAttribute('src');
+    img.style.display = 'none';
+  });
+  avatarFallbacks.forEach((node) => {
+    node.style.display = '';
+  });
 };
 
 const syncProfileSettings = async () => {
@@ -133,11 +158,14 @@ const syncProfileSettings = async () => {
     state.language = payload.user.language ?? state.language;
     state.timezone = payload.user.timezone ?? state.timezone;
     state.role = payload.user.role ?? state.role;
+    state.avatarUrl = payload.user.discord_avatar_url ?? state.avatarUrl;
     saveProfileSettings({
       nickname: payload.user.minecraft_nickname ?? '',
       language: state.language,
       timezone: state.timezone,
+      avatarUrl: state.avatarUrl,
     });
+    setAvatar(state.avatarUrl);
   } catch {
     // ignore
   }
@@ -171,6 +199,7 @@ const initProfileMenu = async () => {
 
   const settings = loadProfileSettings();
   applyProfileSettings(settings);
+  setAvatar(state.avatarUrl);
   if (profileNickname) profileNickname.value = settings.nickname ?? '';
   if (profileTimezone) profileTimezone.value = settings.timezone ?? 'UTC';
   if (profileLanguage) profileLanguage.value = settings.language ?? 'ru';
@@ -178,7 +207,7 @@ const initProfileMenu = async () => {
   applyTranslations();
 
   profileNickname?.addEventListener('input', (event) => {
-    saveProfileSettings({ ...settings, nickname: event.target.value });
+    saveProfileSettings({ ...loadProfileSettings(), nickname: event.target.value, avatarUrl: state.avatarUrl });
   });
   profileNickname?.addEventListener('blur', (event) => {
     fetch('/api/auth/me', {
@@ -191,7 +220,7 @@ const initProfileMenu = async () => {
     }).catch(() => null);
   });
   profileTimezone?.addEventListener('change', (event) => {
-    saveProfileSettings({ ...settings, timezone: event.target.value });
+    saveProfileSettings({ ...loadProfileSettings(), timezone: event.target.value, avatarUrl: state.avatarUrl });
     state.timezone = event.target.value;
     fetch('/api/auth/me', {
       method: 'PATCH',
@@ -204,7 +233,7 @@ const initProfileMenu = async () => {
     loadSpace(state.selectedSpaceId).catch(() => null);
   });
   profileLanguage?.addEventListener('change', (event) => {
-    saveProfileSettings({ ...settings, language: event.target.value });
+    saveProfileSettings({ ...loadProfileSettings(), language: event.target.value, avatarUrl: state.avatarUrl });
     state.language = event.target.value;
     fetch('/api/auth/me', {
       method: 'PATCH',
@@ -217,9 +246,7 @@ const initProfileMenu = async () => {
     applyTranslations();
   });
   if (switchToPro) {
-    switchToPro.disabled = state.role !== 'installer';
     switchToPro.addEventListener('click', () => {
-      if (state.role !== 'installer') return;
       window.location.href = 'index.html';
     });
   }
@@ -230,6 +257,7 @@ const initProfileMenu = async () => {
       // ignore
     }
     localStorage.removeItem('authToken');
+    localStorage.removeItem('profileSettings');
     toggle(false);
     window.location.href = 'login.html';
   });

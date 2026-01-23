@@ -20,6 +20,7 @@ CREATE TABLE users (
   role TEXT NOT NULL,
   minecraft_nickname TEXT,
   discord_id TEXT,
+  discord_avatar_url TEXT,
   language TEXT NOT NULL DEFAULT 'ru',
   timezone TEXT NOT NULL DEFAULT 'UTC',
   created_at TIMESTAMP NOT NULL DEFAULT NOW()
