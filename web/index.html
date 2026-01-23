@@ -1,0 +1,106 @@
+<!doctype html>
+<html lang="ru">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Minecraft Security System — Режим ПЦН</title>
+    <link rel="stylesheet" href="styles.css" />
+  </head>
+  <body>
+    <div class="app-shell app-shell--single">
+      <main class="main">
+        <header class="topbar">
+          <div class="topbar__left">
+            <div class="topbar__title">
+              <h1 data-i18n="pcn.title">Режим ПЦН</h1>
+              <p data-i18n="pcn.subtitle">Объекты и общий журнал событий</p>
+            </div>
+          </div>
+          <div class="topbar__right">
+            <button class="button button--ghost" id="mainRefresh" data-i18n="pcn.actions.refresh">Обновить</button>
+            <button class="button button--primary" id="mainAddSpace" data-i18n="pcn.actions.add">Добавить объект</button>
+            <div class="profile-menu" id="profileMenu">
+              <button class="avatar-button" id="avatarButton" aria-label="Профиль">
+                <img class="avatar-button__image" data-avatar alt="Discord avatar" />
+                <span class="avatar-button__circle" data-avatar-fallback>DS</span>
+              </button>
+              <div class="profile-dropdown" id="profileDropdown" aria-hidden="true">
+                <div class="profile-dropdown__header">
+                  <div class="avatar-stack">
+                    <img class="avatar-button__image avatar-button__image--large" data-avatar alt="Discord avatar" />
+                    <div class="avatar-button__circle avatar-button__circle--large" data-avatar-fallback>DS</div>
+                  </div>
+                  <div>
+                    <div class="profile-dropdown__title" data-i18n="profile.title">Профиль</div>
+                    <div class="profile-dropdown__subtitle">Discord</div>
+                  </div>
+                </div>
+                <label class="profile-field">
+                  <span data-i18n="profile.nickname">Игровой ник</span>
+                  <input type="text" id="profileNickname" placeholder="PlayerName" />
+                </label>
+                <label class="profile-field">
+                  <span data-i18n="profile.timezone">Часовой пояс</span>
+                  <select id="profileTimezone">
+                    <option value="UTC">UTC</option>
+                    <option value="Europe/Moscow">Europe/Moscow</option>
+                    <option value="Europe/Kyiv">Europe/Kyiv</option>
+                    <option value="Europe/Warsaw">Europe/Warsaw</option>
+                    <option value="America/New_York">America/New_York</option>
+                  </select>
+                </label>
+                <label class="profile-field">
+                  <span data-i18n="profile.language">Язык</span>
+                  <select id="profileLanguage">
+                    <option value="ru">Русский</option>
+                    <option value="en-US">English (US)</option>
+                  </select>
+                </label>
+                <button class="button button--ghost profile-switch" id="switchToUser" data-i18n="profile.switchUser">
+                  Перейти на обычный
+                </button>
+                <button class="button button--ghost profile-logout" id="profileLogout" data-i18n="profile.logout">
+                  Выйти
+                </button>
+              </div>
+            </div>
+          </div>
+        </header>
+
+        <div class="pcn-layout">
+          <section class="content pcn-layout__panel">
+            <div class="panel__header">
+              <h2 data-i18n="pcn.objects.title">Объекты</h2>
+              <div class="filters" id="mainFilters">
+                <button class="chip chip--active" data-filter="all" data-i18n="pcn.filters.all">Все</button>
+                <button class="chip" data-filter="offline" data-i18n="pcn.filters.offline">С хабами не в сети</button>
+                <button class="chip" data-filter="issues" data-i18n="pcn.filters.issues">С тревогой</button>
+              </div>
+            </div>
+            <div class="main-search">
+              <span class="icon">🔍</span>
+              <input type="text" id="mainSearch" data-i18n-placeholder="pcn.search" placeholder="Поиск по объекту или ID" />
+            </div>
+            <div class="tiles-grid" id="mainObjectGrid"></div>
+          </section>
+
+          <section class="content pcn-layout__panel pcn-layout__panel--wide">
+            <div class="panel__header">
+              <h2 data-i18n="pcn.logs.title">Общий журнал событий</h2>
+              <div class="filters" id="mainLogFilters">
+                <button class="chip chip--active" data-log="all" data-i18n="pcn.log.filters.all">Все</button>
+                <button class="chip" data-log="security" data-i18n="pcn.log.filters.security">Охранные</button>
+                <button class="chip" data-log="access" data-i18n="pcn.log.filters.access">Доступ</button>
+                <button class="chip" data-log="system" data-i18n="pcn.log.filters.system">Система</button>
+                <button class="chip" data-log="hub" data-i18n="pcn.log.filters.hub">События хаба</button>
+              </div>
+            </div>
+            <div class="log-table" id="mainLogTable"></div>
+          </section>
+        </div>
+      </main>
+    </div>
+
+    <script src="main.js"></script>
+  </body>
+</html>
