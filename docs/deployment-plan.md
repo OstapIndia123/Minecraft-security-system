@@ -28,6 +28,10 @@
    ```bash
    docker compose build --build-arg NPM_REGISTRY=https://registry.npmjs.org
    ```
+   При полном отсутствии сети используйте пропуск установки npm зависимостей:
+   ```bash
+   docker compose build --build-arg SKIP_NPM_INSTALL=true
+   ```
 2. Инициализировать БД (единоразово):
    ```bash
    docker compose exec app node backend/seed.js

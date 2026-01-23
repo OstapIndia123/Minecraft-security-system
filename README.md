@@ -52,6 +52,11 @@ docker compose build --build-arg BASE_IMAGE=registry.example.com/node:20-alpine
 ```bash
 docker compose build --build-arg NPM_REGISTRY=https://registry.npmjs.org
 ```
+Если сеть полностью недоступна, можно пропустить установку npm зависимостей (при наличии
+предсобранных `node_modules`):
+```bash
+docker compose build --build-arg SKIP_NPM_INSTALL=true
+```
 
 Откройте:
 - Вход: http://localhost:8080/login.html

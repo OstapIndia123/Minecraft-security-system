@@ -5,6 +5,7 @@ services:
       args:
         BASE_IMAGE: node:20-alpine
         NPM_REGISTRY: ""
+        SKIP_NPM_INSTALL: "false"
     environment:
       DATABASE_URL: postgres://postgres:postgres@postgres:5432/minecraft_security
       PORT: 8080
