@@ -31,3 +31,8 @@ https://mysite.com/?token=TokenFromLauncher
 - Нельзя хранить launcher token на клиенте после обмена.
 - Ответы внешнего API протоколируются как событие `auth_success/auth_failed`.
 
+## Локальная эмуляция API
+Для проверки потока авторизации можно запустить мок‑сервер:
+```
+node backend/tools/mock-launcher-api.js
+```

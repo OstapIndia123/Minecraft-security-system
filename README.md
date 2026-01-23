@@ -59,9 +59,18 @@ LAUNCHER_API_URL=http://127.0.0.1:8090
 ```
 
 ### Эмуляция лаунчера локально
-Запустите простой мок‑сервер:
+Запустите мок‑сервер:
 ```bash
-node -e "require('http').createServer((req,res)=>{ if(req.url.startsWith('/Key/AccountData/')){ res.writeHead(200,{'Content-Type':'application/json'}); res.end(JSON.stringify({ minecraft:{ uuid:'00000000-0000-0000-0000-000000000000', nickname:'PlayerNickname', skin:{ url:'https://example.com/skin.png', variant:'classic'} }, discord:{ id:'123456789012345678', nickname:'DiscordNick', avatar:{ url:'https://cdn.discordapp.com/avatars/.../....png'} }, device:{ hwid:'123' }, lastMinecraftServer:{ serverId:'Satirize' }, servers:[] })); } else { res.writeHead(404); res.end(); } }).listen(8090,()=>console.log('Mock launcher API on :8090'))"
+node backend/tools/mock-launcher-api.js
+```
+
+Можно переопределить данные через переменные окружения:
+```bash
+MOCK_LAUNCHER_PORT=8090 \
+MOCK_NICKNAME=PlayerNickname \
+MOCK_DISCORD_ID=123456789012345678 \
+MOCK_DISCORD_NICKNAME=DiscordNick \
+node backend/tools/mock-launcher-api.js
 ```
 
 Далее откройте:
