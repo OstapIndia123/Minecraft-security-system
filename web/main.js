@@ -4,12 +4,14 @@ const state = {
   language: 'ru',
   timezone: 'UTC',
   nickname: '',
+  lastNicknameChangeAt: null,
   avatarUrl: '',
   role: 'user',
 };
 
 const FLASH_DURATION_MS = 15000;
 const logFlashActive = new Map();
+const NICKNAME_COOLDOWN_MS = 3 * 24 * 60 * 60 * 1000;
 
 const escapeHtml = (value) => String(value ?? '')
   .replace(/&/g, '&amp;')
@@ -28,6 +30,7 @@ const searchInput = document.getElementById('mainSearch');
 const avatarButton = document.getElementById('avatarButton');
 const profileDropdown = document.getElementById('profileDropdown');
 const profileNickname = document.getElementById('profileNickname');
+const profileNicknameChange = document.getElementById('profileNicknameChange');
 const profileTimezone = document.getElementById('profileTimezone');
 const profileLanguage = document.getElementById('profileLanguage');
 const profileLogout = document.getElementById('profileLogout');
@@ -60,6 +63,7 @@ const translations = {
     'status.night': 'Ночной режим',
     'profile.title': 'Профиль',
     'profile.nickname': 'Игровой ник',
+    'profile.nickname.change': 'Сменить',
     'profile.timezone': 'Часовой пояс',
     'profile.language': 'Язык',
     'profile.switchUser': 'Перейти на обычный',
@@ -89,6 +93,7 @@ const translations = {
     'status.night': 'Night mode',
     'profile.title': 'Profile',
     'profile.nickname': 'Game nickname',
+    'profile.nickname.change': 'Change',
     'profile.timezone': 'Time zone',
     'profile.language': 'Language',
     'profile.switchUser': 'Go to user',
@@ -139,12 +144,36 @@ const syncProfileSettings = async () => {
     state.language = payload.user.language ?? state.language;
     state.timezone = payload.user.timezone ?? state.timezone;
     state.nickname = payload.user.minecraft_nickname ?? state.nickname;
+    state.lastNicknameChangeAt = payload.user.last_nickname_change_at ?? state.lastNicknameChangeAt;
     state.avatarUrl = payload.user.discord_avatar_url ?? state.avatarUrl;
     state.role = payload.user.role ?? state.role;
     saveProfileSettings();
     setAvatar(state.avatarUrl);
   } catch {
     // ignore
+  }
+};
+
+const getNicknameLockUntil = (lastChangedAt) => {
+  if (!lastChangedAt) return null;
+  const lastTimestamp = new Date(lastChangedAt).getTime();
+  if (Number.isNaN(lastTimestamp)) return null;
+  const lockUntil = lastTimestamp + NICKNAME_COOLDOWN_MS;
+  return Date.now() < lockUntil ? lockUntil : null;
+};
+
+const updateNicknameControls = () => {
+  const lockUntil = getNicknameLockUntil(state.lastNicknameChangeAt);
+  const locked = Boolean(lockUntil);
+  if (profileNickname) profileNickname.disabled = locked;
+  if (profileNicknameChange) {
+    profileNicknameChange.disabled = locked;
+    if (locked && lockUntil) {
+      const date = new Date(lockUntil);
+      profileNicknameChange.title = `Смена доступна после ${date.toLocaleDateString('ru-RU')} ${date.toLocaleTimeString('ru-RU', { hour: '2-digit', minute: '2-digit' })}`;
+    } else {
+      profileNicknameChange.removeAttribute('title');
+    }
   }
 };
 
@@ -438,6 +467,7 @@ const initProfileMenu = async () => {
   await syncProfileSettings();
   if (profileNickname) profileNickname.value = state.nickname;
   let confirmedNickname = state.nickname;
+  updateNicknameControls();
   if (profileTimezone) {
     const option = profileTimezone.querySelector(`option[value="${state.timezone}"]`);
     profileTimezone.value = option ? state.timezone : 'UTC';
@@ -453,17 +483,39 @@ const initProfileMenu = async () => {
     state.nickname = event.target.value;
     saveProfileSettings();
   });
-  profileNickname?.addEventListener('blur', () => {
-    fetch('/api/auth/me', {
-      method: 'PATCH',
-      headers: {
-        'Content-Type': 'application/json',
-        Authorization: `Bearer ${localStorage.getItem('authToken') ?? ''}`,
-      },
-      body: JSON.stringify({ minecraft_nickname: state.nickname }),
-    }).then(async (response) => {
+  profileNicknameChange?.addEventListener('click', async () => {
+    if (!profileNickname || profileNickname.disabled) return;
+    const nextNickname = profileNickname.value.trim();
+    if (!nextNickname) {
+      window.alert('Введите корректный ник.');
+      return;
+    }
+    if (nextNickname === confirmedNickname) {
+      window.alert('Ник уже установлен.');
+      return;
+    }
+    const confirmed = window.confirm('Ник нельзя сменить будет в течении следующих 3-х дней. Продолжить?');
+    if (!confirmed) {
+      profileNickname.value = confirmedNickname;
+      return;
+    }
+    try {
+      const response = await fetch('/api/auth/me', {
+        method: 'PATCH',
+        headers: {
+          'Content-Type': 'application/json',
+          Authorization: `Bearer ${localStorage.getItem('authToken') ?? ''}`,
+        },
+        body: JSON.stringify({ minecraft_nickname: nextNickname }),
+      });
       if (response.ok) {
-        confirmedNickname = state.nickname;
+        const payload = await response.json().catch(() => ({}));
+        confirmedNickname = payload.user?.minecraft_nickname ?? nextNickname;
+        state.nickname = confirmedNickname;
+        state.lastNicknameChangeAt = payload.user?.last_nickname_change_at ?? new Date().toISOString();
+        profileNickname.value = confirmedNickname;
+        saveProfileSettings();
+        updateNicknameControls();
         return;
       }
       const payload = await response.json().catch(() => ({}));
@@ -473,16 +525,18 @@ const initProfileMenu = async () => {
           ? 'Сменить ник можно раз в 3 дня.'
           : payload?.error === 'invalid_nickname'
             ? 'Введите корректный ник.'
-            : 'Не удалось обновить ник.';
+            : payload?.error === 'nickname_taken'
+              ? 'Такой ник уже используется.'
+              : 'Не удалось обновить ник.';
       window.alert(errorMessage);
       state.nickname = confirmedNickname;
-      if (profileNickname) profileNickname.value = confirmedNickname;
+      profileNickname.value = confirmedNickname;
       saveProfileSettings();
-    }).catch(() => {
+    } catch {
       state.nickname = confirmedNickname;
-      if (profileNickname) profileNickname.value = confirmedNickname;
+      profileNickname.value = confirmedNickname;
       saveProfileSettings();
-    });
+    }
   });
   profileTimezone?.addEventListener('change', (event) => {
     state.timezone = event.target.value;

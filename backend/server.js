@@ -224,7 +224,7 @@ const mapSpace = (row) => ({
   hubId: row.hub_id,
   name: row.name,
   address: row.address,
-  server: row.server,
+  server: row.server ?? '—',
   status: row.status,
   hubOnline: row.hub_online,
   issues: row.issues,
@@ -396,48 +396,34 @@ const lightBlinkTimers = new Map();
 const lastKeyScans = new Map();
 const keyScanWaiters = new Map();
 const pendingHubRegistrations = new Map();
-const pendingHubBySpace = new Map();
 
 const cleanupExpiredHubRegistrations = () => {
   const now = Date.now();
-  for (const [hubId, registration] of pendingHubRegistrations.entries()) {
+  for (const [spaceId, registration] of pendingHubRegistrations.entries()) {
     if (registration.expiresAt <= now) {
-      pendingHubRegistrations.delete(hubId);
-      pendingHubBySpace.delete(registration.spaceId);
+      pendingHubRegistrations.delete(spaceId);
     }
   }
 };
 
 const getPendingHubRegistration = (spaceId) => {
   cleanupExpiredHubRegistrations();
-  const hubId = pendingHubBySpace.get(spaceId);
-  if (!hubId) return null;
-  const registration = pendingHubRegistrations.get(hubId);
-  if (!registration) return null;
-  return registration;
+  return pendingHubRegistrations.get(spaceId) ?? null;
 };
 
-const startHubRegistration = (spaceId, hubId) => {
+const startHubRegistration = (spaceId) => {
   cleanupExpiredHubRegistrations();
-  const normalizedHubId = normalizeHubId(hubId);
-  if (!normalizedHubId) {
-    return { error: 'invalid_hub_id' };
-  }
-  if (isOverMaxLength(normalizedHubId, MAX_DEVICE_ID_LENGTH)) {
-    return { error: 'field_too_long' };
-  }
-  const existing = pendingHubRegistrations.get(normalizedHubId);
-  if (existing && existing.spaceId !== spaceId) {
-    return { error: 'hub_pending' };
-  }
-  const previousHub = pendingHubBySpace.get(spaceId);
-  if (previousHub && previousHub !== normalizedHubId) {
-    pendingHubRegistrations.delete(previousHub);
-  }
   const expiresAt = Date.now() + 60_000;
-  const registration = { pending: true, spaceId, hubId: normalizedHubId, expiresAt };
-  pendingHubRegistrations.set(normalizedHubId, registration);
-  pendingHubBySpace.set(spaceId, normalizedHubId);
+  const registration = {
+    pending: true,
+    spaceId,
+    hubId: null,
+    expiresAt,
+    createdAt: Date.now(),
+    seenHubOnline: false,
+    seenTestOk: false,
+  };
+  pendingHubRegistrations.set(spaceId, registration);
   return registration;
 };
 
@@ -504,22 +490,58 @@ const scheduleSirenStop = (spaceId, hubId, durationMs) => {
   sirenStopTimeouts.set(spaceId, timer);
 };
 
-const registerPendingHub = async (hubId) => {
+const findPendingRegistrationForHub = (hubId) => {
   cleanupExpiredHubRegistrations();
-  const registration = pendingHubRegistrations.get(hubId);
+  let candidate = null;
+  for (const registration of pendingHubRegistrations.values()) {
+    if (registration.hubId && registration.hubId !== hubId) continue;
+    if (!candidate || registration.createdAt < candidate.createdAt) {
+      candidate = registration;
+    }
+  }
+  return candidate;
+};
+
+const registerPendingHub = async (spaceId, hubId) => {
+  cleanupExpiredHubRegistrations();
+  const registration = pendingHubRegistrations.get(spaceId);
   if (!registration) return false;
+  if (registration.hubId && registration.hubId !== hubId) return false;
   const existing = await query('SELECT id FROM hubs WHERE id = $1', [hubId]);
   if (existing.rows.length) {
-    pendingHubRegistrations.delete(hubId);
-    pendingHubBySpace.delete(registration.spaceId);
+    pendingHubRegistrations.delete(spaceId);
     return false;
   }
-  await query('INSERT INTO hubs (id, space_id) VALUES ($1,$2)', [hubId, registration.spaceId]);
-  await query('UPDATE spaces SET hub_id = $1 WHERE id = $2', [hubId, registration.spaceId]);
-  await appendLog(registration.spaceId, 'Хаб установлен и зарегистрирован', 'Hub', 'system');
-  pendingHubRegistrations.delete(hubId);
-  pendingHubBySpace.delete(registration.spaceId);
+  await query('INSERT INTO hubs (id, space_id) VALUES ($1,$2)', [hubId, spaceId]);
+  await query('UPDATE spaces SET hub_id = $1 WHERE id = $2', [hubId, spaceId]);
+  await appendLog(spaceId, 'Хаб установлен и зарегистрирован', 'Hub', 'system');
+  pendingHubRegistrations.delete(spaceId);
   return true;
+};
+
+const updatePendingHubRegistration = async (hubId, eventType) => {
+  const registration = findPendingRegistrationForHub(hubId);
+  if (!registration) return null;
+  if (!registration.hubId) {
+    registration.hubId = hubId;
+  }
+  if (registration.hubId !== hubId) return null;
+  if (eventType === 'HUB_ONLINE') {
+    registration.seenHubOnline = true;
+  }
+  if (eventType === 'TEST_OK') {
+    registration.seenTestOk = true;
+  }
+  if (registration.seenHubOnline && registration.seenTestOk) {
+    const registered = await registerPendingHub(registration.spaceId, hubId);
+    return registered ? { registered: true, spaceId: registration.spaceId } : null;
+  }
+  return {
+    pending: true,
+    spaceId: registration.spaceId,
+    hubId: registration.hubId,
+    expiresAt: registration.expiresAt,
+  };
 };
 
 const getMaxSirenDuration = (sirens) => sirens.reduce((max, siren) => {
@@ -1027,12 +1049,12 @@ app.get('/api/logs', requireAuth, async (req, res) => {
 });
 
 app.post('/api/spaces', requireAuth, requireInstaller, async (req, res) => {
-  const { hubId, name, address, server, city, timezone } = req.body ?? {};
+  const { name, address, server, city, timezone } = req.body ?? {};
   const normalizedName = normalizeText(name);
   const normalizedAddress = normalizeText(address) || '—';
   const normalizedServer = normalizeText(server) || '—';
   const normalizedCity = normalizeText(city) || '—';
-  if (!hubId || !normalizedName) {
+  if (!normalizedName) {
     return res.status(400).json({ error: 'missing_fields' });
   }
   if (isOverMaxLength(normalizedName, MAX_SPACE_NAME_LENGTH)
@@ -1040,16 +1062,6 @@ app.post('/api/spaces', requireAuth, requireInstaller, async (req, res) => {
     || isOverMaxLength(normalizedServer, MAX_SERVER_NAME_LENGTH)
     || isOverMaxLength(normalizedCity, MAX_CITY_LENGTH)) {
     return res.status(400).json({ error: 'field_too_long' });
-  }
-
-  const normalizedHubId = normalizeHubId(hubId);
-  const hub = await query('SELECT id FROM hubs WHERE id = $1', [normalizedHubId]);
-  if (hub.rows.length) {
-    return res.status(409).json({ error: 'hub_already_registered' });
-  }
-  cleanupExpiredHubRegistrations();
-  if (pendingHubRegistrations.has(normalizedHubId)) {
-    return res.status(409).json({ error: 'hub_pending' });
   }
 
   const generatedId = `SPACE-${Date.now()}`;
@@ -1085,7 +1097,7 @@ app.post('/api/spaces', requireAuth, requireInstaller, async (req, res) => {
   const space = await query('SELECT * FROM spaces WHERE id = $1', [generatedId]);
   const result = mapSpace(space.rows[0]);
   result.devices = await loadDevices(result.id, result.hubId, result.hubOnline);
-  const registration = startHubRegistration(generatedId, normalizedHubId);
+  const registration = startHubRegistration(generatedId);
   res.status(201).json({ ...result, hubRegistration: registration });
 });
 
@@ -1105,7 +1117,7 @@ app.patch('/api/spaces/:id', requireAuth, requireInstaller, async (req, res) => 
   const space = existing.rows[0];
   const normalizedName = name ? normalizeText(name) : space.name;
   const normalizedAddress = address ? normalizeText(address) : space.address;
-  const normalizedServer = server ? normalizeText(server) : space.server;
+  const normalizedServer = server !== undefined ? (normalizeText(server) || '—') : space.server;
   const normalizedCity = city ? normalizeText(city) : space.city;
   if (!normalizedName) {
     return res.status(400).json({ error: 'missing_fields' });
@@ -1346,20 +1358,14 @@ app.post('/api/spaces/:id/attach-hub', requireAuth, requireInstaller, async (req
     return;
   }
   if (!await ensureSpaceDisarmed(req.params.id, res)) return;
-  const { hubId } = req.body ?? {};
-  if (!hubId) return res.status(400).json({ error: 'missing_hub_id' });
-
-  const normalizedHubId = normalizeHubId(hubId);
-  const existing = await query('SELECT id FROM hubs WHERE id = $1', [normalizedHubId]);
-  if (existing.rows.length) {
+  const existing = await query('SELECT hub_id FROM spaces WHERE id = $1', [req.params.id]);
+  if (!existing.rows.length) {
+    return res.status(404).json({ error: 'space_not_found' });
+  }
+  if (existing.rows[0].hub_id) {
     return res.status(409).json({ error: 'hub_already_registered' });
   }
-  cleanupExpiredHubRegistrations();
-  if (pendingHubRegistrations.has(normalizedHubId)) {
-    return res.status(409).json({ error: 'hub_pending' });
-  }
-
-  const registration = startHubRegistration(req.params.id, normalizedHubId);
+  const registration = startHubRegistration(req.params.id);
   await appendLog(req.params.id, 'Ожидание установки хаба', 'UI', 'system');
   res.json({ ok: true, hubRegistration: registration });
 });
@@ -1370,20 +1376,18 @@ app.get('/api/spaces/:id/hub-registration', requireAuth, requireInstaller, async
     res.status(403).json({ error: 'forbidden' });
     return;
   }
-  const previousHub = pendingHubBySpace.get(req.params.id);
   cleanupExpiredHubRegistrations();
   const pending = getPendingHubRegistration(req.params.id);
   if (pending) {
     res.json({ pending: true, hubId: pending.hubId, expiresAt: pending.expiresAt });
     return;
   }
-  const expired = Boolean(previousHub);
   const spaceResult = await query('SELECT hub_id FROM spaces WHERE id = $1', [req.params.id]);
   if (!spaceResult.rows.length) {
     res.status(404).json({ error: 'space_not_found' });
     return;
   }
-  res.json({ pending: false, expired, hubId: spaceResult.rows[0].hub_id ?? null });
+  res.json({ pending: false, expired: false, hubId: spaceResult.rows[0].hub_id ?? null });
 });
 
 app.delete('/api/spaces/:id/hub', requireAuth, requireInstaller, async (req, res) => {
@@ -1398,6 +1402,7 @@ app.delete('/api/spaces/:id/hub', requireAuth, requireInstaller, async (req, res
 
   await query('DELETE FROM hubs WHERE space_id = $1', [req.params.id]);
   await query('UPDATE spaces SET hub_id = $1, hub_online = $2 WHERE id = $3', [null, false, req.params.id]);
+  pendingHubRegistrations.delete(req.params.id);
   await appendLog(req.params.id, 'Хаб удалён из пространства', 'UI', 'system');
   res.json({ ok: true });
 });
@@ -1958,10 +1963,12 @@ app.post('/api/hub/events', requireWebhookToken, async (req, res) => {
 
   const normalizedHubId = normalizeHubId(hubId);
   let spaceResult = await query('SELECT space_id FROM hubs WHERE id = $1', [normalizedHubId]);
-  if (!spaceResult.rows.length) {
-    const registered = await registerPendingHub(normalizedHubId);
-    if (registered) {
+  if (!spaceResult.rows.length && (type === 'HUB_ONLINE' || type === 'TEST_OK')) {
+    const pendingResult = await updatePendingHubRegistration(normalizedHubId, type);
+    if (pendingResult?.registered) {
       spaceResult = await query('SELECT space_id FROM hubs WHERE id = $1', [normalizedHubId]);
+    } else if (pendingResult?.pending) {
+      return res.status(202).json({ ok: true, pending: true });
     }
   }
   if (!spaceResult.rows.length) {

@@ -146,7 +146,7 @@ const translations = {
     'engineer.object.delete': 'Удалить объект',
     'engineer.object.attachHub': 'Привязать хаб',
     'engineer.object.hubId': 'ID хаба',
-    'engineer.object.attach': 'Привязать',
+    'engineer.object.attach': 'Начать регистрацию',
     'engineer.contacts.title': 'Контактные лица',
     'engineer.contacts.addTitle': 'Добавить контактное лицо',
     'engineer.contacts.name': 'Имя',
@@ -245,7 +245,7 @@ const translations = {
     'engineer.object.delete': 'Delete object',
     'engineer.object.attachHub': 'Attach hub',
     'engineer.object.hubId': 'Hub ID',
-    'engineer.object.attach': 'Attach',
+    'engineer.object.attach': 'Start registration',
     'engineer.contacts.title': 'Contacts',
     'engineer.contacts.addTitle': 'Add contact',
     'engineer.contacts.name': 'Name',
@@ -589,11 +589,12 @@ const closeHubInstallModal = () => {
   }
 };
 
-const startHubRegistrationMonitor = (spaceId, registration) => {
-  if (!hubInstallModal || !registration?.hubId) return;
+const startHubRegistrationMonitor = (spaceId, registration = {}) => {
+  if (!hubInstallModal) return;
+  let currentHubId = registration.hubId ?? null;
   const expiresAt = registration.expiresAt ?? (Date.now() + 60_000);
   if (hubInstallMessage) {
-    hubInstallMessage.textContent = 'Установите хаб и включите его.';
+    hubInstallMessage.textContent = 'Установите хаб и включите его. Нужны события HUB_ONLINE и TEST_OK.';
   }
   hubInstallModal.classList.add('modal--open');
   const updateCountdown = () => {
@@ -609,6 +610,15 @@ const startHubRegistrationMonitor = (spaceId, registration) => {
   hubRegistrationPoller = setInterval(async () => {
     try {
       const status = await apiFetch(`/api/spaces/${spaceId}/hub-registration`);
+      if (status.pending) {
+        if (status.hubId && status.hubId !== currentHubId) {
+          currentHubId = status.hubId;
+          if (hubInstallMessage) {
+            hubInstallMessage.textContent = `Хаб ${currentHubId} обнаружен. Ждём HUB_ONLINE и TEST_OK.`;
+          }
+        }
+        return;
+      }
       if (!status.pending) {
         closeHubInstallModal();
         if (status.hubId) {
@@ -628,7 +638,7 @@ const checkHubRegistration = async (spaceId) => {
   if (!spaceId || hubRegistrationTimer || hubRegistrationPoller) return;
   try {
     const status = await apiFetch(`/api/spaces/${spaceId}/hub-registration`);
-    if (status?.pending && status?.hubId) {
+    if (status?.pending) {
       startHubRegistrationMonitor(spaceId, status);
     } else if (status?.expired) {
       showToast('Не удалось подтвердить установку хаба.');
@@ -2034,13 +2044,10 @@ if (attachHubForm) {
     const space = spaces.find((item) => item.id === state.selectedSpaceId);
     if (!space) return;
 
-    const formData = new FormData(attachHubForm);
-    const payload = Object.fromEntries(formData.entries());
     try {
       showLoading();
       const response = await apiFetch(`/api/spaces/${space.id}/attach-hub`, {
         method: 'POST',
-        body: JSON.stringify(payload),
       });
       attachHubForm.reset();
       await refreshAll();
