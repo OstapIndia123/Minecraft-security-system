@@ -1,0 +1,114 @@
+<!doctype html>
+<html lang="ru">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Minecraft Security System — Режим пользователя</title>
+    <link rel="stylesheet" href="styles.css" />
+  </head>
+  <body>
+    <div class="app-shell">
+      <aside class="sidebar">
+        <div class="sidebar__header">
+          <div class="brand">
+            <span class="brand__logo">USR</span>
+            <span class="brand__title">Security</span>
+          </div>
+        </div>
+        <div class="sidebar__list" id="userObjectList"></div>
+      </aside>
+
+      <main class="main">
+        <header class="topbar">
+          <div class="topbar__left">
+            <div class="topbar__title">
+              <h1 data-i18n="user.title">Режим пользователя</h1>
+              <p data-i18n="user.subtitle">Охрана и журнал событий</p>
+            </div>
+          </div>
+          <div class="topbar__right">
+            <div class="profile-menu">
+              <button class="avatar-button" id="avatarButton" aria-label="Профиль">
+                <span class="avatar-button__circle">DS</span>
+              </button>
+              <div class="profile-dropdown" id="profileDropdown" aria-hidden="true">
+                <div class="profile-dropdown__header">
+                  <div class="avatar-button__circle">DS</div>
+                  <div>
+                    <div class="profile-dropdown__title" data-i18n="profile.title">Профиль</div>
+                    <div class="profile-dropdown__subtitle">Discord</div>
+                  </div>
+                </div>
+                <label class="profile-field">
+                  <span data-i18n="profile.nickname">Игровой ник</span>
+                  <input type="text" id="profileNickname" placeholder="PlayerName" />
+                </label>
+                <label class="profile-field">
+                  <span data-i18n="profile.timezone">Таймзона</span>
+                  <select id="profileTimezone">
+                    <option value="UTC">UTC</option>
+                    <option value="Europe/Moscow">Europe/Moscow</option>
+                    <option value="Europe/Kyiv">Europe/Kyiv</option>
+                    <option value="Europe/Warsaw">Europe/Warsaw</option>
+                    <option value="America/New_York">America/New_York</option>
+                  </select>
+                </label>
+                <label class="profile-field">
+                  <span data-i18n="profile.language">Язык</span>
+                  <select id="profileLanguage">
+                    <option value="ru">Русский</option>
+                    <option value="en-US">English (US)</option>
+                  </select>
+                </label>
+                <button class="button button--ghost profile-switch" id="switchToPro" data-i18n="profile.switchPro">
+                  Перейти на PRO
+                </button>
+                <button class="button button--ghost profile-logout" id="profileLogout" data-i18n="profile.logout">Выйти</button>
+              </div>
+            </div>
+          </div>
+        </header>
+
+        <section class="status-panel">
+          <div class="status-card">
+            <div class="status-card__id" id="userSpaceId">—</div>
+            <div class="status-card__state" id="userSpaceState">—</div>
+            <div class="status-card__meta" id="userSpaceMeta">—</div>
+          </div>
+          <div class="status-actions">
+            <button class="chip chip--danger" data-action="arm" data-i18n="user.actions.arm">Под охрану</button>
+            <button class="chip chip--success" data-action="disarm" data-i18n="user.actions.disarm">С охраны</button>
+          </div>
+        </section>
+
+        <section class="content">
+          <div class="tabs">
+            <button class="tab tab--active" data-tab="user-equipment" data-i18n="user.tabs.equipment">Оборудование</button>
+            <button class="tab" data-tab="user-log" data-i18n="user.tabs.log">Лог</button>
+          </div>
+
+          <div class="panel panel--active" id="user-equipment">
+            <div class="panel__header">
+              <h2 data-i18n="user.equipment.title">Оборудование</h2>
+            </div>
+            <div class="panel__grid">
+              <div class="device-list">
+                <div id="userDeviceList"></div>
+              </div>
+              <div class="device-details" id="userDeviceDetails"></div>
+            </div>
+          </div>
+
+          <div class="panel" id="user-log">
+            <div class="panel__header">
+              <h2 data-i18n="user.log.title">Лог событий</h2>
+            </div>
+            <div class="log-table" id="userLogTable"></div>
+          </div>
+        </section>
+      </main>
+    </div>
+
+    <script src="user.js"></script>
+  </body>
+</html>
