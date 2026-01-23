@@ -1,0 +1,48 @@
+<!doctype html>
+<html lang="ru">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Minecraft Security System — Вход</title>
+    <link rel="stylesheet" href="styles.css" />
+  </head>
+  <body>
+    <div class="auth-shell">
+      <div class="auth-card">
+        <div class="auth-header">
+          <div class="brand">
+            <span class="brand__logo">MC</span>
+            <span class="brand__title">Security</span>
+          </div>
+          <h1 data-i18n="auth.title">Авторизация</h1>
+          <p data-i18n="auth.subtitle">Вход в систему через Discord или лаунчер</p>
+        </div>
+
+        <div class="panel panel--active" id="discordOnly">
+          <button class="button button--primary auth-discord" id="discordLogin" data-i18n="auth.actions.discordOnly">
+            Войти через Discord
+          </button>
+          <p class="muted auth-note" data-i18n="auth.discord.note">
+            Мы поддерживаем авторизацию только через Discord/наш лаучер. При первом входе нужно указать игровой ник.
+          </p>
+        </div>
+
+        <div class="auth-error" id="authError"></div>
+      </div>
+    </div>
+
+    <div class="modal" id="nicknameModal" aria-hidden="true">
+      <div class="modal__content">
+        <div class="modal__header">
+          <h3 data-i18n="auth.nickname.title">Введите игровой ник</h3>
+        </div>
+        <form class="form-grid" id="nicknameForm">
+          <input type="text" name="nickname" data-i18n-placeholder="auth.nickname.placeholder" placeholder="Игровой ник" required />
+          <button class="button button--primary" type="submit" data-i18n="auth.nickname.save">Сохранить</button>
+        </form>
+      </div>
+    </div>
+
+    <script src="login.js"></script>
+  </body>
+</html>
