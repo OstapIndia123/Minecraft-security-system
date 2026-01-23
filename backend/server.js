@@ -10,6 +10,9 @@ const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 const webhookToken = process.env.WEBHOOK_TOKEN;
 const hubApiUrl = process.env.HUB_API_URL ?? 'http://127.0.0.1:8090';
+const discordClientId = process.env.DISCORD_CLIENT_ID;
+const discordClientSecret = process.env.DISCORD_CLIENT_SECRET;
+const discordRedirectUri = process.env.DISCORD_REDIRECT_URI;
 const port = Number(process.env.PORT ?? 8080);
 
 app.use(cors());
@@ -90,6 +93,48 @@ const issueSession = async (userId) => {
     [token, userId, expiresAt],
   );
   return { token, expiresAt };
+};
+
+const buildDiscordAuthUrl = (mode) => {
+  const state = Buffer.from(JSON.stringify({ mode })).toString('base64');
+  const params = new URLSearchParams({
+    client_id: discordClientId ?? '',
+    redirect_uri: discordRedirectUri ?? '',
+    response_type: 'code',
+    scope: 'identify',
+    state,
+    prompt: 'consent',
+  });
+  return `https://discord.com/api/oauth2/authorize?${params.toString()}`;
+};
+
+const exchangeDiscordCode = async (code) => {
+  const params = new URLSearchParams({
+    client_id: discordClientId ?? '',
+    client_secret: discordClientSecret ?? '',
+    grant_type: 'authorization_code',
+    code,
+    redirect_uri: discordRedirectUri ?? '',
+  });
+  const response = await fetch('https://discord.com/api/oauth2/token', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+    body: params,
+  });
+  if (!response.ok) {
+    throw new Error('discord_token_failed');
+  }
+  return response.json();
+};
+
+const fetchDiscordUser = async (tokenType, accessToken) => {
+  const response = await fetch('https://discord.com/api/users/@me', {
+    headers: { Authorization: `${tokenType} ${accessToken}` },
+  });
+  if (!response.ok) {
+    throw new Error('discord_user_failed');
+  }
+  return response.json();
 };
 
 const mapSpace = (row) => ({
@@ -489,6 +534,68 @@ app.post('/api/auth/register', async (req, res) => {
   }
 });
 
+app.get('/api/auth/discord/start', async (req, res) => {
+  if (!discordClientId || !discordClientSecret || !discordRedirectUri) {
+    res.status(500).json({ error: 'discord_not_configured' });
+    return;
+  }
+  const mode = req.query.mode === 'register' ? 'register' : 'login';
+  res.redirect(buildDiscordAuthUrl(mode));
+});
+
+app.get('/api/auth/discord/callback', async (req, res) => {
+  if (!discordClientId || !discordClientSecret || !discordRedirectUri) {
+    res.status(500).json({ error: 'discord_not_configured' });
+    return;
+  }
+  const code = req.query.code;
+  const rawState = req.query.state ? Buffer.from(String(req.query.state), 'base64').toString('utf8') : '{}';
+  let mode = 'login';
+  try {
+    const parsed = JSON.parse(rawState);
+    mode = parsed.mode === 'register' ? 'register' : 'login';
+  } catch {
+    mode = 'login';
+  }
+  if (!code) {
+    res.redirect('/login.html?error=discord');
+    return;
+  }
+  try {
+    const tokenPayload = await exchangeDiscordCode(String(code));
+    const discordUser = await fetchDiscordUser(tokenPayload.token_type, tokenPayload.access_token);
+    const discordId = String(discordUser.id);
+    const userResult = await query('SELECT * FROM users WHERE discord_id = $1', [discordId]);
+    if (!userResult.rows.length && mode === 'login') {
+      res.redirect('/login.html?error=discord-not-linked');
+      return;
+    }
+    let user = userResult.rows[0];
+    if (!user) {
+      const insert = await query(
+        `INSERT INTO users (email, password_hash, role, minecraft_nickname, discord_id, language, timezone)
+         VALUES ($1,$2,$3,$4,$5,$6,$7)
+         RETURNING id, email, role, minecraft_nickname, language, timezone`,
+        [
+          `discord:${discordId}`,
+          formatPasswordHash(crypto.randomUUID()),
+          'user',
+          null,
+          discordId,
+          'ru',
+          'UTC',
+        ],
+      );
+      user = insert.rows[0];
+    }
+    const session = await issueSession(user.id);
+    const params = new URLSearchParams({ token: session.token, role: user.role });
+    res.redirect(`/login.html?${params.toString()}`);
+  } catch (error) {
+    res.redirect('/login.html?error=discord');
+  }
+});
+
 app.post('/api/auth/login', async (req, res) => {
   const { email, password } = req.body ?? {};
   if (!email || !password) {
@@ -517,6 +624,25 @@ app.post('/api/auth/login', async (req, res) => {
 
 app.get('/api/auth/me', requireAuth, async (req, res) => {
   res.json({ user: req.user });
+});
+
+app.patch('/api/auth/me', requireAuth, async (req, res) => {
+  const { minecraft_nickname, language, timezone } = req.body ?? {};
+  const updated = await query(
+    `UPDATE users
+     SET minecraft_nickname = $1,
+         language = $2,
+         timezone = $3
+     WHERE id = $4
+     RETURNING id, email, role, minecraft_nickname, language, timezone`,
+    [
+      minecraft_nickname ?? req.user.minecraft_nickname,
+      language ?? req.user.language,
+      timezone ?? req.user.timezone,
+      req.user.id,
+    ],
+  );
+  res.json({ user: updated.rows[0] });
 });
 
 app.post('/api/auth/logout', requireAuth, async (req, res) => {
@@ -789,6 +915,85 @@ app.post('/api/spaces/:id/photos', requireAuth, requireInstaller, async (req, re
   await query('UPDATE spaces SET photos = $1 WHERE id = $2', [JSON.stringify(photos), req.params.id]);
   await appendLog(req.params.id, 'Добавлено фото', 'UI', 'system');
   res.status(201).json({ ok: true });
+});
+
+app.get('/api/spaces/:id/members', requireAuth, requireInstaller, async (req, res) => {
+  const allowed = await ensureSpaceAccess(req.user.id, req.params.id);
+  if (!allowed) {
+    res.status(403).json({ error: 'forbidden' });
+    return;
+  }
+  const members = await query(
+    `SELECT users.id, users.email, users.role, users.minecraft_nickname, users.discord_id
+     FROM user_spaces
+     JOIN users ON users.id = user_spaces.user_id
+     WHERE user_spaces.space_id = $1
+     ORDER BY users.role, users.id`,
+    [req.params.id],
+  );
+  res.json(members.rows);
+});
+
+app.post('/api/spaces/:id/members', requireAuth, requireInstaller, async (req, res) => {
+  const allowed = await ensureSpaceAccess(req.user.id, req.params.id);
+  if (!allowed) {
+    res.status(403).json({ error: 'forbidden' });
+    return;
+  }
+  const { email, role } = req.body ?? {};
+  if (!email) {
+    res.status(400).json({ error: 'missing_email' });
+    return;
+  }
+  const userResult = await query('SELECT id, role FROM users WHERE email = $1', [String(email).toLowerCase()]);
+  if (!userResult.rows.length) {
+    res.status(404).json({ error: 'user_not_found' });
+    return;
+  }
+  const target = userResult.rows[0];
+  const desiredRole = role === 'installer' ? 'installer' : 'user';
+  if (target.role !== desiredRole) {
+    await query('UPDATE users SET role = $1 WHERE id = $2', [desiredRole, target.id]);
+  }
+  await query(
+    'INSERT INTO user_spaces (user_id, space_id) VALUES ($1,$2) ON CONFLICT DO NOTHING',
+    [target.id, req.params.id],
+  );
+  res.json({ ok: true });
+});
+
+app.delete('/api/spaces/:id/members/:userId', requireAuth, requireInstaller, async (req, res) => {
+  const allowed = await ensureSpaceAccess(req.user.id, req.params.id);
+  if (!allowed) {
+    res.status(403).json({ error: 'forbidden' });
+    return;
+  }
+  const userId = Number(req.params.userId);
+  if (!Number.isInteger(userId)) {
+    res.status(400).json({ error: 'invalid_user' });
+    return;
+  }
+  const targetResult = await query('SELECT id, role FROM users WHERE id = $1', [userId]);
+  if (!targetResult.rows.length) {
+    res.status(404).json({ error: 'user_not_found' });
+    return;
+  }
+  const targetRole = targetResult.rows[0].role;
+  if (targetRole === 'installer') {
+    const installers = await query(
+      `SELECT COUNT(*)::int AS count
+       FROM user_spaces
+       JOIN users ON users.id = user_spaces.user_id
+       WHERE user_spaces.space_id = $1 AND users.role = 'installer'`,
+      [req.params.id],
+    );
+    if (installers.rows[0].count <= 1) {
+      res.status(409).json({ error: 'last_installer' });
+      return;
+    }
+  }
+  await query('DELETE FROM user_spaces WHERE user_id = $1 AND space_id = $2', [userId, req.params.id]);
+  res.json({ ok: true });
 });
 
 app.post('/api/spaces/:id/attach-hub', requireAuth, requireInstaller, async (req, res) => {

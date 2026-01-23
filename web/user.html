@@ -22,8 +22,8 @@
         <header class="topbar">
           <div class="topbar__left">
             <div class="topbar__title">
-              <h1>Режим пользователя</h1>
-              <p>Охрана и журнал событий</p>
+              <h1 data-i18n="user.title">Режим пользователя</h1>
+              <p data-i18n="user.subtitle">Охрана и журнал событий</p>
             </div>
           </div>
           <div class="topbar__right">
@@ -35,16 +35,16 @@
                 <div class="profile-dropdown__header">
                   <div class="avatar-button__circle">DS</div>
                   <div>
-                    <div class="profile-dropdown__title">Профиль</div>
+                    <div class="profile-dropdown__title" data-i18n="profile.title">Профиль</div>
                     <div class="profile-dropdown__subtitle">Discord</div>
                   </div>
                 </div>
                 <label class="profile-field">
-                  <span>Игровой ник</span>
+                  <span data-i18n="profile.nickname">Игровой ник</span>
                   <input type="text" id="profileNickname" placeholder="PlayerName" />
                 </label>
                 <label class="profile-field">
-                  <span>Таймзона</span>
+                  <span data-i18n="profile.timezone">Таймзона</span>
                   <select id="profileTimezone">
                     <option value="UTC">UTC</option>
                     <option value="Europe/Moscow">Europe/Moscow</option>
@@ -54,13 +54,13 @@
                   </select>
                 </label>
                 <label class="profile-field">
-                  <span>Язык</span>
+                  <span data-i18n="profile.language">Язык</span>
                   <select id="profileLanguage">
                     <option value="ru">Русский</option>
                     <option value="en-US">English (US)</option>
                   </select>
                 </label>
-                <button class="button button--ghost profile-logout" id="profileLogout">Выйти</button>
+                <button class="button button--ghost profile-logout" id="profileLogout" data-i18n="profile.logout">Выйти</button>
               </div>
             </div>
           </div>
@@ -80,13 +80,13 @@
 
         <section class="content">
           <div class="tabs">
-            <button class="tab tab--active" data-tab="user-equipment">Оборудование</button>
-            <button class="tab" data-tab="user-log">Лог</button>
+            <button class="tab tab--active" data-tab="user-equipment" data-i18n="user.tabs.equipment">Оборудование</button>
+            <button class="tab" data-tab="user-log" data-i18n="user.tabs.log">Лог</button>
           </div>
 
           <div class="panel panel--active" id="user-equipment">
             <div class="panel__header">
-              <h2>Оборудование</h2>
+              <h2 data-i18n="user.equipment.title">Оборудование</h2>
             </div>
             <div class="panel__grid">
               <div class="device-list">
@@ -98,7 +98,7 @@
 
           <div class="panel" id="user-log">
             <div class="panel__header">
-              <h2>Лог событий</h2>
+              <h2 data-i18n="user.log.title">Лог событий</h2>
             </div>
             <div class="log-table" id="userLogTable"></div>
           </div>

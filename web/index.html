@@ -60,13 +60,7 @@
           </div>
         </header>
 
-        <div class="tabs tabs--top" id="pcnTabs">
-          <button class="tab tab--active" data-tab="pcn-objects" data-i18n="pcn.tabs.objects">Объекты</button>
-          <button class="tab" data-tab="pcn-users" data-i18n="pcn.tabs.users">Пользователи</button>
-          <button class="tab" data-tab="pcn-installers" data-i18n="pcn.tabs.installers">Инженеры монтажа</button>
-        </div>
-
-        <div class="pcn-layout panel panel--active" id="pcn-objects">
+        <div class="pcn-layout">
           <section class="content pcn-layout__panel">
             <div class="panel__header">
               <h2 data-i18n="pcn.objects.title">Объекты</h2>
@@ -78,7 +72,7 @@
             </div>
             <div class="main-search">
               <span class="icon">🔍</span>
-              <input type="text" id="mainSearch" placeholder="Поиск по объекту или ID" />
+              <input type="text" id="mainSearch" data-i18n-placeholder="pcn.search" placeholder="Поиск по объекту или ID" />
             </div>
             <div class="tiles-grid" id="mainObjectGrid"></div>
           </section>
@@ -96,26 +90,6 @@
             </div>
             <div class="log-table" id="mainLogTable"></div>
           </section>
-        </div>
-
-        <div class="panel" id="pcn-users">
-          <div class="panel__header">
-            <h2 data-i18n="pcn.users.title">Пользователи</h2>
-          </div>
-          <div class="empty-state">
-            <div class="empty-state__icon">👥</div>
-            <div data-i18n="pcn.users.placeholder">Раздел пользователей появится после подключения авторизации.</div>
-          </div>
-        </div>
-
-        <div class="panel" id="pcn-installers">
-          <div class="panel__header">
-            <h2 data-i18n="pcn.installers.title">Инженеры монтажа</h2>
-          </div>
-          <div class="empty-state">
-            <div class="empty-state__icon">🛠️</div>
-            <div data-i18n="pcn.installers.placeholder">Раздел инженеров монтажа появится вместе с PRO-аккаунтами.</div>
-          </div>
         </div>
       </main>
     </div>

@@ -760,6 +760,17 @@ body {
   opacity: 1;
 }
 
+.auth-divider {
+  text-align: center;
+  color: var(--muted);
+  font-size: 12px;
+}
+
+.auth-discord {
+  width: 100%;
+  justify-content: center;
+}
+
 .object-item {
   width: 100%;
   text-align: left;
@@ -784,6 +795,36 @@ body {
 
 .object-item__meta {
   color: var(--muted);
+  font-size: 12px;
+}
+
+.members-panel {
+  display: grid;
+  gap: 16px;
+}
+
+.members-list {
+  display: grid;
+  gap: 12px;
+}
+
+.member-card {
+  display: flex;
+  justify-content: space-between;
+  gap: 16px;
+  align-items: center;
+  background: var(--panel-light);
+  border-radius: 12px;
+  padding: 12px 14px;
+  color: var(--muted);
+}
+
+.member-card__title {
+  color: var(--text);
+  font-weight: 600;
+}
+
+.member-card__meta {
   font-size: 12px;
 }
 

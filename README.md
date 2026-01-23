@@ -2,7 +2,7 @@
 
 Документация по стартовой архитектуре и авторизации (launcher token), ориентированная на UX как у Ajax.
 
-## Быстрый старт (UI + backend демо)
+## Быстрый старт (UI + backend демо + аккаунты)
 ```bash
 # 1. Запуск Postgres (порт 5433, чтобы не конфликтовать с локальной БД)
 docker compose up -d
@@ -28,6 +28,21 @@ npm run dev
 Демо-аккаунты (создаются при `npm run seed`):
 - Инженер монтажа: `pro@example.com` / `pro-demo`
 - Пользователь: `user@example.com` / `user-demo`
+
+## Discord OAuth (минимальная интеграция)
+Нужно создать приложение в Discord Developer Portal и добавить redirect URI:
+```
+http://localhost:8080/api/auth/discord/callback
+```
+
+Затем заполнить в `.env`:
+```
+DISCORD_CLIENT_ID=...
+DISCORD_CLIENT_SECRET=...
+DISCORD_REDIRECT_URI=http://localhost:8080/api/auth/discord/callback
+```
+
+После этого на странице входа появится кнопка входа/регистрации через Discord.
 
 ## Webhook от модов
 Хабы и читатели присылают события на:

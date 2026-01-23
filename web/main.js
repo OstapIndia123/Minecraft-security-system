@@ -16,8 +16,6 @@ const addSpaceBtn = document.getElementById('mainAddSpace');
 const filterButtons = document.querySelectorAll('#mainFilters .chip');
 const logFilters = document.querySelectorAll('#mainLogFilters .chip');
 const searchInput = document.getElementById('mainSearch');
-const tabs = document.querySelectorAll('#pcnTabs .tab');
-const panels = document.querySelectorAll('.panel');
 const avatarButton = document.getElementById('avatarButton');
 const profileDropdown = document.getElementById('profileDropdown');
 const profileNickname = document.getElementById('profileNickname');
@@ -29,17 +27,11 @@ const translations = {
   ru: {
     'pcn.title': 'Режим ПЦН',
     'pcn.subtitle': 'Объекты и общий журнал событий',
-    'pcn.tabs.objects': 'Объекты',
-    'pcn.tabs.users': 'Пользователи',
-    'pcn.tabs.installers': 'Инженеры монтажа',
     'pcn.objects.title': 'Объекты',
     'pcn.logs.title': 'Общий журнал событий',
     'pcn.actions.refresh': 'Обновить',
     'pcn.actions.add': 'Добавить объект',
-    'pcn.users.title': 'Пользователи',
-    'pcn.users.placeholder': 'Раздел пользователей появится после подключения авторизации.',
-    'pcn.installers.title': 'Инженеры монтажа',
-    'pcn.installers.placeholder': 'Раздел инженеров монтажа появится вместе с PRO-аккаунтами.',
+    'pcn.search': 'Поиск по объекту или ID',
     'profile.title': 'Профиль',
     'profile.nickname': 'Игровой ник',
     'profile.timezone': 'Таймзона',
@@ -49,17 +41,11 @@ const translations = {
   'en-US': {
     'pcn.title': 'PCN Mode',
     'pcn.subtitle': 'Objects and global event log',
-    'pcn.tabs.objects': 'Objects',
-    'pcn.tabs.users': 'Users',
-    'pcn.tabs.installers': 'Installers',
     'pcn.objects.title': 'Objects',
     'pcn.logs.title': 'Global event log',
     'pcn.actions.refresh': 'Refresh',
     'pcn.actions.add': 'Add object',
-    'pcn.users.title': 'Users',
-    'pcn.users.placeholder': 'User access will appear after authentication is connected.',
-    'pcn.installers.title': 'Installers',
-    'pcn.installers.placeholder': 'Installer access will appear with PRO accounts.',
+    'pcn.search': 'Search by object or ID',
     'profile.title': 'Profile',
     'profile.nickname': 'Game nickname',
     'profile.timezone': 'Timezone',
@@ -76,6 +62,12 @@ const applyTranslations = () => {
       node.textContent = dict[key];
     }
   });
+  document.querySelectorAll('[data-i18n-placeholder]').forEach((node) => {
+    const key = node.dataset.i18nPlaceholder;
+    if (dict[key]) {
+      node.setAttribute('placeholder', dict[key]);
+    }
+  });
 };
 
 const loadProfileSettings = () => {
@@ -86,6 +78,23 @@ const loadProfileSettings = () => {
     state.language = parsed.language ?? state.language;
     state.timezone = parsed.timezone ?? state.timezone;
     state.nickname = parsed.nickname ?? state.nickname;
+  } catch {
+    // ignore
+  }
+};
+
+const syncProfileSettings = async () => {
+  try {
+    const response = await fetch('/api/auth/me', {
+      headers: { Authorization: `Bearer ${localStorage.getItem('authToken') ?? ''}` },
+    });
+    if (!response.ok) return;
+    const payload = await response.json();
+    if (!payload?.user) return;
+    state.language = payload.user.language ?? state.language;
+    state.timezone = payload.user.timezone ?? state.timezone;
+    state.nickname = payload.user.minecraft_nickname ?? state.nickname;
+    saveProfileSettings();
   } catch {
     // ignore
   }
@@ -132,6 +141,7 @@ const formatLogDate = (timestamp) => {
     day: '2-digit',
     month: '2-digit',
     year: 'numeric',
+    timeZone: state.timezone,
   });
 };
 
@@ -143,6 +153,7 @@ const formatLogTime = (timestamp) => {
     hour: '2-digit',
     minute: '2-digit',
     second: '2-digit',
+    timeZone: state.timezone,
   });
 };
 
@@ -293,19 +304,6 @@ if (searchInput) {
   });
 }
 
-tabs.forEach((tab) => {
-  tab.addEventListener('click', () => {
-    tabs.forEach((btn) => btn.classList.remove('tab--active'));
-    panels.forEach((panel) => panel.classList.remove('panel--active'));
-
-    tab.classList.add('tab--active');
-    const target = document.getElementById(tab.dataset.tab);
-    if (target) {
-      target.classList.add('panel--active');
-    }
-  });
-});
-
 const initProfileMenu = () => {
   if (!avatarButton || !profileDropdown) return;
   const toggle = (open) => {
@@ -321,6 +319,7 @@ const initProfileMenu = () => {
   profileDropdown.addEventListener('click', (event) => event.stopPropagation());
 
   loadProfileSettings();
+  syncProfileSettings();
   if (profileNickname) profileNickname.value = state.nickname;
   if (profileTimezone) profileTimezone.value = state.timezone;
   if (profileLanguage) profileLanguage.value = state.language;
@@ -330,15 +329,42 @@ const initProfileMenu = () => {
     state.nickname = event.target.value;
     saveProfileSettings();
   });
+  profileNickname?.addEventListener('blur', () => {
+    fetch('/api/auth/me', {
+      method: 'PATCH',
+      headers: {
+        'Content-Type': 'application/json',
+        Authorization: `Bearer ${localStorage.getItem('authToken') ?? ''}`,
+      },
+      body: JSON.stringify({ minecraft_nickname: state.nickname }),
+    }).catch(() => null);
+  });
   profileTimezone?.addEventListener('change', (event) => {
     state.timezone = event.target.value;
     saveProfileSettings();
+    fetch('/api/auth/me', {
+      method: 'PATCH',
+      headers: {
+        'Content-Type': 'application/json',
+        Authorization: `Bearer ${localStorage.getItem('authToken') ?? ''}`,
+      },
+      body: JSON.stringify({ timezone: state.timezone }),
+    }).catch(() => null);
+    refresh().catch(() => null);
   });
   profileLanguage?.addEventListener('change', (event) => {
     state.language = event.target.value;
     saveProfileSettings();
     applyTranslations();
     refresh().catch(() => null);
+    fetch('/api/auth/me', {
+      method: 'PATCH',
+      headers: {
+        'Content-Type': 'application/json',
+        Authorization: `Bearer ${localStorage.getItem('authToken') ?? ''}`,
+      },
+      body: JSON.stringify({ language: state.language }),
+    }).catch(() => null);
   });
   profileLogout?.addEventListener('click', async () => {
     state.nickname = '';

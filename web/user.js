@@ -1,6 +1,8 @@
 const state = {
   selectedSpaceId: null,
   selectedDeviceId: null,
+  language: 'ru',
+  timezone: 'UTC',
 };
 
 const objectList = document.getElementById('userObjectList');
@@ -19,6 +21,45 @@ const profileNickname = document.getElementById('profileNickname');
 const profileTimezone = document.getElementById('profileTimezone');
 const profileLanguage = document.getElementById('profileLanguage');
 const profileLogout = document.getElementById('profileLogout');
+
+const translations = {
+  ru: {
+    'user.title': 'Режим пользователя',
+    'user.subtitle': 'Охрана и журнал событий',
+    'user.tabs.equipment': 'Оборудование',
+    'user.tabs.log': 'Лог',
+    'user.equipment.title': 'Оборудование',
+    'user.log.title': 'Лог событий',
+    'profile.title': 'Профиль',
+    'profile.nickname': 'Игровой ник',
+    'profile.timezone': 'Таймзона',
+    'profile.language': 'Язык',
+    'profile.logout': 'Выйти',
+  },
+  'en-US': {
+    'user.title': 'User mode',
+    'user.subtitle': 'Security and event log',
+    'user.tabs.equipment': 'Equipment',
+    'user.tabs.log': 'Log',
+    'user.equipment.title': 'Equipment',
+    'user.log.title': 'Event log',
+    'profile.title': 'Profile',
+    'profile.nickname': 'Game nickname',
+    'profile.timezone': 'Timezone',
+    'profile.language': 'Language',
+    'profile.logout': 'Sign out',
+  },
+};
+
+const applyTranslations = () => {
+  const dict = translations[state.language] ?? translations.ru;
+  document.querySelectorAll('[data-i18n]').forEach((node) => {
+    const key = node.dataset.i18n;
+    if (dict[key]) {
+      node.textContent = dict[key];
+    }
+  });
+};
 
 const getAuthToken = () => localStorage.getItem('authToken');
 
@@ -56,6 +97,23 @@ const saveProfileSettings = (settings) => {
   localStorage.setItem('profileSettings', JSON.stringify(settings));
 };
 
+const applyProfileSettings = (settings) => {
+  state.language = settings.language ?? state.language;
+  state.timezone = settings.timezone ?? state.timezone;
+};
+
+const formatLogTime = (timestamp) => {
+  if (!timestamp) return null;
+  const date = new Date(timestamp);
+  if (Number.isNaN(date.getTime())) return null;
+  return date.toLocaleTimeString(state.language === 'en-US' ? 'en-US' : 'ru-RU', {
+    hour: '2-digit',
+    minute: '2-digit',
+    second: '2-digit',
+    timeZone: state.timezone,
+  });
+};
+
 const initProfileMenu = () => {
   if (!avatarButton || !profileDropdown) return;
   const toggle = (open) => {
@@ -71,18 +129,50 @@ const initProfileMenu = () => {
   profileDropdown.addEventListener('click', (event) => event.stopPropagation());
 
   const settings = loadProfileSettings();
+  applyProfileSettings(settings);
   if (profileNickname) profileNickname.value = settings.nickname ?? '';
   if (profileTimezone) profileTimezone.value = settings.timezone ?? 'UTC';
   if (profileLanguage) profileLanguage.value = settings.language ?? 'ru';
+  applyTranslations();
 
   profileNickname?.addEventListener('input', (event) => {
     saveProfileSettings({ ...settings, nickname: event.target.value });
   });
+  profileNickname?.addEventListener('blur', (event) => {
+    fetch('/api/auth/me', {
+      method: 'PATCH',
+      headers: {
+        'Content-Type': 'application/json',
+        Authorization: `Bearer ${localStorage.getItem('authToken') ?? ''}`,
+      },
+      body: JSON.stringify({ minecraft_nickname: event.target.value }),
+    }).catch(() => null);
+  });
   profileTimezone?.addEventListener('change', (event) => {
     saveProfileSettings({ ...settings, timezone: event.target.value });
+    state.timezone = event.target.value;
+    fetch('/api/auth/me', {
+      method: 'PATCH',
+      headers: {
+        'Content-Type': 'application/json',
+        Authorization: `Bearer ${localStorage.getItem('authToken') ?? ''}`,
+      },
+      body: JSON.stringify({ timezone: event.target.value }),
+    }).catch(() => null);
+    loadSpace(state.selectedSpaceId).catch(() => null);
   });
   profileLanguage?.addEventListener('change', (event) => {
     saveProfileSettings({ ...settings, language: event.target.value });
+    state.language = event.target.value;
+    fetch('/api/auth/me', {
+      method: 'PATCH',
+      headers: {
+        'Content-Type': 'application/json',
+        Authorization: `Bearer ${localStorage.getItem('authToken') ?? ''}`,
+      },
+      body: JSON.stringify({ language: event.target.value }),
+    }).catch(() => null);
+    applyTranslations();
   });
   profileLogout?.addEventListener('click', async () => {
     try {
@@ -167,8 +257,10 @@ const renderLogs = (logs) => {
   logs.forEach((log) => {
     const row = document.createElement('div');
     row.className = `log-row ${log.type === 'alarm' ? 'log-row--alarm' : ''}`;
+    const timestamp = log.createdAtMs ?? (log.createdAt ? new Date(log.createdAt).getTime() : null);
+    const timeLabel = formatLogTime(timestamp) ?? log.time;
     row.innerHTML = `
-      <span>${log.time}</span>
+      <span>${timeLabel}</span>
       <span>${log.text}</span>
       <span class="muted">${log.who}</span>
     `;

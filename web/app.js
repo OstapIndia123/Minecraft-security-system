@@ -71,6 +71,10 @@ const profileNickname = document.getElementById('profileNickname');
 const profileTimezone = document.getElementById('profileTimezone');
 const profileLanguage = document.getElementById('profileLanguage');
 const profileLogout = document.getElementById('profileLogout');
+const usersList = document.getElementById('usersList');
+const usersForm = document.getElementById('usersForm');
+const installersList = document.getElementById('installersList');
+const installersForm = document.getElementById('installersForm');
 
 const statusMap = {
   armed: 'Под охраной',
@@ -100,6 +104,15 @@ const translations = {
     'engineer.installers.placeholder': 'Управление доступами инженеров появится вместе с авторизацией.',
     'engineer.actions.refresh': 'Обновить',
     'engineer.actions.add': 'Добавить объект',
+    'engineer.search.global': 'Поиск по объекту или ID',
+    'engineer.search.device': 'Поиск по названию или ID',
+    'engineer.users.title': 'Пользователи',
+    'engineer.users.add': 'Добавить пользователя',
+    'engineer.users.email': 'Email пользователя',
+    'engineer.installers.title': 'Инженеры монтажа',
+    'engineer.installers.add': 'Добавить инженера',
+    'engineer.installers.email': 'Email инженера',
+    'engineer.installers.note': 'Покинуть объект можно только если есть хотя бы ещё один инженер монтажа.',
     'profile.title': 'Профиль',
     'profile.nickname': 'Игровой ник',
     'profile.timezone': 'Таймзона',
@@ -117,6 +130,15 @@ const translations = {
     'engineer.installers.placeholder': 'Installer access will appear with authorization.',
     'engineer.actions.refresh': 'Refresh',
     'engineer.actions.add': 'Add object',
+    'engineer.search.global': 'Search by object or ID',
+    'engineer.search.device': 'Search by name or ID',
+    'engineer.users.title': 'Users',
+    'engineer.users.add': 'Add user',
+    'engineer.users.email': 'User email',
+    'engineer.installers.title': 'Installers',
+    'engineer.installers.add': 'Add installer',
+    'engineer.installers.email': 'Installer email',
+    'engineer.installers.note': 'You can leave only if another installer still has access.',
     'profile.title': 'Profile',
     'profile.nickname': 'Game nickname',
     'profile.timezone': 'Timezone',
@@ -131,6 +153,12 @@ const applyTranslations = () => {
     const key = node.dataset.i18n;
     if (dict[key]) {
       node.textContent = dict[key];
+    }
+  });
+  document.querySelectorAll('[data-i18n-placeholder]').forEach((node) => {
+    const key = node.dataset.i18nPlaceholder;
+    if (dict[key]) {
+      node.setAttribute('placeholder', dict[key]);
     }
   });
 };
@@ -154,6 +182,19 @@ const saveProfileSettings = () => {
     timezone: state.timezone,
     nickname: state.nickname,
   }));
+};
+
+const syncProfileSettings = async () => {
+  try {
+    const result = await apiFetch('/api/auth/me');
+    if (!result?.user) return;
+    state.language = result.user.language ?? state.language;
+    state.timezone = result.user.timezone ?? state.timezone;
+    state.nickname = result.user.minecraft_nickname ?? state.nickname;
+    saveProfileSettings();
+  } catch {
+    // ignore
+  }
 };
 
 const showToast = (message) => {
@@ -281,10 +322,11 @@ const formatLogDate = (timestamp) => {
   if (!timestamp) return null;
   const date = new Date(timestamp);
   if (Number.isNaN(date.getTime())) return null;
-  return date.toLocaleDateString('ru-RU', {
+  return date.toLocaleDateString(state.language === 'en-US' ? 'en-US' : 'ru-RU', {
     day: '2-digit',
     month: '2-digit',
     year: 'numeric',
+    timeZone: state.timezone,
   });
 };
 
@@ -292,10 +334,11 @@ const formatLogTime = (timestamp) => {
   if (!timestamp) return null;
   const date = new Date(timestamp);
   if (Number.isNaN(date.getTime())) return null;
-  return date.toLocaleTimeString('ru-RU', {
+  return date.toLocaleTimeString(state.language === 'en-US' ? 'en-US' : 'ru-RU', {
     hour: '2-digit',
     minute: '2-digit',
     second: '2-digit',
+    timeZone: state.timezone,
   });
 };
 
@@ -697,6 +740,102 @@ const renderObjectInfo = (space) => {
   }
 };
 
+const renderMembers = (members) => {
+  const installers = members.filter((member) => member.role === 'installer');
+  const users = members.filter((member) => member.role !== 'installer');
+
+  if (usersList) {
+    usersList.innerHTML = '';
+    if (!users.length) {
+      usersList.innerHTML = '<div class="empty-state">Нет пользователей</div>';
+    } else {
+      users.forEach((member) => {
+        const card = document.createElement('div');
+        card.className = 'member-card';
+        const label = member.minecraft_nickname ? `${member.minecraft_nickname} (${member.email})` : member.email;
+        card.innerHTML = `
+          <div>
+            <div class="member-card__title">${label}</div>
+            <div class="member-card__meta">ID: ${member.id}</div>
+          </div>
+          <button class="button button--ghost button--danger" data-member-id="${member.id}">
+            Удалить
+          </button>
+        `;
+        card.querySelector('button').addEventListener('click', async () => {
+          try {
+            showLoading();
+            await removeMember(member.id);
+          } catch (error) {
+            handleApiError(error, 'Не удалось удалить пользователя.');
+          } finally {
+            hideLoading();
+          }
+        });
+        usersList.appendChild(card);
+      });
+    }
+  }
+
+  if (installersList) {
+    installersList.innerHTML = '';
+    if (!installers.length) {
+      installersList.innerHTML = '<div class="empty-state">Нет инженеров</div>';
+    } else {
+      installers.forEach((member) => {
+        const card = document.createElement('div');
+        card.className = 'member-card';
+        const label = member.minecraft_nickname ? `${member.minecraft_nickname} (${member.email})` : member.email;
+        card.innerHTML = `
+          <div>
+            <div class="member-card__title">${label}</div>
+            <div class="member-card__meta">ID: ${member.id}</div>
+          </div>
+          <button class="button button--ghost button--danger" data-member-id="${member.id}">
+            Удалить
+          </button>
+        `;
+        card.querySelector('button').addEventListener('click', async () => {
+          try {
+            showLoading();
+            await removeMember(member.id);
+          } catch (error) {
+            if (error.message === 'last_installer') {
+              showToast('Нельзя удалить последнего инженера монтажа.');
+            } else {
+              handleApiError(error, 'Не удалось удалить инженера.');
+            }
+          } finally {
+            hideLoading();
+          }
+        });
+        installersList.appendChild(card);
+      });
+    }
+  }
+};
+
+const loadMembers = async () => {
+  if (!state.selectedSpaceId) return;
+  const members = await apiFetch(`/api/spaces/${state.selectedSpaceId}/members`);
+  renderMembers(members);
+};
+
+const addMember = async (role, email) => {
+  if (!state.selectedSpaceId) return;
+  await apiFetch(`/api/spaces/${state.selectedSpaceId}/members`, {
+    method: 'POST',
+    body: JSON.stringify({ email, role }),
+  });
+  await loadMembers();
+};
+
+const removeMember = async (userId) => {
+  if (!state.selectedSpaceId) return;
+  await apiFetch(`/api/spaces/${state.selectedSpaceId}/members/${userId}`, { method: 'DELETE' });
+  await loadMembers();
+};
+
 const renderContacts = (space) => {
   contactsList.innerHTML = '';
   space.contacts.forEach((contact, index) => {
@@ -1042,6 +1181,7 @@ const refreshAll = async () => {
   if (space) {
     await loadLogs(space.id);
   }
+  await loadMembers();
   renderAll();
 };
 
@@ -1352,6 +1492,44 @@ if (noteForm) {
   });
 }
 
+if (usersForm) {
+  usersForm.addEventListener('submit', async (event) => {
+    event.preventDefault();
+    if (!state.selectedSpaceId) return;
+    const email = usersForm.email.value.trim();
+    if (!email) return;
+    try {
+      showLoading();
+      await addMember('user', email);
+      usersForm.reset();
+      showToast('Пользователь добавлен.');
+    } catch (error) {
+      handleApiError(error, 'Не удалось добавить пользователя.');
+    } finally {
+      hideLoading();
+    }
+  });
+}
+
+if (installersForm) {
+  installersForm.addEventListener('submit', async (event) => {
+    event.preventDefault();
+    if (!state.selectedSpaceId) return;
+    const email = installersForm.email.value.trim();
+    if (!email) return;
+    try {
+      showLoading();
+      await addMember('installer', email);
+      installersForm.reset();
+      showToast('Инженер добавлен.');
+    } catch (error) {
+      handleApiError(error, 'Не удалось добавить инженера.');
+    } finally {
+      hideLoading();
+    }
+  });
+}
+
 if (photoForm) {
   photoForm.addEventListener('submit', async (event) => {
     event.preventDefault();
@@ -1536,6 +1714,7 @@ const initProfileMenu = () => {
   profileDropdown.addEventListener('click', (event) => event.stopPropagation());
 
   loadProfileSettings();
+  syncProfileSettings();
   if (profileNickname) profileNickname.value = state.nickname;
   if (profileTimezone) profileTimezone.value = state.timezone;
   if (profileLanguage) profileLanguage.value = state.language;
@@ -1545,14 +1724,23 @@ const initProfileMenu = () => {
     state.nickname = event.target.value;
     saveProfileSettings();
   });
+  profileNickname?.addEventListener('blur', () => {
+    apiFetch('/api/auth/me', {
+      method: 'PATCH',
+      body: JSON.stringify({ minecraft_nickname: state.nickname }),
+    }).catch(() => null);
+  });
   profileTimezone?.addEventListener('change', (event) => {
     state.timezone = event.target.value;
     saveProfileSettings();
+    apiFetch('/api/auth/me', { method: 'PATCH', body: JSON.stringify({ timezone: state.timezone }) }).catch(() => null);
+    loadLogs(state.selectedSpaceId).catch(() => null);
   });
   profileLanguage?.addEventListener('change', (event) => {
     state.language = event.target.value;
     saveProfileSettings();
     applyTranslations();
+    apiFetch('/api/auth/me', { method: 'PATCH', body: JSON.stringify({ language: state.language }) }).catch(() => null);
   });
   profileLogout?.addEventListener('click', async () => {
     state.nickname = '';
