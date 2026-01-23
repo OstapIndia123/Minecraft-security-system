@@ -16,8 +16,26 @@ const discordRedirectUri = process.env.DISCORD_REDIRECT_URI;
 const launcherApiUrl = process.env.LAUNCHER_API_URL;
 const port = Number(process.env.PORT ?? 8080);
 
+const MAX_NICKNAME_LENGTH = 16;
+const NICKNAME_COOLDOWN_MS = 3 * 24 * 60 * 60 * 1000;
+const MIN_INTERVAL_MS = 300;
+const MAX_SIREN_DURATION_SEC = 120;
+const MAX_DELAY_SECONDS = 120;
+const MAX_NOTE_LENGTH = 100;
+const MAX_SPACE_NAME_LENGTH = 80;
+const MAX_ADDRESS_LENGTH = 120;
+const MAX_CITY_LENGTH = 60;
+const MAX_CONTACT_NAME_LENGTH = 60;
+const MAX_CONTACT_ROLE_LENGTH = 60;
+const MAX_CONTACT_PHONE_LENGTH = 40;
+const MAX_DEVICE_NAME_LENGTH = 60;
+const MAX_DEVICE_ROOM_LENGTH = 60;
+const MAX_DEVICE_ID_LENGTH = 80;
+const MAX_KEY_NAME_LENGTH = 60;
+const MAX_PHOTO_LABEL_LENGTH = 60;
+
 app.use(cors());
-app.use(express.json());
+app.use(express.json({ limit: '1mb' }));
 app.use(express.static(path.resolve(__dirname, '..', 'web')));
 
 const hashPassword = (password, salt) => {
@@ -39,6 +57,38 @@ const verifyPassword = (password, stored) => {
   return crypto.timingSafeEqual(Buffer.from(candidate), Buffer.from(hash));
 };
 
+const normalizeText = (value) => (value ?? '').toString().trim();
+
+const isOverMaxLength = (value, maxLength) => {
+  if (!value) return false;
+  return value.length > maxLength;
+};
+
+const clampNumber = (value, min, max, fallback) => {
+  const num = Number(value);
+  if (Number.isNaN(num)) return fallback;
+  return Math.min(max, Math.max(min, num));
+};
+
+const clampDelaySeconds = (value) => {
+  if (value === null || value === undefined || value === '') return null;
+  return clampNumber(value, 0, MAX_DELAY_SECONDS, 0);
+};
+
+const clampSirenDuration = (value) => {
+  if (value === null || value === undefined || value === '') return null;
+  return clampNumber(value, 0, MAX_SIREN_DURATION_SEC, 0);
+};
+
+const canChangeNickname = (lastChangedAt) => {
+  if (!lastChangedAt) return { allowed: true, retryAfterMs: 0 };
+  const lastTs = new Date(lastChangedAt).getTime();
+  if (Number.isNaN(lastTs)) return { allowed: true, retryAfterMs: 0 };
+  const elapsed = Date.now() - lastTs;
+  if (elapsed >= NICKNAME_COOLDOWN_MS) return { allowed: true, retryAfterMs: 0 };
+  return { allowed: false, retryAfterMs: NICKNAME_COOLDOWN_MS - elapsed };
+};
+
 const getAuthToken = (req) => {
   const header = req.header('authorization');
   if (header?.startsWith('Bearer ')) {
@@ -51,7 +101,7 @@ const loadSessionUser = async (token) => {
   if (!token) return null;
   const result = await query(
     `SELECT users.id, users.email, users.role, users.minecraft_nickname, users.discord_id, users.discord_avatar_url,
-            users.language, users.timezone
+            users.language, users.timezone, users.last_nickname_change_at
      FROM sessions
      JOIN users ON users.id = sessions.user_id
      WHERE sessions.token = $1 AND sessions.expires_at > NOW()`,
@@ -326,11 +376,12 @@ const sendReaderOutput = async (readerId, level) => {
   });
 };
 
-const pulseReaderOutput = async (readerId, level, durationMs = 250) => {
+const pulseReaderOutput = async (readerId, level, durationMs = MIN_INTERVAL_MS) => {
+  const resolvedDuration = Math.max(durationMs, MIN_INTERVAL_MS);
   await sendReaderOutput(readerId, level);
   setTimeout(() => {
     sendReaderOutput(readerId, 0).catch(() => null);
-  }, durationMs);
+  }, resolvedDuration);
 };
 
 const sirenTimers = new Map();
@@ -342,6 +393,51 @@ const entryDelayFailed = new Map();
 const lightBlinkTimers = new Map();
 const lastKeyScans = new Map();
 const keyScanWaiters = new Map();
+const pendingHubRegistrations = new Map();
+const pendingHubBySpace = new Map();
+
+const cleanupExpiredHubRegistrations = () => {
+  const now = Date.now();
+  for (const [hubId, registration] of pendingHubRegistrations.entries()) {
+    if (registration.expiresAt <= now) {
+      pendingHubRegistrations.delete(hubId);
+      pendingHubBySpace.delete(registration.spaceId);
+    }
+  }
+};
+
+const getPendingHubRegistration = (spaceId) => {
+  cleanupExpiredHubRegistrations();
+  const hubId = pendingHubBySpace.get(spaceId);
+  if (!hubId) return null;
+  const registration = pendingHubRegistrations.get(hubId);
+  if (!registration) return null;
+  return registration;
+};
+
+const startHubRegistration = (spaceId, hubId) => {
+  cleanupExpiredHubRegistrations();
+  const normalizedHubId = normalizeHubId(hubId);
+  if (!normalizedHubId) {
+    return { error: 'invalid_hub_id' };
+  }
+  if (isOverMaxLength(normalizedHubId, MAX_DEVICE_ID_LENGTH)) {
+    return { error: 'field_too_long' };
+  }
+  const existing = pendingHubRegistrations.get(normalizedHubId);
+  if (existing && existing.spaceId !== spaceId) {
+    return { error: 'hub_pending' };
+  }
+  const previousHub = pendingHubBySpace.get(spaceId);
+  if (previousHub && previousHub !== normalizedHubId) {
+    pendingHubRegistrations.delete(previousHub);
+  }
+  const expiresAt = Date.now() + 60_000;
+  const registration = { pending: true, spaceId, hubId: normalizedHubId, expiresAt };
+  pendingHubRegistrations.set(normalizedHubId, registration);
+  pendingHubBySpace.set(spaceId, normalizedHubId);
+  return registration;
+};
 
 const stopSirenTimers = async (spaceId, hubId) => {
   const timers = sirenTimers.get(spaceId) ?? [];
@@ -406,8 +502,26 @@ const scheduleSirenStop = (spaceId, hubId, durationMs) => {
   sirenStopTimeouts.set(spaceId, timer);
 };
 
+const registerPendingHub = async (hubId) => {
+  cleanupExpiredHubRegistrations();
+  const registration = pendingHubRegistrations.get(hubId);
+  if (!registration) return false;
+  const existing = await query('SELECT id FROM hubs WHERE id = $1', [hubId]);
+  if (existing.rows.length) {
+    pendingHubRegistrations.delete(hubId);
+    pendingHubBySpace.delete(registration.spaceId);
+    return false;
+  }
+  await query('INSERT INTO hubs (id, space_id) VALUES ($1,$2)', [hubId, registration.spaceId]);
+  await query('UPDATE spaces SET hub_id = $1 WHERE id = $2', [hubId, registration.spaceId]);
+  await appendLog(registration.spaceId, 'Хаб установлен и зарегистрирован', 'Hub', 'system');
+  pendingHubRegistrations.delete(hubId);
+  pendingHubBySpace.delete(registration.spaceId);
+  return true;
+};
+
 const getMaxSirenDuration = (sirens) => sirens.reduce((max, siren) => {
-  const seconds = Number(siren.config?.alarmDuration ?? 0);
+  const seconds = clampSirenDuration(siren.config?.alarmDuration ?? 0) ?? 0;
   const durationMs = seconds > 0 ? seconds * 1000 : 0;
   return Math.max(max, durationMs);
 }, 0);
@@ -415,7 +529,7 @@ const getMaxSirenDuration = (sirens) => sirens.reduce((max, siren) => {
 const getExitDelaySeconds = (zones) => zones.reduce((max, zone) => {
   const zoneType = zone.config?.zoneType;
   if (zoneType !== 'delayed') return max;
-  const delaySeconds = Number(zone.config?.delaySeconds ?? 30);
+  const delaySeconds = clampDelaySeconds(zone.config?.delaySeconds ?? 30) ?? 0;
   return Math.max(max, delaySeconds);
 }, 0);
 
@@ -446,13 +560,13 @@ const startSirenTimers = async (spaceId, hubId) => {
   if (!sirenTimers.has(spaceId)) {
     const timers = [];
     for (const siren of sirens.rows) {
-      const intervalMs = Number(siren.config?.intervalMs ?? 1000);
+      const intervalMs = clampNumber(siren.config?.intervalMs ?? 1000, MIN_INTERVAL_MS, 60_000, 1000);
       const level = Number(siren.config?.level ?? 15);
       let on = false;
       const timer = setInterval(() => {
         on = !on;
         sendHubOutput(hubId, siren.side, on ? level : 0).catch(() => null);
-      }, Math.max(intervalMs, 100));
+      }, Math.max(intervalMs, MIN_INTERVAL_MS));
       timers.push(timer);
     }
     if (timers.length) {
@@ -491,6 +605,7 @@ const startPendingArm = async (spaceId, hubId, delaySeconds, who, logMessage) =>
 
 const startEntryDelay = async (spaceId, hubId, delaySeconds, zoneName) => {
   if (!hubId || entryDelayTimers.has(spaceId) || entryDelayFailed.get(spaceId)) return;
+  const resolvedDelay = clampDelaySeconds(delaySeconds) ?? 0;
   await appendLog(spaceId, 'Начало снятия', 'Zone', 'security');
   await startBlinkingLights(spaceId, hubId, 'entry-delay');
   const timer = setTimeout(async () => {
@@ -513,7 +628,7 @@ const startEntryDelay = async (spaceId, hubId, delaySeconds, zoneName) => {
       await startSirenTimers(spaceId, spaceRow.rows[0]?.hub_id);
       await query('UPDATE spaces SET issues = true WHERE id = $1', [spaceId]);
     }
-  }, delaySeconds * 1000);
+  }, resolvedDelay * 1000);
   entryDelayTimers.set(spaceId, { timer, zoneName });
 };
 
@@ -580,9 +695,9 @@ app.get('/api/auth/discord/callback', async (req, res) => {
     let user = userResult.rows[0];
     if (!user) {
       const insert = await query(
-        `INSERT INTO users (email, password_hash, role, minecraft_nickname, discord_id, discord_avatar_url, language, timezone)
-         VALUES ($1,$2,$3,$4,$5,$6,$7,$8)
-         RETURNING id, email, role, minecraft_nickname, language, timezone, discord_avatar_url`,
+        `INSERT INTO users (email, password_hash, role, minecraft_nickname, discord_id, discord_avatar_url, language, timezone, last_nickname_change_at)
+         VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9)
+         RETURNING id, email, role, minecraft_nickname, language, timezone, discord_avatar_url, last_nickname_change_at`,
         [
           `discord:${discordId}`,
           formatPasswordHash(crypto.randomUUID()),
@@ -592,6 +707,7 @@ app.get('/api/auth/discord/callback', async (req, res) => {
           discordAvatarUrl,
           'ru',
           'UTC',
+          null,
         ],
       );
       user = insert.rows[0];
@@ -620,24 +736,43 @@ app.get('/api/auth/me', requireAuth, async (req, res) => {
 
 app.patch('/api/auth/me', requireAuth, async (req, res) => {
   const { minecraft_nickname, language, timezone } = req.body ?? {};
-  if (minecraft_nickname) {
-    const available = await ensureNicknameAvailable(minecraft_nickname, req.user.id);
+  const trimmedNickname = minecraft_nickname ? normalizeText(minecraft_nickname) : null;
+  if (trimmedNickname) {
+    if (isOverMaxLength(trimmedNickname, MAX_NICKNAME_LENGTH)) {
+      res.status(400).json({ error: 'nickname_too_long' });
+      return;
+    }
+    const nicknameChange = trimmedNickname !== req.user.minecraft_nickname;
+    if (nicknameChange) {
+      const cooldown = canChangeNickname(req.user.last_nickname_change_at);
+      if (!cooldown.allowed) {
+        res.status(429).json({ error: 'nickname_cooldown', retryAfterMs: cooldown.retryAfterMs });
+        return;
+      }
+    }
+    const available = await ensureNicknameAvailable(trimmedNickname, req.user.id);
     if (!available) {
       res.status(409).json({ error: 'nickname_taken' });
       return;
     }
+  } else if (minecraft_nickname !== undefined) {
+    res.status(400).json({ error: 'invalid_nickname' });
+    return;
   }
+  const nicknameChanged = trimmedNickname && trimmedNickname !== req.user.minecraft_nickname;
   const updated = await query(
     `UPDATE users
      SET minecraft_nickname = $1,
          language = $2,
-         timezone = $3
-     WHERE id = $4
-     RETURNING id, email, role, minecraft_nickname, language, timezone, discord_avatar_url`,
+         timezone = $3,
+         last_nickname_change_at = $4
+     WHERE id = $5
+     RETURNING id, email, role, minecraft_nickname, language, timezone, discord_avatar_url, last_nickname_change_at`,
     [
-      minecraft_nickname ?? req.user.minecraft_nickname,
+      trimmedNickname ?? req.user.minecraft_nickname,
       language ?? req.user.language,
       timezone ?? req.user.timezone,
+      nicknameChanged ? new Date() : req.user.last_nickname_change_at,
       req.user.id,
     ],
   );
@@ -677,9 +812,13 @@ app.get('/api/auth/launcher', async (req, res) => {
     const payload = await response.json();
     const minecraft = payload?.minecraft ?? {};
     const discord = payload?.discord ?? {};
-    const nickname = minecraft.nickname?.toString().trim();
+    const nickname = normalizeText(minecraft.nickname);
     if (!nickname) {
       res.status(400).json({ error: 'nickname_missing' });
+      return;
+    }
+    if (isOverMaxLength(nickname, MAX_NICKNAME_LENGTH)) {
+      res.status(400).json({ error: 'nickname_too_long' });
       return;
     }
     const discordId = discord.id ? String(discord.id) : null;
@@ -704,22 +843,31 @@ app.get('/api/auth/launcher', async (req, res) => {
         res.status(409).json({ error: 'nickname_taken' });
         return;
       }
+      const nicknameChange = nickname !== user.minecraft_nickname;
+      if (nicknameChange) {
+        const cooldown = canChangeNickname(user.last_nickname_change_at);
+        if (!cooldown.allowed) {
+          res.status(429).json({ error: 'nickname_cooldown', retryAfterMs: cooldown.retryAfterMs });
+          return;
+        }
+      }
       const updated = await query(
         `UPDATE users
          SET minecraft_nickname = $1,
              discord_id = COALESCE($2, discord_id),
-             discord_avatar_url = COALESCE($3, discord_avatar_url)
-         WHERE id = $4
-         RETURNING id, email, role, minecraft_nickname, language, timezone, discord_avatar_url`,
-        [nickname, discordId, discordAvatarUrl, user.id],
+             discord_avatar_url = COALESCE($3, discord_avatar_url),
+             last_nickname_change_at = $4
+         WHERE id = $5
+         RETURNING id, email, role, minecraft_nickname, language, timezone, discord_avatar_url, last_nickname_change_at`,
+        [nickname, discordId, discordAvatarUrl, nicknameChange ? new Date() : user.last_nickname_change_at, user.id],
       );
       user = updated.rows[0];
     } else {
       const email = `launcher:${minecraft.uuid ?? token}`;
       const insert = await query(
-        `INSERT INTO users (email, password_hash, role, minecraft_nickname, discord_id, discord_avatar_url, language, timezone)
-         VALUES ($1,$2,$3,$4,$5,$6,$7,$8)
-         RETURNING id, email, role, minecraft_nickname, language, timezone, discord_avatar_url`,
+        `INSERT INTO users (email, password_hash, role, minecraft_nickname, discord_id, discord_avatar_url, language, timezone, last_nickname_change_at)
+         VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9)
+         RETURNING id, email, role, minecraft_nickname, language, timezone, discord_avatar_url, last_nickname_change_at`,
         [
           email,
           formatPasswordHash(crypto.randomUUID()),
@@ -729,6 +877,7 @@ app.get('/api/auth/launcher', async (req, res) => {
           discordAvatarUrl,
           'ru',
           'UTC',
+          new Date(),
         ],
       );
       user = insert.rows[0];
@@ -877,14 +1026,26 @@ app.get('/api/logs', requireAuth, async (req, res) => {
 
 app.post('/api/spaces', requireAuth, requireInstaller, async (req, res) => {
   const { hubId, name, address, city, timezone } = req.body ?? {};
-  if (!hubId || !name) {
+  const normalizedName = normalizeText(name);
+  const normalizedAddress = normalizeText(address) || '—';
+  const normalizedCity = normalizeText(city) || '—';
+  if (!hubId || !normalizedName) {
     return res.status(400).json({ error: 'missing_fields' });
+  }
+  if (isOverMaxLength(normalizedName, MAX_SPACE_NAME_LENGTH)
+    || isOverMaxLength(normalizedAddress, MAX_ADDRESS_LENGTH)
+    || isOverMaxLength(normalizedCity, MAX_CITY_LENGTH)) {
+    return res.status(400).json({ error: 'field_too_long' });
   }
 
   const normalizedHubId = normalizeHubId(hubId);
   const hub = await query('SELECT id FROM hubs WHERE id = $1', [normalizedHubId]);
   if (hub.rows.length) {
     return res.status(409).json({ error: 'hub_already_registered' });
+  }
+  cleanupExpiredHubRegistrations();
+  if (pendingHubRegistrations.has(normalizedHubId)) {
+    return res.status(409).json({ error: 'hub_pending' });
   }
 
   const generatedId = `SPACE-${Date.now()}`;
@@ -893,19 +1054,18 @@ app.post('/api/spaces', requireAuth, requireInstaller, async (req, res) => {
   const notes = [];
   const photos = [];
 
-  await query('INSERT INTO hubs (id, space_id) VALUES ($1,$2)', [normalizedHubId, generatedId]);
   await query(
     `INSERT INTO spaces (id, hub_id, name, address, status, hub_online, issues, city, timezone, company, contacts, notes, photos)
      VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13)`,
     [
       generatedId,
-      normalizedHubId,
-      name,
-      address ?? '—',
+      null,
+      normalizedName,
+      normalizedAddress,
       'disarmed',
       null,
       false,
-      city ?? '—',
+      normalizedCity,
       timezone ?? 'Europe/Kyiv',
       JSON.stringify(company),
       JSON.stringify(contacts),
@@ -915,11 +1075,13 @@ app.post('/api/spaces', requireAuth, requireInstaller, async (req, res) => {
   );
 
   await appendLog(generatedId, 'Создано пространство', 'UI', 'system');
+  await appendLog(generatedId, 'Ожидание установки хаба', 'UI', 'system');
   await query('INSERT INTO user_spaces (user_id, space_id, role) VALUES ($1,$2,$3)', [req.user.id, generatedId, 'installer']);
   const space = await query('SELECT * FROM spaces WHERE id = $1', [generatedId]);
   const result = mapSpace(space.rows[0]);
   result.devices = await loadDevices(result.id, result.hubId, result.hubOnline);
-  res.status(201).json(result);
+  const registration = startHubRegistration(generatedId, normalizedHubId);
+  res.status(201).json({ ...result, hubRegistration: registration });
 });
 
 app.patch('/api/spaces/:id', requireAuth, requireInstaller, async (req, res) => {
@@ -936,12 +1098,23 @@ app.patch('/api/spaces/:id', requireAuth, requireInstaller, async (req, res) => 
   }
 
   const space = existing.rows[0];
+  const normalizedName = name ? normalizeText(name) : space.name;
+  const normalizedAddress = address ? normalizeText(address) : space.address;
+  const normalizedCity = city ? normalizeText(city) : space.city;
+  if (!normalizedName) {
+    return res.status(400).json({ error: 'missing_fields' });
+  }
+  if (isOverMaxLength(normalizedName, MAX_SPACE_NAME_LENGTH)
+    || isOverMaxLength(normalizedAddress, MAX_ADDRESS_LENGTH)
+    || isOverMaxLength(normalizedCity, MAX_CITY_LENGTH)) {
+    return res.status(400).json({ error: 'field_too_long' });
+  }
   const updated = await query(
     'UPDATE spaces SET name = $1, address = $2, city = $3, timezone = $4 WHERE id = $5 RETURNING *',
     [
-      name ?? space.name,
-      address ?? space.address,
-      city ?? space.city,
+      normalizedName,
+      normalizedAddress,
+      normalizedCity,
       timezone ?? space.timezone,
       req.params.id,
     ],
@@ -961,15 +1134,23 @@ app.post('/api/spaces/:id/contacts', requireAuth, requireInstaller, async (req, 
   }
   if (!await ensureSpaceDisarmed(req.params.id, res)) return;
   const { name, role, phone } = req.body ?? {};
-  if (!name) return res.status(400).json({ error: 'missing_fields' });
+  const normalizedName = normalizeText(name);
+  const normalizedRole = normalizeText(role) || '—';
+  const normalizedPhone = normalizeText(phone) || '—';
+  if (!normalizedName) return res.status(400).json({ error: 'missing_fields' });
+  if (isOverMaxLength(normalizedName, MAX_CONTACT_NAME_LENGTH)
+    || isOverMaxLength(normalizedRole, MAX_CONTACT_ROLE_LENGTH)
+    || isOverMaxLength(normalizedPhone, MAX_CONTACT_PHONE_LENGTH)) {
+    return res.status(400).json({ error: 'field_too_long' });
+  }
 
   const result = await query('SELECT contacts FROM spaces WHERE id = $1', [req.params.id]);
   if (!result.rows.length) return res.status(404).json({ error: 'space_not_found' });
 
   const contacts = result.rows[0].contacts ?? [];
-  contacts.push({ name, role: role ?? '—', phone: phone ?? '—' });
+  contacts.push({ name: normalizedName, role: normalizedRole, phone: normalizedPhone });
   await query('UPDATE spaces SET contacts = $1 WHERE id = $2', [JSON.stringify(contacts), req.params.id]);
-  await appendLog(req.params.id, `Добавлено контактное лицо: ${name}`, 'UI', 'system');
+  await appendLog(req.params.id, `Добавлено контактное лицо: ${normalizedName}`, 'UI', 'system');
   res.status(201).json({ ok: true });
 });
 
@@ -981,13 +1162,17 @@ app.post('/api/spaces/:id/notes', requireAuth, requireInstaller, async (req, res
   }
   if (!await ensureSpaceDisarmed(req.params.id, res)) return;
   const { text } = req.body ?? {};
-  if (!text) return res.status(400).json({ error: 'missing_fields' });
+  const normalizedText = normalizeText(text);
+  if (!normalizedText) return res.status(400).json({ error: 'missing_fields' });
+  if (isOverMaxLength(normalizedText, MAX_NOTE_LENGTH)) {
+    return res.status(400).json({ error: 'note_too_long' });
+  }
 
   const result = await query('SELECT notes FROM spaces WHERE id = $1', [req.params.id]);
   if (!result.rows.length) return res.status(404).json({ error: 'space_not_found' });
 
   const notes = result.rows[0].notes ?? [];
-  notes.push(text);
+  notes.push(normalizedText);
   await query('UPDATE spaces SET notes = $1 WHERE id = $2', [JSON.stringify(notes), req.params.id]);
   await appendLog(req.params.id, 'Добавлено примечание', 'UI', 'system');
   res.status(201).json({ ok: true });
@@ -1001,13 +1186,23 @@ app.post('/api/spaces/:id/photos', requireAuth, requireInstaller, async (req, re
   }
   if (!await ensureSpaceDisarmed(req.params.id, res)) return;
   const { url, label } = req.body ?? {};
-  if (!url) return res.status(400).json({ error: 'missing_fields' });
+  const normalizedUrl = normalizeText(url);
+  const normalizedLabel = normalizeText(label) || 'Фото';
+  if (!normalizedUrl) return res.status(400).json({ error: 'missing_fields' });
+  if (isOverMaxLength(normalizedLabel, MAX_PHOTO_LABEL_LENGTH)) {
+    return res.status(400).json({ error: 'field_too_long' });
+  }
+  try {
+    new URL(normalizedUrl);
+  } catch {
+    return res.status(400).json({ error: 'invalid_url' });
+  }
 
   const result = await query('SELECT photos FROM spaces WHERE id = $1', [req.params.id]);
   if (!result.rows.length) return res.status(404).json({ error: 'space_not_found' });
 
   const photos = result.rows[0].photos ?? [];
-  photos.push({ url, label: label ?? 'Фото' });
+  photos.push({ url: normalizedUrl, label: normalizedLabel });
   await query('UPDATE spaces SET photos = $1 WHERE id = $2', [JSON.stringify(photos), req.params.id]);
   await appendLog(req.params.id, 'Добавлено фото', 'UI', 'system');
   res.status(201).json({ ok: true });
@@ -1045,36 +1240,28 @@ app.post('/api/spaces/:id/members', requireAuth, requireInstaller, async (req, r
     res.status(400).json({ error: 'missing_identifier' });
     return;
   }
-  const normalized = String(value).trim();
+  const normalized = normalizeText(value);
+  if (isOverMaxLength(normalized, MAX_NICKNAME_LENGTH)) {
+    res.status(400).json({ error: 'nickname_too_long' });
+    return;
+  }
   const desiredRole = role === 'installer' ? 'installer' : 'user';
   const userResult = await query(
-    'SELECT id, role FROM users WHERE lower(minecraft_nickname) = lower($1)',
+    'SELECT id, role, minecraft_nickname FROM users WHERE lower(minecraft_nickname) = lower($1)',
     [normalized],
   );
-  let target = userResult.rows[0];
+  const target = userResult.rows[0];
   if (!target) {
-    const emailCollision = await query('SELECT 1 FROM users WHERE lower(email) = lower($1)', [normalized]);
-    if (emailCollision.rows.length) {
-      res.status(409).json({ error: 'nickname_taken' });
-      return;
-    }
-    const insert = await query(
-      `INSERT INTO users (email, password_hash, role, minecraft_nickname)
-       VALUES ($1,$2,$3,$4)
-       RETURNING id, role`,
-      [
-        normalized,
-        formatPasswordHash(crypto.randomUUID()),
-        desiredRole,
-        normalized,
-      ],
-    );
-    target = insert.rows[0];
+    res.status(404).json({ error: 'user_not_found' });
+    return;
   }
   await query(
     'INSERT INTO user_spaces (user_id, space_id, role) VALUES ($1,$2,$3) ON CONFLICT (user_id, space_id) DO UPDATE SET role = EXCLUDED.role',
     [target.id, req.params.id, desiredRole],
   );
+  const roleLabel = desiredRole === 'installer' ? 'Инженер монтажа' : 'Пользователь';
+  const targetName = target.minecraft_nickname ?? normalized;
+  await appendLog(req.params.id, `${roleLabel} ${targetName} получил доступ`, 'UI', 'access');
   res.json({ ok: true });
 });
 
@@ -1159,11 +1346,36 @@ app.post('/api/spaces/:id/attach-hub', requireAuth, requireInstaller, async (req
   if (existing.rows.length) {
     return res.status(409).json({ error: 'hub_already_registered' });
   }
+  cleanupExpiredHubRegistrations();
+  if (pendingHubRegistrations.has(normalizedHubId)) {
+    return res.status(409).json({ error: 'hub_pending' });
+  }
 
-  await query('INSERT INTO hubs (id, space_id) VALUES ($1,$2)', [normalizedHubId, req.params.id]);
-  await query('UPDATE spaces SET hub_id = $1 WHERE id = $2', [normalizedHubId, req.params.id]);
-  await appendLog(req.params.id, 'Хаб привязан к пространству', 'UI', 'system');
-  res.json({ ok: true });
+  const registration = startHubRegistration(req.params.id, normalizedHubId);
+  await appendLog(req.params.id, 'Ожидание установки хаба', 'UI', 'system');
+  res.json({ ok: true, hubRegistration: registration });
+});
+
+app.get('/api/spaces/:id/hub-registration', requireAuth, requireInstaller, async (req, res) => {
+  const allowed = await ensureSpaceAccess(req.user.id, req.params.id);
+  if (!allowed) {
+    res.status(403).json({ error: 'forbidden' });
+    return;
+  }
+  const previousHub = pendingHubBySpace.get(req.params.id);
+  cleanupExpiredHubRegistrations();
+  const pending = getPendingHubRegistration(req.params.id);
+  if (pending) {
+    res.json({ pending: true, hubId: pending.hubId, expiresAt: pending.expiresAt });
+    return;
+  }
+  const expired = Boolean(previousHub);
+  const spaceResult = await query('SELECT hub_id FROM spaces WHERE id = $1', [req.params.id]);
+  if (!spaceResult.rows.length) {
+    res.status(404).json({ error: 'space_not_found' });
+    return;
+  }
+  res.json({ pending: false, expired, hubId: spaceResult.rows[0].hub_id ?? null });
 });
 
 app.delete('/api/spaces/:id/hub', requireAuth, requireInstaller, async (req, res) => {
@@ -1184,20 +1396,20 @@ app.delete('/api/spaces/:id/hub', requireAuth, requireInstaller, async (req, res
 
 const deviceConfigFromPayload = (payload) => {
   if (payload.type === 'output-light') {
-    return { level: Number(payload.outputLevel ?? 15) };
+    return { level: clampNumber(payload.outputLevel ?? 15, 0, 15, 15) };
   }
   if (payload.type === 'siren') {
     return {
-      level: Number(payload.outputLevel ?? 15),
-      intervalMs: Number(payload.intervalMs ?? 1000),
-      alarmDuration: payload.alarmDuration ? Number(payload.alarmDuration) : null,
+      level: clampNumber(payload.outputLevel ?? 15, 0, 15, 15),
+      intervalMs: clampNumber(payload.intervalMs ?? 1000, MIN_INTERVAL_MS, 60_000, 1000),
+      alarmDuration: clampSirenDuration(payload.alarmDuration),
     };
   }
   if (payload.type === 'reader') {
     return {
-      outputLevel: Number(payload.outputLevel ?? 6),
+      outputLevel: clampNumber(payload.outputLevel ?? 6, 0, 15, 6),
       inputSide: payload.side ?? 'up',
-      inputLevel: Number(payload.inputLevel ?? 6),
+      inputLevel: clampNumber(payload.inputLevel ?? 6, 0, 15, 6),
     };
   }
   if (payload.type === 'zone') {
@@ -1205,8 +1417,8 @@ const deviceConfigFromPayload = (payload) => {
       zoneType: payload.zoneType ?? 'instant',
       bypass: payload.bypass === 'true',
       silent: payload.silent === 'true',
-      delaySeconds: payload.delaySeconds ? Number(payload.delaySeconds) : null,
-      normalLevel: Number(payload.normalLevel ?? 15),
+      delaySeconds: clampDelaySeconds(payload.delaySeconds),
+      normalLevel: clampNumber(payload.normalLevel ?? 15, 0, 15, 15),
     };
   }
   return {};
@@ -1220,8 +1432,16 @@ app.post('/api/spaces/:id/devices', requireAuth, requireInstaller, async (req, r
   }
   if (!await ensureSpaceDisarmed(req.params.id, res)) return;
   const { id, name, room, status, type, side } = req.body ?? {};
-  if (!name || !room || !type) {
+  const normalizedName = normalizeText(name);
+  const normalizedRoom = normalizeText(room);
+  if (!normalizedName || !normalizedRoom || !type) {
     return res.status(400).json({ error: 'missing_fields' });
+  }
+  if (isOverMaxLength(normalizedName, MAX_DEVICE_NAME_LENGTH)
+    || isOverMaxLength(normalizedRoom, MAX_DEVICE_ROOM_LENGTH)
+    || isOverMaxLength(side, MAX_DEVICE_ID_LENGTH)
+    || isOverMaxLength(id, MAX_DEVICE_ID_LENGTH)) {
+    return res.status(400).json({ error: 'field_too_long' });
   }
 
   const generatedId = id ?? `${type}-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`;
@@ -1230,8 +1450,8 @@ app.post('/api/spaces/:id/devices', requireAuth, requireInstaller, async (req, r
     [
       generatedId,
       req.params.id,
-      name,
-      room,
+      normalizedName,
+      normalizedRoom,
       status ?? 'Норма',
       type,
       side ?? null,
@@ -1250,7 +1470,7 @@ app.post('/api/spaces/:id/devices', requireAuth, requireInstaller, async (req, r
     await startSirenTimers(req.params.id, spaceRow.rows[0]?.hub_id);
   }
 
-  await appendLog(req.params.id, `Добавлено устройство: ${name}`, 'UI', 'system');
+  await appendLog(req.params.id, `Добавлено устройство: ${normalizedName}`, 'UI', 'system');
   res.status(201).json({ ok: true });
 });
 
@@ -1262,15 +1482,21 @@ app.post('/api/spaces/:id/keys', requireAuth, requireInstaller, async (req, res)
   }
   if (!await ensureSpaceDisarmed(req.params.id, res)) return;
   const { name, readerId } = req.body ?? {};
-  if (!name) return res.status(400).json({ error: 'missing_fields' });
+  const normalizedName = normalizeText(name);
+  const normalizedReaderId = normalizeText(readerId);
+  if (!normalizedName) return res.status(400).json({ error: 'missing_fields' });
+  if (isOverMaxLength(normalizedName, MAX_KEY_NAME_LENGTH)
+    || isOverMaxLength(normalizedReaderId, MAX_DEVICE_ID_LENGTH)) {
+    return res.status(400).json({ error: 'field_too_long' });
+  }
 
   await query('INSERT INTO keys (space_id, name, reader_id, groups) VALUES ($1,$2,$3,$4)', [
     req.params.id,
-    name,
-    readerId ?? null,
+    normalizedName,
+    normalizedReaderId || null,
     JSON.stringify(['all']),
   ]);
-  await appendLog(req.params.id, `Добавлен ключ: ${name}`, 'UI', 'system');
+  await appendLog(req.params.id, `Добавлен ключ: ${normalizedName}`, 'UI', 'system');
   res.status(201).json({ ok: true });
 });
 
@@ -1345,11 +1571,21 @@ app.patch('/api/spaces/:id/devices/:deviceId', requireAuth, requireInstaller, as
   const name = req.body?.name ?? device.name;
   const room = req.body?.room ?? device.room;
   const side = req.body?.side ?? device.side;
+  const normalizedName = normalizeText(name);
+  const normalizedRoom = normalizeText(room);
+  if (!normalizedName || !normalizedRoom) {
+    return res.status(400).json({ error: 'missing_fields' });
+  }
+  if (isOverMaxLength(normalizedName, MAX_DEVICE_NAME_LENGTH)
+    || isOverMaxLength(normalizedRoom, MAX_DEVICE_ROOM_LENGTH)
+    || isOverMaxLength(side, MAX_DEVICE_ID_LENGTH)) {
+    return res.status(400).json({ error: 'field_too_long' });
+  }
   const config = deviceConfigFromPayload({ ...req.body, type: device.type });
 
   await query(
     'UPDATE devices SET name = $1, room = $2, side = $3, config = $4 WHERE id = $5 AND space_id = $6',
-    [name, room, side, JSON.stringify({ ...device.config, ...config }), deviceId, id],
+    [normalizedName, normalizedRoom, side, JSON.stringify({ ...device.config, ...config }), deviceId, id],
   );
 
   await appendLog(id, `Обновлено устройство: ${deviceId}`, 'UI', 'system');
@@ -1369,9 +1605,16 @@ app.patch('/api/spaces/:id/keys/:keyId', requireAuth, requireInstaller, async (r
 
   const name = req.body?.name ?? existing.rows[0].name;
   const readerId = req.body?.readerId ?? existing.rows[0].reader_id;
+  const normalizedName = normalizeText(name);
+  const normalizedReaderId = normalizeText(readerId);
+  if (!normalizedName) return res.status(400).json({ error: 'missing_fields' });
+  if (isOverMaxLength(normalizedName, MAX_KEY_NAME_LENGTH)
+    || isOverMaxLength(normalizedReaderId, MAX_DEVICE_ID_LENGTH)) {
+    return res.status(400).json({ error: 'field_too_long' });
+  }
   await query('UPDATE keys SET name = $1, reader_id = $2 WHERE id = $3 AND space_id = $4', [
-    name,
-    readerId,
+    normalizedName,
+    normalizedReaderId || null,
     keyId,
     id,
   ]);
@@ -1417,11 +1660,16 @@ app.patch('/api/spaces/:id/contacts/:index', requireAuth, requireInstaller, asyn
     return res.status(400).json({ error: 'invalid_index' });
   }
   const current = contacts[index];
-  contacts[index] = {
-    name: req.body?.name ?? current.name,
-    role: req.body?.role ?? current.role,
-    phone: req.body?.phone ?? current.phone,
-  };
+  const nextName = normalizeText(req.body?.name ?? current.name);
+  const nextRole = normalizeText(req.body?.role ?? current.role) || '—';
+  const nextPhone = normalizeText(req.body?.phone ?? current.phone) || '—';
+  if (!nextName) return res.status(400).json({ error: 'missing_fields' });
+  if (isOverMaxLength(nextName, MAX_CONTACT_NAME_LENGTH)
+    || isOverMaxLength(nextRole, MAX_CONTACT_ROLE_LENGTH)
+    || isOverMaxLength(nextPhone, MAX_CONTACT_PHONE_LENGTH)) {
+    return res.status(400).json({ error: 'field_too_long' });
+  }
+  contacts[index] = { name: nextName, role: nextRole, phone: nextPhone };
   await query('UPDATE spaces SET contacts = $1 WHERE id = $2', [JSON.stringify(contacts), req.params.id]);
   await appendLog(req.params.id, `Обновлено контактное лицо: ${contacts[index].name}`, 'UI', 'system');
   res.json({ ok: true });
@@ -1463,7 +1711,12 @@ app.patch('/api/spaces/:id/notes/:index', requireAuth, requireInstaller, async (
   if (!Number.isInteger(index) || index < 0 || index >= notes.length) {
     return res.status(400).json({ error: 'invalid_index' });
   }
-  notes[index] = req.body?.text ?? notes[index];
+  const normalizedText = normalizeText(req.body?.text ?? notes[index]);
+  if (!normalizedText) return res.status(400).json({ error: 'missing_fields' });
+  if (isOverMaxLength(normalizedText, MAX_NOTE_LENGTH)) {
+    return res.status(400).json({ error: 'note_too_long' });
+  }
+  notes[index] = normalizedText;
   await query('UPDATE spaces SET notes = $1 WHERE id = $2', [JSON.stringify(notes), req.params.id]);
   await appendLog(req.params.id, 'Обновлено примечание', 'UI', 'system');
   res.json({ ok: true });
@@ -1506,10 +1759,18 @@ app.patch('/api/spaces/:id/photos/:index', requireAuth, requireInstaller, async 
     return res.status(400).json({ error: 'invalid_index' });
   }
   const current = photos[index];
-  photos[index] = {
-    url: req.body?.url ?? current.url,
-    label: req.body?.label ?? current.label,
-  };
+  const nextUrl = normalizeText(req.body?.url ?? current.url);
+  const nextLabel = normalizeText(req.body?.label ?? current.label) || 'Фото';
+  if (!nextUrl) return res.status(400).json({ error: 'missing_fields' });
+  if (isOverMaxLength(nextLabel, MAX_PHOTO_LABEL_LENGTH)) {
+    return res.status(400).json({ error: 'field_too_long' });
+  }
+  try {
+    new URL(nextUrl);
+  } catch {
+    return res.status(400).json({ error: 'invalid_url' });
+  }
+  photos[index] = { url: nextUrl, label: nextLabel };
   await query('UPDATE spaces SET photos = $1 WHERE id = $2', [JSON.stringify(photos), req.params.id]);
   await appendLog(req.params.id, 'Обновлено фото', 'UI', 'system');
   res.json({ ok: true });
@@ -1635,7 +1896,7 @@ const handleReaderScan = async ({ readerId, payload, ts }) => {
     [readerId, spaceId, inputSide, inputLevel, action, keyName, name ?? readerId],
   );
 
-  await pulseReaderOutput(readerId, outputLevel, 250).catch(() => null);
+  await pulseReaderOutput(readerId, outputLevel, MIN_INTERVAL_MS).catch(() => null);
 
   return {
     ok: true,
@@ -1688,7 +1949,13 @@ app.post('/api/hub/events', requireWebhookToken, async (req, res) => {
   }
 
   const normalizedHubId = normalizeHubId(hubId);
-  const spaceResult = await query('SELECT space_id FROM hubs WHERE id = $1', [normalizedHubId]);
+  let spaceResult = await query('SELECT space_id FROM hubs WHERE id = $1', [normalizedHubId]);
+  if (!spaceResult.rows.length) {
+    const registered = await registerPendingHub(normalizedHubId);
+    if (registered) {
+      spaceResult = await query('SELECT space_id FROM hubs WHERE id = $1', [normalizedHubId]);
+    }
+  }
   if (!spaceResult.rows.length) {
     return res.status(202).json({ ok: true, ignored: true });
   }
@@ -1810,7 +2077,7 @@ app.post('/api/hub/events', requireWebhookToken, async (req, res) => {
           continue;
         }
         if (zoneType === 'delayed' && status === 'armed' && !entryDelayTimers.has(spaceId)) {
-          const delaySeconds = Number(config.delaySeconds ?? 30);
+          const delaySeconds = clampDelaySeconds(config.delaySeconds ?? 30) ?? 0;
           await startEntryDelay(spaceId, spaceRow.rows[0]?.hub_id, delaySeconds, zone.name);
           continue;
         }

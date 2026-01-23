@@ -23,6 +23,7 @@ CREATE TABLE users (
   discord_avatar_url TEXT,
   language TEXT NOT NULL DEFAULT 'ru',
   timezone TEXT NOT NULL DEFAULT 'UTC',
+  last_nickname_change_at TIMESTAMP,
   created_at TIMESTAMP NOT NULL DEFAULT NOW()
 );
 

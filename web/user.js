@@ -9,6 +9,13 @@ const state = {
 
 let spacesCache = [];
 
+const escapeHtml = (value) => String(value ?? '')
+  .replace(/&/g, '&amp;')
+  .replace(/</g, '&lt;')
+  .replace(/>/g, '&gt;')
+  .replace(/"/g, '&quot;')
+  .replace(/'/g, '&#39;');
+
 const objectList = document.getElementById('userObjectList');
 const spaceIdEl = document.getElementById('userSpaceId');
 const spaceStateEl = document.getElementById('userSpaceState');
@@ -209,6 +216,7 @@ const initProfileMenu = async () => {
   applyProfileSettings(settings);
   setAvatar(state.avatarUrl);
   if (profileNickname) profileNickname.value = settings.nickname ?? '';
+  let confirmedNickname = settings.nickname ?? '';
   if (profileTimezone) {
     const desired = settings.timezone ?? 'UTC';
     const option = profileTimezone.querySelector(`option[value="${desired}"]`);
@@ -233,7 +241,26 @@ const initProfileMenu = async () => {
         Authorization: `Bearer ${localStorage.getItem('authToken') ?? ''}`,
       },
       body: JSON.stringify({ minecraft_nickname: event.target.value }),
-    }).catch(() => null);
+    }).then(async (response) => {
+      if (response.ok) {
+        confirmedNickname = event.target.value;
+        return;
+      }
+      const payload = await response.json().catch(() => ({}));
+      const errorMessage = payload?.error === 'nickname_too_long'
+        ? 'Ник должен быть не длиннее 16 символов.'
+        : payload?.error === 'nickname_cooldown'
+          ? 'Сменить ник можно раз в 3 дня.'
+          : payload?.error === 'invalid_nickname'
+            ? 'Введите корректный ник.'
+            : 'Не удалось обновить ник.';
+      window.alert(errorMessage);
+      if (profileNickname) profileNickname.value = confirmedNickname;
+      saveProfileSettings({ ...loadProfileSettings(), nickname: confirmedNickname, avatarUrl: state.avatarUrl });
+    }).catch(() => {
+      if (profileNickname) profileNickname.value = confirmedNickname;
+      saveProfileSettings({ ...loadProfileSettings(), nickname: confirmedNickname, avatarUrl: state.avatarUrl });
+    });
   });
   profileTimezone?.addEventListener('change', (event) => {
     saveProfileSettings({ ...loadProfileSettings(), timezone: event.target.value, avatarUrl: state.avatarUrl });
@@ -285,8 +312,8 @@ const renderSpaces = (spaces) => {
     const item = document.createElement('button');
     item.className = `object-item ${space.id === state.selectedSpaceId ? 'object-item--active' : ''}`;
     item.innerHTML = `
-      <div class="object-item__title">${space.name}</div>
-      <div class="object-item__meta">${space.id}</div>
+      <div class="object-item__title">${escapeHtml(space.name)}</div>
+      <div class="object-item__meta">${escapeHtml(space.id)}</div>
     `;
     item.addEventListener('click', () => {
       state.selectedSpaceId = space.id;
@@ -318,19 +345,19 @@ const renderDevices = (devices) => {
     button.className = `device-item ${device.id === state.selectedDeviceId ? 'device-item--active' : ''}`;
     button.innerHTML = `
       <div>
-        <div class="device-item__title">${device.name}</div>
-        <div class="device-item__meta">${device.room ?? '—'}</div>
+        <div class="device-item__title">${escapeHtml(device.name)}</div>
+        <div class="device-item__meta">${escapeHtml(device.room ?? '—')}</div>
       </div>
-      <span class="device-item__status">${device.status ?? '—'}</span>
+      <span class="device-item__status">${escapeHtml(device.status ?? '—')}</span>
     `;
     button.addEventListener('click', () => {
       state.selectedDeviceId = device.id;
       renderDevices(devices);
       deviceDetails.innerHTML = `
         <div class="detail-card">
-          <h3>${device.name}</h3>
-          <p>Тип: ${device.type}</p>
-          <p>Сторона: ${device.side ?? '—'}</p>
+          <h3>${escapeHtml(device.name)}</h3>
+          <p>Тип: ${escapeHtml(device.type)}</p>
+          <p>Сторона: ${escapeHtml(device.side ?? '—')}</p>
         </div>
       `;
     });
@@ -391,12 +418,13 @@ const renderLogs = (logs) => {
     const row = document.createElement('div');
     row.className = `log-row ${log.type === 'alarm' ? 'log-row--alarm' : ''}`;
     const timestamp = log.createdAtMs ?? (log.createdAt ? new Date(`${log.createdAt}Z`).getTime() : null);
-    const timeLabel = formatLogTime(timestamp) ?? log.time;
-    const text = translateLogText(log.text);
+    const timeLabel = escapeHtml(formatLogTime(timestamp) ?? log.time);
+    const text = escapeHtml(translateLogText(log.text));
+    const whoLabel = escapeHtml(log.who);
     row.innerHTML = `
       <span>${timeLabel}</span>
       <span>${text}</span>
-      <span class="muted">${log.who}</span>
+      <span class="muted">${whoLabel}</span>
     `;
     logTable.appendChild(row);
   });

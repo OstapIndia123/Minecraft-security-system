@@ -11,6 +11,13 @@ const state = {
 const FLASH_DURATION_MS = 15000;
 const logFlashActive = new Map();
 
+const escapeHtml = (value) => String(value ?? '')
+  .replace(/&/g, '&amp;')
+  .replace(/</g, '&lt;')
+  .replace(/>/g, '&gt;')
+  .replace(/"/g, '&quot;')
+  .replace(/'/g, '&#39;');
+
 const grid = document.getElementById('mainObjectGrid');
 const logTable = document.getElementById('mainLogTable');
 const refreshBtn = document.getElementById('mainRefresh');
@@ -256,10 +263,10 @@ const renderObjects = (spaces) => {
     const shouldFlash = Boolean(localStorage.getItem(alarmKey));
     card.className = `object-card ${shouldFlash ? 'object-card--alarm object-card--alarm-flash' : ''}`;
     card.innerHTML = `
-      <div class="object-card__title">${space.name}</div>
-      <div class="object-card__meta">${t('pcn.object.hubId')} ${space.hubId ?? '—'}</div>
+      <div class="object-card__title">${escapeHtml(space.name)}</div>
+      <div class="object-card__meta">${t('pcn.object.hubId')} ${escapeHtml(space.hubId ?? '—')}</div>
       <div class="object-card__status">${t(`status.${space.status}`) ?? space.status}</div>
-      <div class="object-card__meta">${space.address}</div>
+      <div class="object-card__meta">${escapeHtml(space.address)}</div>
     `;
     card.addEventListener('click', () => {
       localStorage.removeItem(alarmKey);
@@ -355,13 +362,15 @@ const renderLogs = (logs) => {
       logFlashActive.delete(flashKey);
     }
     row.className = `log-row ${isAlarm ? 'log-row--alarm' : ''} ${shouldFlash ? 'log-row--alarm-flash' : ''} ${isRestore ? 'log-row--restore' : ''} ${isHub ? 'log-row--hub' : ''}`;
-    const rawText = isHub ? log.text.replace(/\n/g, '<br />') : log.text;
-    const text = isHub ? rawText : translateLogText(rawText);
-    const timeLabel = formatLogTime(logTimestamp) ?? log.time;
+    const rawText = isHub ? log.text : translateLogText(log.text);
+    const safeText = escapeHtml(rawText);
+    const text = isHub ? safeText.replace(/\n/g, '<br />') : safeText;
+    const timeLabel = escapeHtml(formatLogTime(logTimestamp) ?? log.time);
+    const spaceLabel = escapeHtml(log.spaceName);
     row.innerHTML = `
       <span>${timeLabel}</span>
       <span>${text}</span>
-      <span class="muted">${log.spaceName}</span>
+      <span class="muted">${spaceLabel}</span>
     `;
     logTable.appendChild(row);
   });
@@ -427,6 +436,7 @@ const initProfileMenu = async () => {
   setAvatar(state.avatarUrl);
   await syncProfileSettings();
   if (profileNickname) profileNickname.value = state.nickname;
+  let confirmedNickname = state.nickname;
   if (profileTimezone) {
     const option = profileTimezone.querySelector(`option[value="${state.timezone}"]`);
     profileTimezone.value = option ? state.timezone : 'UTC';
@@ -450,7 +460,28 @@ const initProfileMenu = async () => {
         Authorization: `Bearer ${localStorage.getItem('authToken') ?? ''}`,
       },
       body: JSON.stringify({ minecraft_nickname: state.nickname }),
-    }).catch(() => null);
+    }).then(async (response) => {
+      if (response.ok) {
+        confirmedNickname = state.nickname;
+        return;
+      }
+      const payload = await response.json().catch(() => ({}));
+      const errorMessage = payload?.error === 'nickname_too_long'
+        ? 'Ник должен быть не длиннее 16 символов.'
+        : payload?.error === 'nickname_cooldown'
+          ? 'Сменить ник можно раз в 3 дня.'
+          : payload?.error === 'invalid_nickname'
+            ? 'Введите корректный ник.'
+            : 'Не удалось обновить ник.';
+      window.alert(errorMessage);
+      state.nickname = confirmedNickname;
+      if (profileNickname) profileNickname.value = confirmedNickname;
+      saveProfileSettings();
+    }).catch(() => {
+      state.nickname = confirmedNickname;
+      if (profileNickname) profileNickname.value = confirmedNickname;
+      saveProfileSettings();
+    });
   });
   profileTimezone?.addEventListener('change', (event) => {
     state.timezone = event.target.value;

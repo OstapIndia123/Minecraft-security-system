@@ -17,6 +17,13 @@ let spaces = [];
 const FLASH_DURATION_MS = 15000;
 const logFlashActive = new Map();
 
+const escapeHtml = (value) => String(value ?? '')
+  .replace(/&/g, '&amp;')
+  .replace(/</g, '&lt;')
+  .replace(/>/g, '&gt;')
+  .replace(/"/g, '&quot;')
+  .replace(/'/g, '&#39;');
+
 const objectList = document.getElementById('objectList');
 const spaceIdEl = document.getElementById('spaceId');
 const spaceStateEl = document.getElementById('spaceState');
@@ -66,6 +73,10 @@ const attachHubForm = document.getElementById('attachHubForm');
 const guardModal = document.getElementById('guardModal');
 const guardModalClose = document.getElementById('closeGuardModal');
 const guardModalOk = document.getElementById('guardModalOk');
+const hubInstallModal = document.getElementById('hubInstallModal');
+const hubInstallMessage = document.getElementById('hubInstallMessage');
+const hubInstallCountdown = document.getElementById('hubInstallCountdown');
+const hubInstallClose = document.getElementById('closeHubInstall');
 const backToMain = document.getElementById('backToMain');
 const avatarButton = document.getElementById('avatarButton');
 const profileDropdown = document.getElementById('profileDropdown');
@@ -80,6 +91,16 @@ const usersList = document.getElementById('usersList');
 const usersForm = document.getElementById('usersForm');
 const installersList = document.getElementById('installersList');
 const installersForm = document.getElementById('installersForm');
+
+const noteInput = noteForm?.querySelector('textarea[name="text"]');
+const autoResize = (element) => {
+  element.style.height = 'auto';
+  element.style.height = `${element.scrollHeight}px`;
+};
+if (noteInput) {
+  autoResize(noteInput);
+  noteInput.addEventListener('input', () => autoResize(noteInput));
+}
 
 const statusMap = {
   armed: 'Под охраной',
@@ -414,6 +435,7 @@ const openActionModal = ({
       if (field.required) input.required = true;
       if (field.min !== undefined) input.min = field.min;
       if (field.max !== undefined) input.max = field.max;
+      if (field.maxLength !== undefined) input.maxLength = field.maxLength;
       actionModalForm.appendChild(input);
     });
   }
@@ -519,6 +541,56 @@ const showGuardModal = () => {
   guardModal?.classList.add('modal--open');
 };
 
+let hubRegistrationTimer = null;
+let hubRegistrationPoller = null;
+
+const closeHubInstallModal = () => {
+  hubInstallModal?.classList.remove('modal--open');
+  if (hubRegistrationTimer) {
+    clearInterval(hubRegistrationTimer);
+    hubRegistrationTimer = null;
+  }
+  if (hubRegistrationPoller) {
+    clearInterval(hubRegistrationPoller);
+    hubRegistrationPoller = null;
+  }
+};
+
+const startHubRegistrationMonitor = (spaceId, registration) => {
+  if (!hubInstallModal || !registration?.hubId) return;
+  const expiresAt = registration.expiresAt ?? (Date.now() + 60_000);
+  if (hubInstallMessage) {
+    hubInstallMessage.textContent = 'Установите хаб и включите его.';
+  }
+  hubInstallModal.classList.add('modal--open');
+  const updateCountdown = () => {
+    const secondsLeft = Math.max(0, Math.ceil((expiresAt - Date.now()) / 1000));
+    if (hubInstallCountdown) hubInstallCountdown.textContent = String(secondsLeft);
+    if (secondsLeft <= 0) {
+      closeHubInstallModal();
+      showToast('Не удалось подтвердить установку хаба.');
+    }
+  };
+  updateCountdown();
+  hubRegistrationTimer = setInterval(updateCountdown, 1000);
+  hubRegistrationPoller = setInterval(async () => {
+    try {
+      const status = await apiFetch(`/api/spaces/${spaceId}/hub-registration`);
+      if (!status.pending) {
+        closeHubInstallModal();
+        if (status.hubId) {
+          await refreshAll();
+          showToast('Хаб зарегистрирован.');
+        } else if (status.expired) {
+          showToast('Не удалось подтвердить установку хаба.');
+        }
+      }
+    } catch (error) {
+      console.error(error);
+    }
+  }, 2000);
+};
+
 const isSpaceArmed = () => {
   const space = spaces.find((item) => item.id === state.selectedSpaceId);
   return space?.status === 'armed';
@@ -535,6 +607,43 @@ const ensureEditable = () => {
 const handleApiError = (error, fallbackMessage) => {
   if (error.message === 'space_armed') {
     showGuardModal();
+    return;
+  }
+  if (error.message === 'user_not_found') {
+    showToast('Пользователь не найден.');
+    return;
+  }
+  if (error.message === 'nickname_too_long') {
+    showToast('Ник должен быть не длиннее 16 символов.');
+    return;
+  }
+  if (error.message === 'invalid_nickname') {
+    showToast('Введите корректный ник.');
+    return;
+  }
+  if (error.message === 'nickname_cooldown') {
+    showToast('Сменить ник можно раз в 3 дня.');
+    return;
+  }
+  if (error.message === 'note_too_long') {
+    showToast('Примечание должно быть до 100 символов.');
+    return;
+  }
+  if (error.message === 'field_too_long') {
+    showToast('Слишком длинное значение в поле.');
+    return;
+  }
+  if (error.message === 'invalid_url') {
+    showToast('Некорректная ссылка.');
+    return;
+  }
+  if (error.message === 'hub_pending') {
+    showToast('Этот хаб уже ожидает регистрации.');
+    return;
+  }
+  if (error.message === 'invalid_hub_id') {
+    showToast('Некорректный ID хаба.');
+    return;
   } else {
     showToast(fallbackMessage);
   }
@@ -648,10 +757,10 @@ const renderObjectList = () => {
       isAlarm ? 'object-card--alarm' : ''
     }`;
     card.innerHTML = `
-      <div class="object-card__title">${space.name}</div>
-      <div class="object-card__meta">${t('engineer.object.hubId')} ${space.hubId ?? '—'}</div>
+      <div class="object-card__title">${escapeHtml(space.name)}</div>
+      <div class="object-card__meta">${t('engineer.object.hubId')} ${escapeHtml(space.hubId ?? '—')}</div>
       <div class="object-card__status ${statusTone[space.status] ?? ''}">${t(`status.${space.status}`) ?? statusMap[space.status] ?? space.status}</div>
-      <div class="object-card__meta">${space.address}</div>
+      <div class="object-card__meta">${escapeHtml(space.address)}</div>
     `;
     card.addEventListener('click', async () => {
       state.selectedSpaceId = space.id;
@@ -696,10 +805,10 @@ const renderDevices = (space) => {
     item.className = `device-item ${device.id === state.selectedDeviceId ? 'device-item--active' : ''}`;
     item.innerHTML = `
       <div>
-        <div class="device-item__title">${device.name}</div>
-        <div class="device-item__meta">${device.room}</div>
+        <div class="device-item__title">${escapeHtml(device.name)}</div>
+        <div class="device-item__meta">${escapeHtml(device.room)}</div>
       </div>
-      <span class="device-item__status">${statusText}</span>
+      <span class="device-item__status">${escapeHtml(statusText)}</span>
     `;
     item.addEventListener('click', () => {
       state.selectedDeviceId = device.id;
@@ -713,23 +822,30 @@ const renderDevices = (space) => {
 const renderDeviceDetails = (device) => {
   const canDelete = device.type !== 'hub';
   const deleteLabel = device.type === 'key' ? 'Удалить ключ' : 'Удалить устройство';
+  const safeName = escapeHtml(device.name);
+  const safeRoom = escapeHtml(device.room);
+  const safeSide = escapeHtml(device.side ?? '');
+  const safeStatus = escapeHtml(device.status ?? '');
+  const safeReaderId = escapeHtml(device.config?.readerId ?? '');
+  const safeType = escapeHtml(device.type);
+  const safeId = escapeHtml(device.id);
   const statusBlock = device.type === 'zone' || device.type === 'hub'
     ? `
       <div class="stat">
         <span>Статус</span>
-        <strong>${device.status}</strong>
+        <strong>${safeStatus}</strong>
       </div>
     `
     : '';
   const baseFields = device.type !== 'key'
     ? `
-      <input type="text" name="name" value="${device.name}" placeholder="Имя" required />
-      <input type="text" name="room" value="${device.room}" placeholder="Комната" required />
-      ${device.side ? `<input type="text" name="side" value="${device.side}" placeholder="Сторона хаба" />` : ''}
+      <input type="text" name="name" value="${safeName}" placeholder="Имя" required />
+      <input type="text" name="room" value="${safeRoom}" placeholder="Комната" required />
+      ${device.side ? `<input type="text" name="side" value="${safeSide}" placeholder="Сторона хаба" />` : ''}
     `
     : `
-      <input type="text" name="name" value="${device.name.replace('Ключ: ', '')}" placeholder="Имя ключа" required />
-      <input type="text" name="readerId" value="${device.config.readerId ?? ''}" placeholder="ID считывателя" />
+      <input type="text" name="name" value="${escapeHtml(device.name.replace('Ключ: ', ''))}" placeholder="Имя ключа" required />
+      <input type="text" name="readerId" value="${safeReaderId}" placeholder="ID считывателя" />
     `;
 
   const configFields = (() => {
@@ -755,6 +871,7 @@ const renderDeviceDetails = (device) => {
           class="zone-delay hidden"
           value="${device.config?.delaySeconds ?? ''}"
           min="1"
+          max="120"
           placeholder="Задержка (сек)"
         />
         <input type="number" name="normalLevel" value="${device.config?.normalLevel ?? 15}" min="0" max="15" />
@@ -766,8 +883,8 @@ const renderDeviceDetails = (device) => {
     if (device.type === 'siren') {
       return `
         <input type="number" name="outputLevel" value="${device.config?.level ?? 15}" min="0" max="15" />
-        <input type="number" name="intervalMs" value="${device.config?.intervalMs ?? 1000}" min="100" />
-        <input type="number" name="alarmDuration" value="${device.config?.alarmDuration ?? ''}" min="1" placeholder="Время тревоги (сек)" />
+        <input type="number" name="intervalMs" value="${device.config?.intervalMs ?? 1000}" min="300" max="60000" />
+        <input type="number" name="alarmDuration" value="${device.config?.alarmDuration ?? ''}" min="1" max="120" placeholder="Время тревоги (сек)" />
       `;
     }
     if (device.type === 'reader') {
@@ -783,19 +900,19 @@ const renderDeviceDetails = (device) => {
     <div class="device-details__header">
       <div class="device-avatar">${device.type.toUpperCase()}</div>
       <div>
-        <div class="device-details__title">${device.name}</div>
-        <div class="device-details__meta">${device.room}</div>
+        <div class="device-details__title">${safeName}</div>
+        <div class="device-details__meta">${safeRoom}</div>
       </div>
     </div>
     <div class="device-details__stats">
       ${statusBlock}
       <div class="stat">
         <span>Тип</span>
-        <strong>${device.type}</strong>
+        <strong>${safeType}</strong>
       </div>
       <div class="stat">
         <span>ID</span>
-        <strong>${device.id}</strong>
+        <strong>${safeId}</strong>
       </div>
     </div>
     ${device.type !== 'hub' ? `
@@ -883,19 +1000,19 @@ const renderObjectInfo = (space) => {
   objectInfo.innerHTML = `
     <div class="info-card">
       <span>${t('engineer.object.label.name')}</span>
-      <strong>${space.name}</strong>
+      <strong>${escapeHtml(space.name)}</strong>
     </div>
     <div class="info-card">
       <span>${t('engineer.object.label.coords')}</span>
-      <strong>${space.address}</strong>
+      <strong>${escapeHtml(space.address)}</strong>
     </div>
     <div class="info-card">
       <span>${t('engineer.object.label.city')}</span>
-      <strong>${space.city}</strong>
+      <strong>${escapeHtml(space.city)}</strong>
     </div>
     <div class="info-card">
       <span>${t('engineer.object.label.hub')}</span>
-      <strong>${space.hubId ?? '—'}</strong>
+      <strong>${escapeHtml(space.hubId ?? '—')}</strong>
     </div>
     <div class="info-card">
       <span>${t('engineer.object.label.hubStatus')}</span>
@@ -926,7 +1043,7 @@ const renderMembers = (members) => {
       users.forEach((member) => {
         const card = document.createElement('div');
         card.className = 'member-card';
-        const baseLabel = member.minecraft_nickname ?? member.email ?? '—';
+        const baseLabel = escapeHtml(member.minecraft_nickname ?? member.email ?? '—');
         const label = member.is_self ? `${baseLabel} (${t('engineer.members.you')})` : baseLabel;
         card.innerHTML = `
           <div>
@@ -969,7 +1086,7 @@ const renderMembers = (members) => {
       installers.forEach((member) => {
         const card = document.createElement('div');
         card.className = 'member-card';
-        const baseLabel = member.minecraft_nickname ?? member.email ?? '—';
+        const baseLabel = escapeHtml(member.minecraft_nickname ?? member.email ?? '—');
         const label = member.is_self ? `${baseLabel} (${t('engineer.members.you')})` : baseLabel;
         card.innerHTML = `
           <div>
@@ -1038,9 +1155,9 @@ const renderContacts = (space) => {
     const card = document.createElement('div');
     card.className = 'contact-card';
     card.innerHTML = `
-      <div class="contact-card__title">${contact.name}</div>
-      <div class="contact-card__meta">${contact.role}</div>
-      <div class="contact-card__meta">${contact.phone}</div>
+      <div class="contact-card__title">${escapeHtml(contact.name)}</div>
+      <div class="contact-card__meta">${escapeHtml(contact.role)}</div>
+      <div class="contact-card__meta">${escapeHtml(contact.phone)}</div>
       <div class="card-actions">
         <button class="button button--ghost" data-action="edit" data-index="${index}">Изменить</button>
         <button class="button button--ghost button--danger" data-action="delete" data-index="${index}">Удалить</button>
@@ -1069,9 +1186,9 @@ const renderContacts = (space) => {
               title: 'Изменить контакт',
               message: 'Обновите данные контактного лица.',
               fields: [
-                { name: 'name', placeholder: 'Имя', value: contact.name, required: true },
-                { name: 'role', placeholder: 'Роль', value: contact.role },
-                { name: 'phone', placeholder: 'Телефон', value: contact.phone },
+                { name: 'name', placeholder: 'Имя', value: contact.name, required: true, maxLength: 60 },
+                { name: 'role', placeholder: 'Роль', value: contact.role, maxLength: 60 },
+                { name: 'phone', placeholder: 'Телефон', value: contact.phone, maxLength: 40 },
               ],
             });
             if (!values) return;
@@ -1101,13 +1218,16 @@ const renderNotes = (space) => {
   space.notes.forEach((note, index) => {
     const card = document.createElement('div');
     card.className = 'note-card';
-    card.innerHTML = `
-      <div>${note}</div>
-      <div class="card-actions">
-        <button class="button button--ghost" data-action="edit" data-index="${index}">Изменить</button>
-        <button class="button button--ghost button--danger" data-action="delete" data-index="${index}">Удалить</button>
-      </div>
+    const text = document.createElement('div');
+    text.textContent = note;
+    const actions = document.createElement('div');
+    actions.className = 'card-actions';
+    actions.innerHTML = `
+      <button class="button button--ghost" data-action="edit" data-index="${index}">Изменить</button>
+      <button class="button button--ghost button--danger" data-action="delete" data-index="${index}">Удалить</button>
     `;
+    card.appendChild(text);
+    card.appendChild(actions);
     card.querySelectorAll('button').forEach((button) => {
       button.addEventListener('click', async () => {
         if (!ensureEditable()) return;
@@ -1131,7 +1251,7 @@ const renderNotes = (space) => {
               title: 'Изменить примечание',
               message: 'Обновите текст примечания.',
               fields: [
-                { name: 'text', placeholder: 'Текст примечания', value: note, required: true },
+                { name: 'text', placeholder: 'Текст примечания', value: note, required: true, maxLength: 100 },
               ],
             });
             if (!values) return;
@@ -1167,8 +1287,8 @@ const renderPhotos = (space) => {
     const card = document.createElement('div');
     card.className = 'photo-card';
     card.innerHTML = `
-      <img src="${photo.url}" alt="${photo.label}" />
-      <div>${photo.label}</div>
+      <img src="${escapeHtml(photo.url)}" alt="${escapeHtml(photo.label)}" />
+      <div>${escapeHtml(photo.label)}</div>
       <div class="card-actions">
         <button class="button button--ghost" data-action="edit" data-index="${index}">Изменить</button>
         <button class="button button--ghost button--danger" data-action="delete" data-index="${index}">Удалить</button>
@@ -1197,8 +1317,8 @@ const renderPhotos = (space) => {
               title: 'Изменить фото',
               message: 'Обновите ссылку и подпись.',
               fields: [
-                { name: 'url', placeholder: 'URL фото', value: photo.url, required: true, type: 'url' },
-                { name: 'label', placeholder: 'Подпись', value: photo.label },
+                { name: 'url', placeholder: 'URL фото', value: photo.url, required: true, type: 'url', maxLength: 200 },
+                { name: 'label', placeholder: 'Подпись', value: photo.label, maxLength: 60 },
               ],
             });
             if (!values) return;
@@ -1303,13 +1423,15 @@ const renderLogs = (space) => {
       logFlashActive.delete(flashKey);
     }
     row.className = `log-row ${isAlarm ? 'log-row--alarm' : ''} ${shouldFlash ? 'log-row--alarm-flash' : ''} ${isRestore ? 'log-row--restore' : ''} ${isHub ? 'log-row--hub' : ''}`;
-    const rawText = isHub ? log.text.replace(/\n/g, '<br />') : log.text;
-    const text = isHub ? rawText : translateLogText(rawText);
-    const timeLabel = formatLogTime(logTimestamp) ?? log.time;
+    const rawText = isHub ? log.text : translateLogText(log.text);
+    const safeText = escapeHtml(rawText);
+    const text = isHub ? safeText.replace(/\n/g, '<br />') : safeText;
+    const timeLabel = escapeHtml(formatLogTime(logTimestamp) ?? log.time);
+    const whoLabel = escapeHtml(log.who);
     row.innerHTML = `
       <span>${timeLabel}</span>
       <span>${text}</span>
-      <span class="muted">${log.who}</span>
+      <span class="muted">${whoLabel}</span>
     `;
     logTable.appendChild(row);
   });
@@ -1515,9 +1637,12 @@ if (spaceForm) {
       spaceForm.reset();
       showToast('Пространство создано.');
       modal?.classList.remove('modal--open');
+      if (created.hubRegistration?.pending || created.hubRegistration?.hubId) {
+        startHubRegistrationMonitor(created.id, created.hubRegistration);
+      }
     } catch (error) {
       console.error(error);
-      showToast('Не удалось создать пространство.');
+      handleApiError(error, 'Не удалось создать пространство.');
     } finally {
       hideLoading();
     }
@@ -1718,6 +1843,7 @@ if (noteForm) {
       await loadSpaces();
       renderAll();
       noteForm.reset();
+      if (noteInput) autoResize(noteInput);
       showToast('Примечание добавлено.');
     } catch (error) {
       console.error(error);
@@ -1740,11 +1866,7 @@ if (usersForm) {
       usersForm.reset();
       showToast('Пользователь добавлен.');
     } catch (error) {
-      if (error.message === 'nickname_taken') {
-        showToast('Никнейм занят.');
-      } else {
-        handleApiError(error, 'Не удалось добавить пользователя.');
-      }
+      handleApiError(error, 'Не удалось добавить пользователя.');
     } finally {
       hideLoading();
     }
@@ -1763,11 +1885,7 @@ if (installersForm) {
       installersForm.reset();
       showToast('Инженер добавлен.');
     } catch (error) {
-      if (error.message === 'nickname_taken') {
-        showToast('Никнейм занят.');
-      } else {
-        handleApiError(error, 'Не удалось добавить инженера.');
-      }
+      handleApiError(error, 'Не удалось добавить инженера.');
     } finally {
       hideLoading();
     }
@@ -1859,20 +1977,23 @@ if (attachHubForm) {
     const payload = Object.fromEntries(formData.entries());
     try {
       showLoading();
-      await apiFetch(`/api/spaces/${space.id}/attach-hub`, {
+      const response = await apiFetch(`/api/spaces/${space.id}/attach-hub`, {
         method: 'POST',
         body: JSON.stringify(payload),
       });
       attachHubForm.reset();
       await refreshAll();
-      showToast('Хаб привязан.');
+      showToast('Ожидание установки хаба.');
+      if (response.hubRegistration?.pending || response.hubRegistration?.hubId) {
+        startHubRegistrationMonitor(space.id, response.hubRegistration);
+      }
     } catch (error) {
       console.error(error);
       if (error.message === 'space_armed') {
         showGuardModal();
         return;
       }
-      showToast('Не удалось привязать хаб.');
+      handleApiError(error, 'Не удалось привязать хаб.');
     } finally {
       hideLoading();
     }
@@ -1895,6 +2016,18 @@ if (guardModal) {
   guardModal.addEventListener('click', (event) => {
     if (event.target === guardModal) {
       guardModal.classList.remove('modal--open');
+    }
+  });
+}
+
+if (hubInstallClose && hubInstallModal) {
+  hubInstallClose.addEventListener('click', closeHubInstallModal);
+}
+
+if (hubInstallModal) {
+  hubInstallModal.addEventListener('click', (event) => {
+    if (event.target === hubInstallModal) {
+      closeHubInstallModal();
     }
   });
 }
@@ -1961,6 +2094,7 @@ const initProfileMenu = async () => {
   setAvatar(state.avatarUrl);
   await syncProfileSettings();
   if (profileNickname) profileNickname.value = state.nickname;
+  let confirmedNickname = state.nickname;
   if (profileTimezone) {
     const option = profileTimezone.querySelector(`option[value="${state.timezone}"]`);
     profileTimezone.value = option ? state.timezone : 'UTC';
@@ -1980,7 +2114,14 @@ const initProfileMenu = async () => {
     apiFetch('/api/auth/me', {
       method: 'PATCH',
       body: JSON.stringify({ minecraft_nickname: state.nickname }),
-    }).catch(() => null);
+    }).then(() => {
+      confirmedNickname = state.nickname;
+    }).catch((error) => {
+      handleApiError(error, 'Не удалось обновить ник.');
+      state.nickname = confirmedNickname;
+      if (profileNickname) profileNickname.value = confirmedNickname;
+      saveProfileSettings();
+    });
   });
   profileTimezone?.addEventListener('change', (event) => {
     state.timezone = event.target.value;

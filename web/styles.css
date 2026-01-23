@@ -474,12 +474,19 @@ body {
 }
 
 .form-grid input,
-.form-grid select {
+.form-grid select,
+.form-grid textarea {
   background: #222;
   border: 1px solid #2a2a2a;
   color: var(--text);
   border-radius: 10px;
   padding: 10px;
+}
+
+.notes-input {
+  min-height: 44px;
+  resize: vertical;
+  overflow: hidden;
 }
 
 .form-grid button {
