@@ -35,7 +35,25 @@ docker compose up --build
 WEBHOOK_TOKEN=change-me
 WS_AUTH_TOKEN=change-me
 WEBHOOK_URL=http://127.0.0.1:8080/api/hub/events
+POSTGRES_PASSWORD=postgres
 ```
+
+> ℹ️ `docker-compose.yml` использует `${POSTGRES_PASSWORD}` и `${POSTGRES_DB}` для `DATABASE_URL`,
+> поэтому удобнее всего задавать их через `.env` рядом с `docker-compose.yml`.
+
+### Если `seed.js` падает с `password authentication failed`
+Postgres сохраняет пароль в volume при первом запуске. Если вы поменяли `POSTGRES_PASSWORD`
+после инициализации volume, контейнер продолжит требовать старый пароль и сидинг упадёт.
+
+Варианты решения:
+```bash
+# Полный сброс БД (удалит данные в pgdata)
+docker compose down -v
+docker compose up -d --build
+docker compose exec app node backend/seed.js
+```
+
+Либо выставьте `POSTGRES_PASSWORD` равным старому паролю (который был при первом запуске volume).
 
 Для безопасного доступа извне рекомендуется проксировать WebSocket через TLS (wss)
 и держать порты 5080/8090 закрытыми на фаерволе, оставив доступ только к 8080.

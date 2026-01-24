@@ -206,6 +206,11 @@ const seed = async () => {
 };
 
 seed().catch((error) => {
+  if (error?.code === '28P01') {
+    console.error('Seed failed: invalid database credentials (code 28P01).');
+    console.error('Check POSTGRES_PASSWORD / DATABASE_URL and note that existing Postgres volumes keep the old password.');
+    console.error('For Docker Compose you can reset the database with: docker compose down -v');
+  }
   console.error('Seed failed', error);
   process.exit(1);
 });
