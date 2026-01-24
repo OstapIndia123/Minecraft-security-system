@@ -116,7 +116,6 @@ const statusTone = {
 const chipActions = document.querySelectorAll('.status-actions .chip');
 const filterButtons = document.querySelectorAll('.nav-pill');
 const logFilters = document.querySelectorAll('#logFilters .chip');
-const logFiltersContainer = document.getElementById('logFilters');
 
 const translations = {
   ru: {
@@ -633,19 +632,6 @@ const handleApiError = (error, fallbackMessage) => {
 };
 
 const getAuthToken = () => localStorage.getItem('authToken');
-
-const configureLogFilters = () => {
-  const isInstaller = state.role === 'installer';
-  if (!isInstaller) {
-    state.logFilter = 'security';
-  }
-  logFilters.forEach((button) => {
-    button.classList.toggle('chip--active', button.dataset.log === state.logFilter);
-  });
-  if (logFiltersContainer) {
-    logFiltersContainer.style.display = isInstaller ? '' : 'none';
-  }
-};
 
 const apiFetch = async (path, options = {}) => {
   const token = getAuthToken();
@@ -2081,7 +2067,6 @@ const initProfileMenu = async () => {
   loadProfileSettings();
   setAvatar(state.avatarUrl);
   await syncProfileSettings();
-  configureLogFilters();
   if (profileNickname) profileNickname.value = state.nickname;
   let confirmedNickname = state.nickname;
   updateNicknameControls();
