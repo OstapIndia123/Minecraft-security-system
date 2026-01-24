@@ -8,6 +8,8 @@ const hashPassword = (password) => {
   return `scrypt$${salt}$${hash}`;
 };
 
+const normalizeText = (value) => (value ?? '').toString().trim();
+
 const seed = async () => {
   const schema = await readFile(new URL('./schema.sql', import.meta.url));
   await query(schema.toString());
@@ -121,36 +123,54 @@ const seed = async () => {
     );
   }
 
-  const users = [
-    {
-      email: 'pro@example.com',
-      password: 'pro-demo',
-      role: 'installer',
-      nickname: 'Installer',
-      language: 'ru',
-      timezone: 'Europe/Kyiv',
-    },
-    {
-      email: 'user@example.com',
-      password: 'user-demo',
-      role: 'user',
-      nickname: 'User',
-      language: 'ru',
-      timezone: 'Europe/Kyiv',
-    },
-  ];
+  const seedDiscordId = normalizeText(process.env.SEED_DISCORD_ID);
+  const seedDiscordNickname = normalizeText(process.env.SEED_DISCORD_NICKNAME) || 'Installer';
+
+  const users = seedDiscordId
+    ? [
+        {
+          email: `discord:${seedDiscordId}`,
+          password: `discord-${seedDiscordId}`,
+          role: 'installer',
+          nickname: seedDiscordNickname,
+          language: 'ru',
+          timezone: 'Europe/Kyiv',
+          discordId: seedDiscordId,
+        },
+      ]
+    : [
+        {
+          email: 'pro@example.com',
+          password: 'pro-demo',
+          role: 'installer',
+          nickname: 'Installer',
+          language: 'ru',
+          timezone: 'Europe/Kyiv',
+          discordId: null,
+        },
+        {
+          email: 'user@example.com',
+          password: 'user-demo',
+          role: 'user',
+          nickname: 'User',
+          language: 'ru',
+          timezone: 'Europe/Kyiv',
+          discordId: null,
+        },
+      ];
 
   const userRecords = [];
   for (const user of users) {
     const result = await query(
-      `INSERT INTO users (email, password_hash, role, minecraft_nickname, language, timezone, discord_avatar_url, last_nickname_change_at)
-       VALUES ($1,$2,$3,$4,$5,$6,$7,$8)
+      `INSERT INTO users (email, password_hash, role, minecraft_nickname, discord_id, language, timezone, discord_avatar_url, last_nickname_change_at)
+       VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9)
        RETURNING id`,
       [
         user.email,
         hashPassword(user.password),
         user.role,
         user.nickname,
+        user.discordId,
         user.language,
         user.timezone,
         null,
@@ -162,10 +182,21 @@ const seed = async () => {
 
   for (const userRecord of userRecords) {
     for (const space of spaces) {
-      await query(
-        'INSERT INTO user_spaces (user_id, space_id, role) VALUES ($1,$2,$3)',
-        [userRecord.id, space.id, userRecord.role],
-      );
+      if (seedDiscordId) {
+        await query(
+          'INSERT INTO user_spaces (user_id, space_id, role) VALUES ($1,$2,$3)',
+          [userRecord.id, space.id, 'installer'],
+        );
+        await query(
+          'INSERT INTO user_spaces (user_id, space_id, role) VALUES ($1,$2,$3)',
+          [userRecord.id, space.id, 'user'],
+        );
+      } else {
+        await query(
+          'INSERT INTO user_spaces (user_id, space_id, role) VALUES ($1,$2,$3)',
+          [userRecord.id, space.id, userRecord.role],
+        );
+      }
     }
   }
 
