@@ -236,11 +236,7 @@ const openActionModal = ({
 
 const syncProfileSettings = async () => {
   try {
-    const response = await fetch('/api/auth/me', {
-      headers: { Authorization: `Bearer ${localStorage.getItem('authToken') ?? ''}` },
-    });
-    if (!response.ok) return;
-    const payload = await response.json();
+    const payload = await apiFetch('/api/auth/me');
     if (!payload?.user) return;
     state.language = payload.user.language ?? state.language;
     state.timezone = payload.user.timezone ?? state.timezone;

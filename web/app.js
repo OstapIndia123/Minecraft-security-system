@@ -2259,14 +2259,18 @@ const initProfileMenu = async () => {
   profileTimezone?.addEventListener('change', (event) => {
     state.timezone = event.target.value;
     saveProfileSettings();
-    apiFetch('/api/auth/me', { method: 'PATCH', body: JSON.stringify({ timezone: state.timezone }) }).catch(() => null);
+    if (!isAdminPage) {
+      apiFetch('/api/auth/me', { method: 'PATCH', body: JSON.stringify({ timezone: state.timezone }) }).catch(() => null);
+    }
     loadLogs(state.selectedSpaceId).catch(() => null);
   });
   profileLanguage?.addEventListener('change', (event) => {
     state.language = event.target.value;
     saveProfileSettings();
     applyTranslations();
-    apiFetch('/api/auth/me', { method: 'PATCH', body: JSON.stringify({ language: state.language }) }).catch(() => null);
+    if (!isAdminPage) {
+      apiFetch('/api/auth/me', { method: 'PATCH', body: JSON.stringify({ language: state.language }) }).catch(() => null);
+    }
   });
   profileLogout?.addEventListener('click', async () => {
     state.nickname = '';

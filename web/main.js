@@ -148,11 +148,7 @@ const loadProfileSettings = () => {
 
 const syncProfileSettings = async () => {
   try {
-    const response = await fetch('/api/auth/me', {
-      headers: { Authorization: `Bearer ${localStorage.getItem('authToken') ?? ''}` },
-    });
-    if (!response.ok) return;
-    const payload = await response.json();
+    const payload = await apiFetch('/api/auth/me');
     if (!payload?.user) return;
     state.language = payload.user.language ?? state.language;
     state.timezone = payload.user.timezone ?? state.timezone;
@@ -683,12 +679,8 @@ const initProfileMenu = async () => {
   profileTimezone?.addEventListener('change', (event) => {
     state.timezone = event.target.value;
     saveProfileSettings();
-    fetch('/api/auth/me', {
+    apiFetch('/api/auth/me', {
       method: 'PATCH',
-      headers: {
-        'Content-Type': 'application/json',
-        Authorization: `Bearer ${localStorage.getItem('authToken') ?? ''}`,
-      },
       body: JSON.stringify({ timezone: state.timezone }),
     }).catch(() => null);
     refresh().catch(() => null);
@@ -698,12 +690,8 @@ const initProfileMenu = async () => {
     saveProfileSettings();
     applyTranslations();
     refresh().catch(() => null);
-    fetch('/api/auth/me', {
+    apiFetch('/api/auth/me', {
       method: 'PATCH',
-      headers: {
-        'Content-Type': 'application/json',
-        Authorization: `Bearer ${localStorage.getItem('authToken') ?? ''}`,
-      },
       body: JSON.stringify({ language: state.language }),
     }).catch(() => null);
   });
