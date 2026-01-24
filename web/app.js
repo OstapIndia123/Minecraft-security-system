@@ -685,7 +685,7 @@ const handleApiError = (error, fallbackMessage) => {
     showToast('Сменить ник можно раз в 7 дней.');
     return;
   }
-  if (error.message === 'space_create_cooldown' || (error.status === 429 && error.retryAfterMs !== undefined)) {
+  if (error.message === 'space_create_cooldown' || error.status === 429) {
     const lockUntil = handleSpaceCreateCooldown(error.retryAfterMs);
     if (lockUntil) {
       showToast(`Создавать объекты можно не чаще, чем раз в 15 минут. Доступно после ${formatLockUntil(lockUntil)}.`);
