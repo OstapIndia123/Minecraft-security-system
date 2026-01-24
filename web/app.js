@@ -395,6 +395,7 @@ const setAvatar = (avatarUrl) => {
 };
 
 const syncProfileSettings = async () => {
+  if (isAdminPage) return;
   try {
     const result = await apiFetch('/api/auth/me');
     if (!result?.user) return;
