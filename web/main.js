@@ -5,6 +5,8 @@ const state = {
   timezone: 'UTC',
   nickname: '',
   lastNicknameChangeAt: null,
+  lastSpaceCreateAt: null,
+  spaceCreateLockUntil: null,
   avatarUrl: '',
   role: 'user',
 };
@@ -12,6 +14,7 @@ const state = {
 const FLASH_DURATION_MS = 15000;
 const logFlashActive = new Map();
 const NICKNAME_COOLDOWN_MS = 7 * 24 * 60 * 60 * 1000;
+const SPACE_CREATE_COOLDOWN_MS = 15 * 60 * 1000;
 
 const escapeHtml = (value) => String(value ?? '')
   .replace(/&/g, '&amp;')
@@ -134,6 +137,9 @@ const loadProfileSettings = () => {
     state.language = parsed.language ?? state.language;
     state.timezone = parsed.timezone ?? state.timezone;
     state.nickname = parsed.nickname ?? state.nickname;
+    state.lastNicknameChangeAt = parsed.lastNicknameChangeAt ?? state.lastNicknameChangeAt;
+    state.lastSpaceCreateAt = parsed.lastSpaceCreateAt ?? state.lastSpaceCreateAt;
+    state.spaceCreateLockUntil = parsed.spaceCreateLockUntil ?? state.spaceCreateLockUntil;
     state.avatarUrl = parsed.avatarUrl ?? state.avatarUrl;
   } catch {
     // ignore
@@ -152,22 +158,43 @@ const syncProfileSettings = async () => {
     state.timezone = payload.user.timezone ?? state.timezone;
     state.nickname = payload.user.minecraft_nickname ?? state.nickname;
     state.lastNicknameChangeAt = payload.user?.last_nickname_change_at ?? null;
+    state.lastSpaceCreateAt = payload.user?.last_space_create_at ?? null;
     state.avatarUrl = payload.user.discord_avatar_url ?? state.avatarUrl;
     state.role = payload.user.role ?? state.role;
     saveProfileSettings();
     setAvatar(state.avatarUrl);
+    updateNicknameControls();
+    updateSpaceCreateControls();
   } catch {
     // ignore
   }
 };
 
 const saveProfileSettings = () => {
+  const raw = localStorage.getItem('profileSettings');
+  let existing = {};
+  if (raw) {
+    try {
+      existing = JSON.parse(raw) ?? {};
+    } catch {
+      existing = {};
+    }
+  }
   localStorage.setItem('profileSettings', JSON.stringify({
+    ...existing,
     language: state.language,
     timezone: state.timezone,
     nickname: state.nickname,
+    lastNicknameChangeAt: state.lastNicknameChangeAt,
+    lastSpaceCreateAt: state.lastSpaceCreateAt,
+    spaceCreateLockUntil: state.spaceCreateLockUntil,
     avatarUrl: state.avatarUrl,
   }));
+};
+
+const formatLockUntil = (lockUntil) => {
+  const date = new Date(lockUntil);
+  return `${date.toLocaleDateString('ru-RU')} ${date.toLocaleTimeString('ru-RU', { hour: '2-digit', minute: '2-digit' })}`;
 };
 
 const getNicknameLockUntil = (lastChangedAt) => {
@@ -185,11 +212,48 @@ const updateNicknameControls = () => {
   if (profileNicknameChange) {
     profileNicknameChange.disabled = locked;
     if (locked && lockUntil) {
-      const date = new Date(lockUntil);
-      profileNicknameChange.title = `Смена доступна после ${date.toLocaleDateString('ru-RU')} ${date.toLocaleTimeString('ru-RU', { hour: '2-digit', minute: '2-digit' })}`;
+      profileNicknameChange.title = `Смена доступна после ${formatLockUntil(lockUntil)}`;
     } else {
       profileNicknameChange.removeAttribute('title');
     }
+  }
+};
+
+const getSpaceCreateLockUntil = () => {
+  const lockUntilFromOverride = state.spaceCreateLockUntil;
+  const lockUntilFromLastCreate = (() => {
+    if (!state.lastSpaceCreateAt) return null;
+    const lastTimestamp = new Date(state.lastSpaceCreateAt).getTime();
+    if (Number.isNaN(lastTimestamp)) return null;
+    const lockUntil = lastTimestamp + SPACE_CREATE_COOLDOWN_MS;
+    return Date.now() < lockUntil ? lockUntil : null;
+  })();
+  const lockUntil = Math.max(lockUntilFromOverride ?? 0, lockUntilFromLastCreate ?? 0);
+  return lockUntil > Date.now() ? lockUntil : null;
+};
+
+let spaceCreateUnlockTimerId = null;
+
+const updateSpaceCreateControls = () => {
+  const lockUntil = getSpaceCreateLockUntil();
+  const locked = Boolean(lockUntil);
+  const title = locked && lockUntil ? `Создание доступно после ${formatLockUntil(lockUntil)}` : '';
+  if (addSpaceBtn) {
+    addSpaceBtn.disabled = locked;
+    if (title) addSpaceBtn.title = title;
+    else addSpaceBtn.removeAttribute('title');
+  }
+  if (spaceCreateUnlockTimerId) {
+    clearTimeout(spaceCreateUnlockTimerId);
+    spaceCreateUnlockTimerId = null;
+  }
+  if (lockUntil) {
+    const delay = Math.max(lockUntil - Date.now(), 0) + 50;
+    spaceCreateUnlockTimerId = setTimeout(() => {
+      state.spaceCreateLockUntil = null;
+      saveProfileSettings();
+      updateSpaceCreateControls();
+    }, delay);
   }
 };
 
@@ -491,6 +555,12 @@ if (refreshBtn) {
 
 if (addSpaceBtn) {
   addSpaceBtn.addEventListener('click', () => {
+    const lockUntil = getSpaceCreateLockUntil();
+    if (lockUntil) {
+      updateSpaceCreateControls();
+      window.alert(`Создавать объекты можно не чаще, чем раз в 15 минут. Доступно после ${formatLockUntil(lockUntil)}.`);
+      return;
+    }
     window.location.href = 'main.html?create=1';
   });
 }
@@ -517,10 +587,13 @@ const initProfileMenu = async () => {
 
   loadProfileSettings();
   setAvatar(state.avatarUrl);
+  updateNicknameControls();
+  updateSpaceCreateControls();
   await syncProfileSettings();
   if (profileNickname) profileNickname.value = state.nickname;
   let confirmedNickname = state.nickname;
   updateNicknameControls();
+  updateSpaceCreateControls();
   if (profileTimezone) {
     const option = profileTimezone.querySelector(`option[value="${state.timezone}"]`);
     profileTimezone.value = option ? state.timezone : 'UTC';
@@ -623,6 +696,9 @@ const initProfileMenu = async () => {
   });
   profileLogout?.addEventListener('click', async () => {
     state.nickname = '';
+    state.lastNicknameChangeAt = null;
+    state.lastSpaceCreateAt = null;
+    state.spaceCreateLockUntil = null;
     state.avatarUrl = '';
     saveProfileSettings();
     try {

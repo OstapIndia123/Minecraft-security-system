@@ -2280,7 +2280,13 @@ const init = async () => {
   if (modal) {
     const params = new URLSearchParams(window.location.search);
     if (params.get('create') === '1') {
-      modal.classList.add('modal--open');
+      const lockUntil = getSpaceCreateLockUntil();
+      if (lockUntil) {
+        updateSpaceCreateControls();
+        showToast(`Создавать объекты можно не чаще, чем раз в 15 минут. Доступно после ${formatLockUntil(lockUntil)}.`);
+      } else {
+        modal.classList.add('modal--open');
+      }
       params.delete('create');
       const newUrl = `${window.location.pathname}${params.toString() ? `?${params.toString()}` : ''}`;
       window.history.replaceState({}, '', newUrl);
