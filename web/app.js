@@ -10,6 +10,8 @@ const state = {
   timezone: 'UTC',
   nickname: '',
   lastNicknameChangeAt: null,
+  lastSpaceCreateAt: null,
+  spaceCreateLockUntil: null,
   avatarUrl: '',
   role: 'user',
 };
@@ -18,6 +20,7 @@ let spaces = [];
 const FLASH_DURATION_MS = 15000;
 const logFlashActive = new Map();
 const NICKNAME_COOLDOWN_MS = 7 * 24 * 60 * 60 * 1000;
+const SPACE_CREATE_COOLDOWN_MS = 15 * 60 * 1000;
 
 const escapeHtml = (value) => String(value ?? '')
   .replace(/&/g, '&amp;')
@@ -40,6 +43,7 @@ const photosList = document.getElementById('photosList');
 const logTable = document.getElementById('logTable');
 const toast = document.getElementById('toast');
 const spaceForm = document.getElementById('spaceForm');
+const spaceSubmitButton = spaceForm?.querySelector('button[type="submit"]');
 const deviceForm = document.getElementById('deviceForm');
 const contactForm = document.getElementById('contactForm');
 const noteForm = document.getElementById('noteForm');
@@ -344,6 +348,9 @@ const loadProfileSettings = () => {
     state.language = parsed.language ?? state.language;
     state.timezone = parsed.timezone ?? state.timezone;
     state.nickname = parsed.nickname ?? state.nickname;
+    state.lastNicknameChangeAt = parsed.lastNicknameChangeAt ?? state.lastNicknameChangeAt;
+    state.lastSpaceCreateAt = parsed.lastSpaceCreateAt ?? state.lastSpaceCreateAt;
+    state.spaceCreateLockUntil = parsed.spaceCreateLockUntil ?? state.spaceCreateLockUntil;
     state.avatarUrl = parsed.avatarUrl ?? state.avatarUrl;
   } catch {
     // ignore
@@ -355,6 +362,9 @@ const saveProfileSettings = () => {
     language: state.language,
     timezone: state.timezone,
     nickname: state.nickname,
+    lastNicknameChangeAt: state.lastNicknameChangeAt,
+    lastSpaceCreateAt: state.lastSpaceCreateAt,
+    spaceCreateLockUntil: state.spaceCreateLockUntil,
     avatarUrl: state.avatarUrl,
   }));
 };
@@ -388,13 +398,22 @@ const syncProfileSettings = async () => {
     state.timezone = result.user.timezone ?? state.timezone;
     state.nickname = result.user.minecraft_nickname ?? state.nickname;
     state.lastNicknameChangeAt = result.user?.last_nickname_change_at ?? null;
+    state.lastSpaceCreateAt = result.user?.last_space_create_at ?? null;
+    state.spaceCreateLockUntil = null;
     state.avatarUrl = result.user.discord_avatar_url ?? state.avatarUrl;
     state.role = result.user.role ?? state.role;
     saveProfileSettings();
     setAvatar(state.avatarUrl);
+    updateNicknameControls();
+    updateSpaceCreateControls();
   } catch {
     // ignore
   }
+};
+
+const formatLockUntil = (lockUntil) => {
+  const date = new Date(lockUntil);
+  return `${date.toLocaleDateString('ru-RU')} ${date.toLocaleTimeString('ru-RU', { hour: '2-digit', minute: '2-digit' })}`;
 };
 
 const getNicknameLockUntil = (lastChangedAt) => {
@@ -412,11 +431,56 @@ const updateNicknameControls = () => {
   if (profileNicknameChange) {
     profileNicknameChange.disabled = locked;
     if (locked && lockUntil) {
-      const date = new Date(lockUntil);
-      profileNicknameChange.title = `Смена доступна после ${date.toLocaleDateString('ru-RU')} ${date.toLocaleTimeString('ru-RU', { hour: '2-digit', minute: '2-digit' })}`;
+      profileNicknameChange.title = `Смена доступна после ${formatLockUntil(lockUntil)}`;
     } else {
       profileNicknameChange.removeAttribute('title');
     }
+  }
+};
+
+const getSpaceCreateLockUntil = () => {
+  const lockUntilFromOverride = state.spaceCreateLockUntil;
+  const lockUntilFromLastCreate = (() => {
+    if (!state.lastSpaceCreateAt) return null;
+    const lastTimestamp = new Date(state.lastSpaceCreateAt).getTime();
+    if (Number.isNaN(lastTimestamp)) return null;
+    const lockUntil = lastTimestamp + SPACE_CREATE_COOLDOWN_MS;
+    return Date.now() < lockUntil ? lockUntil : null;
+  })();
+  const lockUntil = Math.max(lockUntilFromOverride ?? 0, lockUntilFromLastCreate ?? 0);
+  return lockUntil > Date.now() ? lockUntil : null;
+};
+
+let spaceCreateUnlockTimerId = null;
+
+const updateSpaceCreateControls = () => {
+  const lockUntil = getSpaceCreateLockUntil();
+  const locked = Boolean(lockUntil);
+  const title = locked && lockUntil ? `Создание доступно после ${formatLockUntil(lockUntil)}` : '';
+
+  if (openCreate) {
+    openCreate.disabled = locked;
+    if (title) openCreate.title = title;
+    else openCreate.removeAttribute('title');
+  }
+
+  if (spaceSubmitButton) {
+    spaceSubmitButton.disabled = locked;
+    if (title) spaceSubmitButton.title = title;
+    else spaceSubmitButton.removeAttribute('title');
+  }
+
+  if (spaceCreateUnlockTimerId) {
+    clearTimeout(spaceCreateUnlockTimerId);
+    spaceCreateUnlockTimerId = null;
+  }
+  if (lockUntil) {
+    const delay = Math.max(lockUntil - Date.now(), 0) + 50;
+    spaceCreateUnlockTimerId = setTimeout(() => {
+      state.spaceCreateLockUntil = null;
+      saveProfileSettings();
+      updateSpaceCreateControls();
+    }, delay);
   }
 };
 
@@ -583,6 +647,19 @@ const ensureEditable = () => {
   return true;
 };
 
+const handleSpaceCreateCooldown = (retryAfterMs) => {
+  if (typeof retryAfterMs !== 'number' || !Number.isFinite(retryAfterMs) || retryAfterMs <= 0) {
+    updateSpaceCreateControls();
+    return null;
+  }
+  const lockUntil = Date.now() + retryAfterMs;
+  state.spaceCreateLockUntil = lockUntil;
+  state.lastSpaceCreateAt = new Date(lockUntil - SPACE_CREATE_COOLDOWN_MS).toISOString();
+  saveProfileSettings();
+  updateSpaceCreateControls();
+  return lockUntil;
+};
+
 const handleApiError = (error, fallbackMessage) => {
   if (error.message === 'space_armed') {
     showGuardModal();
@@ -609,7 +686,12 @@ const handleApiError = (error, fallbackMessage) => {
     return;
   }
   if (error.message === 'space_create_cooldown') {
-    showToast('Создавать объекты можно не чаще, чем раз в 15 минут.');
+    const lockUntil = handleSpaceCreateCooldown(error.retryAfterMs);
+    if (lockUntil) {
+      showToast(`Создавать объекты можно не чаще, чем раз в 15 минут. Доступно после ${formatLockUntil(lockUntil)}.`);
+    } else {
+      showToast('Создавать объекты можно не чаще, чем раз в 15 минут.');
+    }
     return;
   }
   if (error.message === 'note_too_long') {
@@ -653,7 +735,10 @@ const apiFetch = async (path, options = {}) => {
       throw new Error('unauthorized');
     }
     const payload = await response.json().catch(() => ({}));
-    throw new Error(payload.error ?? `API error: ${response.status}`);
+    const error = new Error(payload.error ?? `API error: ${response.status}`);
+    error.status = response.status;
+    if (payload.retryAfterMs !== undefined) error.retryAfterMs = payload.retryAfterMs;
+    throw error;
   }
   return response.json();
 };
@@ -1616,6 +1701,12 @@ const pollLogs = async () => {
 if (spaceForm) {
   spaceForm.addEventListener('submit', async (event) => {
     event.preventDefault();
+    const lockUntil = getSpaceCreateLockUntil();
+    if (lockUntil) {
+      updateSpaceCreateControls();
+      showToast(`Создавать объекты можно не чаще, чем раз в 15 минут. Доступно после ${formatLockUntil(lockUntil)}.`);
+      return;
+    }
     const formData = new FormData(spaceForm);
     const payload = Object.fromEntries(formData.entries());
     try {
@@ -1634,6 +1725,10 @@ if (spaceForm) {
       spaceForm.reset();
       showToast('Пространство создано.');
       modal?.classList.remove('modal--open');
+      state.lastSpaceCreateAt = new Date().toISOString();
+      state.spaceCreateLockUntil = null;
+      saveProfileSettings();
+      updateSpaceCreateControls();
     } catch (error) {
       console.error(error);
       handleApiError(error, 'Не удалось создать пространство.');
@@ -1944,6 +2039,12 @@ if (editForm) {
 
 if (openCreate && modal) {
   openCreate.addEventListener('click', () => {
+    const lockUntil = getSpaceCreateLockUntil();
+    if (lockUntil) {
+      updateSpaceCreateControls();
+      showToast(`Создавать объекты можно не чаще, чем раз в 15 минут. Доступно после ${formatLockUntil(lockUntil)}.`);
+      return;
+    }
     modal.classList.add('modal--open');
   });
 }
@@ -2071,10 +2172,13 @@ const initProfileMenu = async () => {
 
   loadProfileSettings();
   setAvatar(state.avatarUrl);
+  updateNicknameControls();
+  updateSpaceCreateControls();
   await syncProfileSettings();
   if (profileNickname) profileNickname.value = state.nickname;
   let confirmedNickname = state.nickname;
   updateNicknameControls();
+  updateSpaceCreateControls();
   if (profileTimezone) {
     const option = profileTimezone.querySelector(`option[value="${state.timezone}"]`);
     profileTimezone.value = option ? state.timezone : 'UTC';
@@ -2142,6 +2246,9 @@ const initProfileMenu = async () => {
   });
   profileLogout?.addEventListener('click', async () => {
     state.nickname = '';
+    state.lastNicknameChangeAt = null;
+    state.lastSpaceCreateAt = null;
+    state.spaceCreateLockUntil = null;
     state.avatarUrl = '';
     saveProfileSettings();
     try {
