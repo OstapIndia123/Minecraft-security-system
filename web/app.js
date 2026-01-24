@@ -1,3 +1,7 @@
+const isAdminPage = document.body?.dataset?.admin === 'true';
+const profileStorageKey = isAdminPage ? 'profileSettingsAdmin' : 'profileSettings';
+const adminTokenKey = 'adminToken';
+
 const state = {
   filter: 'all',
   selectedSpaceId: null,
@@ -341,7 +345,7 @@ const applyTranslations = () => {
 };
 
 const loadProfileSettings = () => {
-  const raw = localStorage.getItem('profileSettings');
+  const raw = localStorage.getItem(profileStorageKey);
   if (!raw) return;
   try {
     const parsed = JSON.parse(raw);
@@ -358,7 +362,7 @@ const loadProfileSettings = () => {
 };
 
 const saveProfileSettings = () => {
-  localStorage.setItem('profileSettings', JSON.stringify({
+  localStorage.setItem(profileStorageKey, JSON.stringify({
     language: state.language,
     timezone: state.timezone,
     nickname: state.nickname,
@@ -710,6 +714,10 @@ const handleApiError = (error, fallbackMessage) => {
     showToast('Этот хаб уже ожидает регистрации.');
     return;
   }
+  if (error.message === 'user_blocked') {
+    showToast('Ваш аккаунт заблокирован администратором.');
+    return;
+  }
   if (error.message === 'db_auth_failed') {
     showToast('Ошибка подключения к базе данных. Проверьте POSTGRES_PASSWORD и перезапустите Docker Compose.');
     return;
@@ -721,7 +729,10 @@ const handleApiError = (error, fallbackMessage) => {
   showToast(fallbackMessage);
 };
 
-const getAuthToken = () => localStorage.getItem('authToken');
+const getAuthToken = () => {
+  if (isAdminPage) return localStorage.getItem(adminTokenKey);
+  return localStorage.getItem('authToken');
+};
 
 const apiFetch = async (path, options = {}) => {
   const token = getAuthToken();
@@ -729,6 +740,7 @@ const apiFetch = async (path, options = {}) => {
     'Content-Type': 'application/json',
     'X-App-Mode': 'pro',
     ...(token ? { Authorization: `Bearer ${token}` } : {}),
+    ...(isAdminPage && token ? { 'X-Admin-Token': token } : {}),
     ...(options.headers ?? {}),
   };
   const response = await fetch(path, { ...options, headers });
@@ -2180,6 +2192,10 @@ const initProfileMenu = async () => {
   updateSpaceCreateControls();
   await syncProfileSettings();
   if (profileNickname) profileNickname.value = state.nickname;
+  if (isAdminPage) {
+    const subtitle = document.getElementById('profileSubtitle');
+    if (subtitle) subtitle.textContent = 'Admin';
+  }
   let confirmedNickname = state.nickname;
   updateNicknameControls();
   updateSpaceCreateControls();
@@ -2255,14 +2271,20 @@ const initProfileMenu = async () => {
     state.spaceCreateLockUntil = null;
     state.avatarUrl = '';
     saveProfileSettings();
-    try {
-      await apiFetch('/api/auth/logout', { method: 'POST' });
-    } catch {
-      // ignore
+    if (!isAdminPage) {
+      try {
+        await apiFetch('/api/auth/logout', { method: 'POST' });
+      } catch {
+        // ignore
+      }
+      localStorage.removeItem('authToken');
+      toggle(false);
+      window.location.href = 'login.html';
+      return;
     }
-    localStorage.removeItem('authToken');
+    localStorage.removeItem(adminTokenKey);
     toggle(false);
-    window.location.href = 'login.html';
+    window.location.href = window.location.pathname;
   });
   switchToUser?.addEventListener('click', () => {
     window.location.href = 'user.html';
@@ -2271,7 +2293,9 @@ const initProfileMenu = async () => {
 
 const init = async () => {
   if (!getAuthToken()) {
-    window.location.href = 'login.html';
+    if (!isAdminPage) {
+      window.location.href = 'login.html';
+    }
     return;
   }
   await initProfileMenu();

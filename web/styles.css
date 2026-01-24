@@ -260,6 +260,56 @@ body {
   cursor: not-allowed;
 }
 
+.modal--fullscreen {
+  padding: 20px;
+}
+
+.modal__content--fullscreen {
+  width: min(1200px, 95vw);
+  height: min(85vh, 900px);
+  display: flex;
+  flex-direction: column;
+}
+
+.admin-users {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  max-height: 100%;
+  overflow: auto;
+}
+
+.admin-users__row {
+  display: flex;
+  justify-content: space-between;
+  gap: 16px;
+  padding: 12px 16px;
+  border-radius: 12px;
+  border: 1px solid #2a2a2a;
+  background: #1a1a1a;
+}
+
+.admin-users__info {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.admin-users__name {
+  font-weight: 600;
+}
+
+.admin-users__meta {
+  color: var(--muted);
+  font-size: 12px;
+}
+
+.admin-users__actions {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
 .button--link {
   border-color: transparent;
 }

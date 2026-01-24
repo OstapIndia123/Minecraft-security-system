@@ -25,6 +25,7 @@ CREATE TABLE users (
   timezone TEXT NOT NULL DEFAULT 'UTC',
   last_nickname_change_at TIMESTAMP,
   last_space_create_at TIMESTAMP,
+  is_blocked BOOLEAN NOT NULL DEFAULT false,
   created_at TIMESTAMP NOT NULL DEFAULT NOW()
 );
 

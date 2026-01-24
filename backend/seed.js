@@ -162,8 +162,8 @@ const seed = async () => {
   const userRecords = [];
   for (const user of users) {
     const result = await query(
-      `INSERT INTO users (email, password_hash, role, minecraft_nickname, discord_id, language, timezone, discord_avatar_url, last_nickname_change_at, last_space_create_at)
-       VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10)
+      `INSERT INTO users (email, password_hash, role, minecraft_nickname, discord_id, language, timezone, discord_avatar_url, last_nickname_change_at, last_space_create_at, is_blocked)
+       VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11)
        RETURNING id`,
       [
         user.email,
@@ -176,6 +176,7 @@ const seed = async () => {
         null,
         null,
         null,
+        false,
       ],
     );
     userRecords.push({ id: result.rows[0].id, role: user.role });

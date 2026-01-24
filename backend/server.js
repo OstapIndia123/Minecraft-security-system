@@ -15,6 +15,8 @@ const discordClientSecret = process.env.DISCORD_CLIENT_SECRET;
 const discordRedirectUri = process.env.DISCORD_REDIRECT_URI;
 const launcherApiUrl = process.env.LAUNCHER_API_URL;
 const port = Number(process.env.PORT ?? 8080);
+const adminPanelPassword = process.env.ADMIN_PANEL_PASSWORD;
+const ADMIN_USER_ID = 0;
 
 const MAX_NICKNAME_LENGTH = 16;
 const NICKNAME_COOLDOWN_MS = 7 * 24 * 60 * 60 * 1000;
@@ -109,11 +111,15 @@ const getAuthToken = (req) => {
   return req.header('x-session-token') ?? null;
 };
 
+const getAdminToken = (req) => req.header('x-admin-token') ?? null;
+
+const isAdminTokenValid = (token) => Boolean(adminPanelPassword && token && token === adminPanelPassword);
+
 const loadSessionUser = async (token) => {
   if (!token) return null;
   const result = await query(
     `SELECT users.id, users.email, users.role, users.minecraft_nickname, users.discord_id, users.discord_avatar_url,
-            users.language, users.timezone, users.last_nickname_change_at, users.last_space_create_at
+            users.language, users.timezone, users.last_nickname_change_at, users.last_space_create_at, users.is_blocked
      FROM sessions
      JOIN users ON users.id = sessions.user_id
      WHERE sessions.token = $1 AND sessions.expires_at > NOW()`,
@@ -124,10 +130,33 @@ const loadSessionUser = async (token) => {
 
 const requireAuth = async (req, res, next) => {
   try {
+    const adminToken = getAdminToken(req);
+    if (isAdminTokenValid(adminToken)) {
+      req.user = {
+        id: ADMIN_USER_ID,
+        email: 'admin@local',
+        role: 'installer',
+        minecraft_nickname: 'Admin',
+        discord_id: null,
+        discord_avatar_url: null,
+        language: 'ru',
+        timezone: 'UTC',
+        last_nickname_change_at: null,
+        last_space_create_at: null,
+        is_admin: true,
+        is_blocked: false,
+      };
+      next();
+      return;
+    }
     const token = getAuthToken(req);
     const user = await loadSessionUser(token);
     if (!user) {
       res.status(401).json({ error: 'unauthorized' });
+      return;
+    }
+    if (user.is_blocked) {
+      res.status(403).json({ error: 'user_blocked' });
       return;
     }
     req.user = user;
@@ -151,7 +180,16 @@ const requireInstaller = (req, res, next) => {
   next();
 };
 
+const requireAdmin = (req, res, next) => {
+  if (!isAdminTokenValid(getAdminToken(req))) {
+    res.status(403).json({ error: 'admin_forbidden' });
+    return;
+  }
+  next();
+};
+
 const ensureSpaceAccess = async (userId, spaceId) => {
+  if (userId === ADMIN_USER_ID) return true;
   const result = await query(
     'SELECT 1 FROM user_spaces WHERE user_id = $1 AND space_id = $2',
     [userId, spaceId],
@@ -160,6 +198,7 @@ const ensureSpaceAccess = async (userId, spaceId) => {
 };
 
 const ensureSpaceRole = async (userId, spaceId, role) => {
+  if (userId === ADMIN_USER_ID) return true;
   const result = await query(
     'SELECT 1 FROM user_spaces WHERE user_id = $1 AND space_id = $2 AND role = $3',
     [userId, spaceId, role],
@@ -757,6 +796,55 @@ app.post('/api/auth/logout', requireAuth, async (req, res) => {
   res.json({ ok: true });
 });
 
+app.post('/api/admin/login', (req, res) => {
+  if (!adminPanelPassword) {
+    res.status(503).json({ error: 'admin_disabled' });
+    return;
+  }
+  const { password } = req.body ?? {};
+  if (password !== adminPanelPassword) {
+    res.status(403).json({ error: 'admin_forbidden' });
+    return;
+  }
+  res.json({ token: adminPanelPassword });
+});
+
+app.get('/api/admin/users', requireAdmin, async (req, res) => {
+  const result = await query(
+    `SELECT id, email, role, minecraft_nickname, discord_id, is_blocked, created_at
+     FROM users
+     ORDER BY id`,
+  );
+  res.json(result.rows);
+});
+
+app.post('/api/admin/users/:id/block', requireAdmin, async (req, res) => {
+  const userId = Number(req.params.id);
+  if (!Number.isInteger(userId)) {
+    res.status(400).json({ error: 'invalid_user' });
+    return;
+  }
+  const updated = await query(
+    'UPDATE users SET is_blocked = true WHERE id = $1 RETURNING id, is_blocked',
+    [userId],
+  );
+  await query('DELETE FROM sessions WHERE user_id = $1', [userId]);
+  res.json(updated.rows[0] ?? { id: userId, is_blocked: true });
+});
+
+app.post('/api/admin/users/:id/unblock', requireAdmin, async (req, res) => {
+  const userId = Number(req.params.id);
+  if (!Number.isInteger(userId)) {
+    res.status(400).json({ error: 'invalid_user' });
+    return;
+  }
+  const updated = await query(
+    'UPDATE users SET is_blocked = false WHERE id = $1 RETURNING id, is_blocked',
+    [userId],
+  );
+  res.json(updated.rows[0] ?? { id: userId, is_blocked: false });
+});
+
 app.get('/api/auth/launcher', async (req, res) => {
   if (!launcherApiUrl) {
     res.status(500).json({ error: 'launcher_not_configured' });
@@ -862,6 +950,17 @@ app.get('/api/auth/launcher', async (req, res) => {
 });
 
 app.get('/api/spaces', requireAuth, async (req, res) => {
+  if (req.user.is_admin) {
+    const result = await query('SELECT * FROM spaces ORDER BY id');
+    const spaces = await Promise.all(
+      result.rows.map(async (row) => ({
+        ...mapSpace(row),
+        devices: await loadDevices(row.id, row.hub_id, row.hub_online),
+      })),
+    );
+    res.json(spaces);
+    return;
+  }
   const appMode = req.header('x-app-mode');
   const roleFilter = appMode === 'pro' ? 'installer' : 'user';
   const result = await query(
@@ -966,6 +1065,36 @@ app.get('/api/spaces/:id/logs', requireAuth, async (req, res) => {
 });
 
 app.get('/api/logs', requireAuth, async (req, res) => {
+  if (req.user.is_admin) {
+    const result = await query(
+      `SELECT logs.time,
+              logs.text,
+              logs.who,
+              logs.type,
+              logs.created_at,
+              spaces.name AS space_name,
+              spaces.id AS space_id
+       FROM logs
+       JOIN spaces ON spaces.id = logs.space_id
+       ORDER BY logs.id DESC
+       LIMIT 300`,
+    );
+    res.json(result.rows.map((row) => {
+      const createdAt = row.created_at;
+      const createdAtMs = createdAt ? Date.parse(`${createdAt}Z`) : null;
+      return {
+        time: row.time,
+        text: row.text,
+        who: row.who,
+        type: row.type,
+        createdAt,
+        createdAtMs,
+        spaceName: row.space_name,
+        spaceId: row.space_id,
+      };
+    }));
+    return;
+  }
   const appMode = req.header('x-app-mode');
   const roleFilter = appMode === 'pro' ? 'installer' : 'user';
   const whereClauses = ['user_spaces.user_id = $1', 'user_spaces.role = $2'];

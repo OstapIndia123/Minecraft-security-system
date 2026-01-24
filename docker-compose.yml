@@ -13,6 +13,7 @@ services:
       WEBHOOK_TOKEN: dev-secret-change-me
       WS_AUTH_TOKEN: dev-secret-change-me
       WEBHOOK_URL: http://127.0.0.1:8080/api/hub/events
+      ADMIN_PANEL_PASSWORD: ${ADMIN_PANEL_PASSWORD:-}
       DISCORD_CLIENT_ID: ""
       DISCORD_CLIENT_SECRET: ""
       DISCORD_REDIRECT_URI: http://127.0.0.1:8080/api/auth/discord/callback
