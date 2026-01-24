@@ -48,6 +48,25 @@ const renderUsers = (users) => {
     });
     actions.appendChild(toggle);
 
+    const remove = document.createElement('button');
+    remove.className = 'button button--danger';
+    remove.textContent = 'Удалить';
+    remove.addEventListener('click', async () => {
+      const confirmed = window.confirm(`Удалить аккаунт ${name}? Это действие необратимо.`);
+      if (!confirmed) return;
+      const token = getAdminToken();
+      if (!token) return;
+      const response = await fetch(`/api/admin/users/${user.id}`, {
+        method: 'DELETE',
+        headers: { 'X-Admin-Token': token },
+      });
+      if (response.ok) {
+        const next = users.filter((item) => item.id !== user.id);
+        renderUsers(next);
+      }
+    });
+    actions.appendChild(remove);
+
     row.appendChild(info);
     row.appendChild(actions);
     adminUsersList.appendChild(row);

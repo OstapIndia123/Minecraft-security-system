@@ -845,6 +845,16 @@ app.post('/api/admin/users/:id/unblock', requireAdmin, async (req, res) => {
   res.json(updated.rows[0] ?? { id: userId, is_blocked: false });
 });
 
+app.delete('/api/admin/users/:id', requireAdmin, async (req, res) => {
+  const userId = Number(req.params.id);
+  if (!Number.isInteger(userId)) {
+    res.status(400).json({ error: 'invalid_user' });
+    return;
+  }
+  await query('DELETE FROM users WHERE id = $1', [userId]);
+  res.json({ ok: true });
+});
+
 app.get('/api/auth/launcher', async (req, res) => {
   if (!launcherApiUrl) {
     res.status(500).json({ error: 'launcher_not_configured' });

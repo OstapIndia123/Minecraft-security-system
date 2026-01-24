@@ -745,13 +745,17 @@ const apiFetch = async (path, options = {}) => {
   };
   const response = await fetch(path, { ...options, headers });
   if (!response.ok) {
-    if (response.status === 401) {
-      localStorage.removeItem('authToken');
-      window.location.href = 'login.html';
-      throw new Error('unauthorized');
-    }
-    const payload = await response.json().catch(() => ({}));
-    const error = new Error(payload.error ?? `API error: ${response.status}`);
+  if (response.status === 401) {
+    localStorage.removeItem('authToken');
+    window.location.href = 'login.html';
+    throw new Error('unauthorized');
+  }
+  const payload = await response.json().catch(() => ({}));
+  if (payload?.error === 'user_blocked') {
+    window.location.href = 'blocked.html';
+    throw new Error('user_blocked');
+  }
+  const error = new Error(payload.error ?? `API error: ${response.status}`);
     error.status = response.status;
     if (payload.retryAfterMs !== undefined) error.retryAfterMs = payload.retryAfterMs;
     throw error;

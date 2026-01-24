@@ -343,6 +343,10 @@ const apiFetch = async (path) => {
       throw new Error('unauthorized');
     }
     const payload = await response.json().catch(() => ({}));
+    if (payload?.error === 'user_blocked') {
+      window.location.href = 'blocked.html';
+      throw new Error('user_blocked');
+    }
     if (payload?.error === 'db_auth_failed') {
       window.alert('Ошибка подключения к базе данных. Проверьте POSTGRES_PASSWORD и перезапустите Docker Compose.');
     }

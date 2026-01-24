@@ -138,6 +138,10 @@ const apiFetch = async (path, options = {}) => {
       throw new Error('unauthorized');
     }
     const payload = await response.json().catch(() => ({}));
+    if (payload?.error === 'user_blocked') {
+      window.location.href = 'blocked.html';
+      throw new Error('user_blocked');
+    }
     throw new Error(payload.error ?? `API error: ${response.status}`);
   }
   return response.json();
