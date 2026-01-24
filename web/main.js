@@ -234,15 +234,20 @@ const getSpaceCreateLockUntil = () => {
 
 let spaceCreateUnlockTimerId = null;
 
+const applyLockState = (button, locked, title) => {
+  if (!button) return;
+  button.disabled = false;
+  button.classList.toggle('button--locked', locked);
+  button.setAttribute('aria-disabled', locked ? 'true' : 'false');
+  if (title) button.title = title;
+  else button.removeAttribute('title');
+};
+
 const updateSpaceCreateControls = () => {
   const lockUntil = getSpaceCreateLockUntil();
   const locked = Boolean(lockUntil);
   const title = locked && lockUntil ? `Создание доступно после ${formatLockUntil(lockUntil)}` : '';
-  if (addSpaceBtn) {
-    addSpaceBtn.disabled = locked;
-    if (title) addSpaceBtn.title = title;
-    else addSpaceBtn.removeAttribute('title');
-  }
+  applyLockState(addSpaceBtn, locked, title);
   if (spaceCreateUnlockTimerId) {
     clearTimeout(spaceCreateUnlockTimerId);
     spaceCreateUnlockTimerId = null;
