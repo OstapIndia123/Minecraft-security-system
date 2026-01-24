@@ -19,6 +19,60 @@ npm run dev
 
 Примечание: `npm run seed` пересоздаёт таблицы и сбрасывает данные.
 
+## Docker Compose (backend + hub-backend + Postgres)
+```bash
+docker compose up --build
+```
+
+По умолчанию контейнер поднимает:
+- UI + backend: http://localhost:8080
+- Hub API: http://localhost:8090
+- WebSocket модов: ws://localhost:5080?token=dev-secret-change-me
+
+При необходимости задайте свои значения через переменные окружения в `docker-compose.yml`
+или файле `.env`. Например:
+```
+WEBHOOK_TOKEN=change-me
+WS_AUTH_TOKEN=change-me
+WEBHOOK_URL=http://127.0.0.1:8080/api/hub/events
+```
+
+Для безопасного доступа извне рекомендуется проксировать WebSocket через TLS (wss)
+и держать порты 5080/8090 закрытыми на фаерволе, оставив доступ только к 8080.
+
+Чтобы добавить иконку сайта, положите файл `web/favicon.png` (PNG) — он будет
+подхвачен страницами автоматически.
+
+### Настройка wsUrl для мода
+Токен WS передаётся через query‑параметр `token` (не через путь).
+Пример для локального подключения:
+```
+wsUrl: ws://127.0.0.1:5080?token=dev-secret-change-me
+```
+Для продакшена рекомендуется TLS‑прокси и `wss`:
+```
+wsUrl: wss://security.example.com/ws?token=YOUR_TOKEN
+```
+В этом случае прокси должен проксировать `wss://.../ws` на `ws://app:5080`.
+
+Если сборка падает из-за недоступности Docker Hub, можно указать локальный/зеркальный
+образ Node.js через build-arg:
+```bash
+docker compose build --build-arg BASE_IMAGE=registry.example.com/node:20-alpine
+```
+
+Если недоступен npm registry, можно:
+1) положить `backend/node_modules` и `hub-backend/node_modules` в репозиторий/каталог сборки (они будут скопированы в образ),
+2) либо указать свой npm registry:
+```bash
+docker compose build --build-arg NPM_REGISTRY=https://registry.npmjs.org
+```
+Если сеть полностью недоступна, можно пропустить установку npm зависимостей (при наличии
+предсобранных `node_modules`):
+```bash
+docker compose build --build-arg SKIP_NPM_INSTALL=true
+```
+
 Откройте:
 - Вход: http://localhost:8080/login.html
 - PRO (Режим ПЦН): http://localhost:8080/index.html
