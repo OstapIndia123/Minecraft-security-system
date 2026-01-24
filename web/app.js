@@ -17,7 +17,7 @@ const state = {
 let spaces = [];
 const FLASH_DURATION_MS = 15000;
 const logFlashActive = new Map();
-const NICKNAME_COOLDOWN_MS = 3 * 24 * 60 * 60 * 1000;
+const NICKNAME_COOLDOWN_MS = 7 * 24 * 60 * 60 * 1000;
 
 const escapeHtml = (value) => String(value ?? '')
   .replace(/&/g, '&amp;')
@@ -605,7 +605,7 @@ const handleApiError = (error, fallbackMessage) => {
     return;
   }
   if (error.message === 'nickname_cooldown') {
-    showToast('Сменить ник можно раз в 3 дня.');
+    showToast('Сменить ник можно раз в 7 дней.');
     return;
   }
   if (error.message === 'note_too_long') {
@@ -1038,7 +1038,7 @@ const renderMembers = (members) => {
             <div class="member-card__title">${label}</div>
             <div class="member-card__meta">ID: ${member.id}</div>
           </div>
-          <button class="button button--ghost ${member.is_self ? '' : 'button--danger'}" data-member-id="${member.id}">
+          <button class="button button--ghost ${member.is_self ? '' : 'button--danger'}" data-member-id="${member.id}" data-member-role="${member.space_role}">
             ${member.is_self ? t('engineer.members.leave') : t('engineer.members.delete')}
           </button>
         `;
@@ -1046,10 +1046,10 @@ const renderMembers = (members) => {
           try {
             showLoading();
             if (member.is_self) {
-              await leaveSpace();
+              await leaveSpace(member.space_role);
               showToast('Вы покинули пространство.');
             } else {
-              await removeMember(member.id);
+              await removeMember(member.id, member.space_role);
             }
           } catch (error) {
             if (error.message === 'last_installer') {
@@ -1081,7 +1081,7 @@ const renderMembers = (members) => {
             <div class="member-card__title">${label}</div>
             <div class="member-card__meta">ID: ${member.id}</div>
           </div>
-          <button class="button button--ghost ${member.is_self ? '' : 'button--danger'}" data-member-id="${member.id}">
+          <button class="button button--ghost ${member.is_self ? '' : 'button--danger'}" data-member-id="${member.id}" data-member-role="${member.space_role}">
             ${member.is_self ? t('engineer.members.leave') : t('engineer.members.delete')}
           </button>
         `;
@@ -1089,10 +1089,10 @@ const renderMembers = (members) => {
           try {
             showLoading();
             if (member.is_self) {
-              await leaveSpace();
+              await leaveSpace(member.space_role);
               showToast('Вы покинули пространство.');
             } else {
-              await removeMember(member.id);
+              await removeMember(member.id, member.space_role);
             }
           } catch (error) {
             if (error.message === 'last_installer') {
@@ -1125,15 +1125,19 @@ const addMember = async (role, identifier) => {
   await loadMembers();
 };
 
-const leaveSpace = async () => {
+const leaveSpace = async (role) => {
   if (!state.selectedSpaceId) return;
-  await apiFetch(`/api/spaces/${state.selectedSpaceId}/leave`, { method: 'POST' });
+  await apiFetch(`/api/spaces/${state.selectedSpaceId}/leave`, {
+    method: 'POST',
+    body: JSON.stringify({ role }),
+  });
   await refreshAll();
 };
 
-const removeMember = async (userId) => {
+const removeMember = async (userId, role) => {
   if (!state.selectedSpaceId) return;
-  await apiFetch(`/api/spaces/${state.selectedSpaceId}/members/${userId}`, { method: 'DELETE' });
+  const query = role ? `?role=${encodeURIComponent(role)}` : '';
+  await apiFetch(`/api/spaces/${state.selectedSpaceId}/members/${userId}${query}`, { method: 'DELETE' });
   await loadMembers();
 };
 
@@ -2094,7 +2098,7 @@ const initProfileMenu = async () => {
     }
     const result = await openActionModal({
       title: 'Сменить ник?',
-      message: 'Ник нельзя сменить будет в течении следующих 3-х дней.',
+      message: 'Ник нельзя сменить будет в течении следующих 7 дней.',
       confirmText: 'Сменить',
     });
     if (!result?.confirmed) {

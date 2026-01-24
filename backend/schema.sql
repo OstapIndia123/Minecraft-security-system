@@ -59,7 +59,7 @@ CREATE TABLE user_spaces (
   user_id INT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
   space_id TEXT NOT NULL REFERENCES spaces(id) ON DELETE CASCADE,
   role TEXT NOT NULL DEFAULT 'user',
-  PRIMARY KEY (user_id, space_id)
+  PRIMARY KEY (user_id, space_id, role)
 );
 
 CREATE TABLE devices (

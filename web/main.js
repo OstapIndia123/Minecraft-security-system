@@ -11,7 +11,7 @@ const state = {
 
 const FLASH_DURATION_MS = 15000;
 const logFlashActive = new Map();
-const NICKNAME_COOLDOWN_MS = 3 * 24 * 60 * 60 * 1000;
+const NICKNAME_COOLDOWN_MS = 7 * 24 * 60 * 60 * 1000;
 
 const escapeHtml = (value) => String(value ?? '')
   .replace(/&/g, '&amp;')

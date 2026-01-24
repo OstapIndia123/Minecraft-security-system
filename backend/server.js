@@ -17,7 +17,7 @@ const launcherApiUrl = process.env.LAUNCHER_API_URL;
 const port = Number(process.env.PORT ?? 8080);
 
 const MAX_NICKNAME_LENGTH = 16;
-const NICKNAME_COOLDOWN_MS = 3 * 24 * 60 * 60 * 1000;
+const NICKNAME_COOLDOWN_MS = 7 * 24 * 60 * 60 * 1000;
 const MIN_INTERVAL_MS = 300;
 const MAX_SIREN_DURATION_SEC = 120;
 const MAX_DELAY_SECONDS = 120;
@@ -141,12 +141,15 @@ const ensureSpaceAccess = async (userId, spaceId) => {
 };
 
 const ensureSpaceRole = async (userId, spaceId, role) => {
+  const roles = Array.isArray(role) ? role : [role];
   const result = await query(
-    'SELECT 1 FROM user_spaces WHERE user_id = $1 AND space_id = $2 AND role = $3',
-    [userId, spaceId, role],
+    'SELECT 1 FROM user_spaces WHERE user_id = $1 AND space_id = $2 AND role = ANY($3)',
+    [userId, spaceId, roles],
   );
   return result.rows.length > 0;
 };
+
+const resolveRoleFilter = (appMode) => (appMode === 'pro' ? ['installer'] : ['user', 'installer']);
 
 const ensureNicknameAvailable = async (nickname, userId) => {
   if (!nickname) return true;
@@ -816,7 +819,7 @@ app.get('/api/auth/launcher', async (req, res) => {
           discordAvatarUrl,
           'ru',
           'UTC',
-          new Date(),
+          null,
         ],
       );
       user = insert.rows[0];
@@ -831,11 +834,11 @@ app.get('/api/auth/launcher', async (req, res) => {
 
 app.get('/api/spaces', requireAuth, async (req, res) => {
   const appMode = req.header('x-app-mode');
-  const roleFilter = appMode === 'pro' ? 'installer' : 'user';
+  const roleFilter = resolveRoleFilter(appMode);
   const result = await query(
-    `SELECT spaces.* FROM spaces
+    `SELECT DISTINCT spaces.* FROM spaces
      JOIN user_spaces ON user_spaces.space_id = spaces.id
-     WHERE user_spaces.user_id = $1 AND user_spaces.role = $2
+     WHERE user_spaces.user_id = $1 AND user_spaces.role = ANY($2)
      ORDER BY spaces.id`,
     [req.user.id, roleFilter],
   );
@@ -850,7 +853,7 @@ app.get('/api/spaces', requireAuth, async (req, res) => {
 
 app.get('/api/spaces/:id', requireAuth, async (req, res) => {
   const appMode = req.header('x-app-mode');
-  const roleFilter = appMode === 'pro' ? 'installer' : 'user';
+  const roleFilter = resolveRoleFilter(appMode);
   const allowed = await ensureSpaceRole(req.user.id, req.params.id, roleFilter);
   if (!allowed) {
     res.status(403).json({ error: 'forbidden' });
@@ -907,7 +910,7 @@ app.get('/api/spaces/:id/await-key-scan', requireAuth, requireInstaller, async (
 
 app.get('/api/spaces/:id/logs', requireAuth, async (req, res) => {
   const appMode = req.header('x-app-mode');
-  const roleFilter = appMode === 'pro' ? 'installer' : 'user';
+  const roleFilter = resolveRoleFilter(appMode);
   const allowed = await ensureSpaceRole(req.user.id, req.params.id, roleFilter);
   if (!allowed) {
     res.status(403).json({ error: 'forbidden' });
@@ -930,7 +933,7 @@ app.get('/api/spaces/:id/logs', requireAuth, async (req, res) => {
 
 app.get('/api/logs', requireAuth, async (req, res) => {
   const appMode = req.header('x-app-mode');
-  const roleFilter = appMode === 'pro' ? 'installer' : 'user';
+  const roleFilter = resolveRoleFilter(appMode);
   const result = await query(
     `SELECT logs.time,
             logs.text,
@@ -941,8 +944,13 @@ app.get('/api/logs', requireAuth, async (req, res) => {
             spaces.id AS space_id
      FROM logs
      JOIN spaces ON spaces.id = logs.space_id
-     JOIN user_spaces ON user_spaces.space_id = spaces.id
-     WHERE user_spaces.user_id = $1 AND user_spaces.role = $2
+     WHERE EXISTS (
+       SELECT 1
+       FROM user_spaces
+       WHERE user_spaces.space_id = spaces.id
+         AND user_spaces.user_id = $1
+         AND user_spaces.role = ANY($2)
+     )
      ORDER BY logs.id DESC
      LIMIT 300`,
     [req.user.id, roleFilter],
@@ -1017,7 +1025,10 @@ app.post('/api/spaces', requireAuth, requireInstaller, async (req, res) => {
 
   await appendLog(generatedId, 'Создано пространство', 'UI', 'system');
   await appendLog(generatedId, 'Хаб привязан к пространству', 'UI', 'system');
-  await query('INSERT INTO user_spaces (user_id, space_id, role) VALUES ($1,$2,$3)', [req.user.id, generatedId, 'installer']);
+  await query(
+    'INSERT INTO user_spaces (user_id, space_id, role) VALUES ($1,$2,$3) ON CONFLICT DO NOTHING',
+    [req.user.id, generatedId, 'installer'],
+  );
   await query('INSERT INTO hubs (id, space_id) VALUES ($1,$2)', [normalizedHubId, generatedId]);
   const space = await query('SELECT * FROM spaces WHERE id = $1', [generatedId]);
   const result = mapSpace(space.rows[0]);
@@ -1200,7 +1211,7 @@ app.post('/api/spaces/:id/members', requireAuth, requireInstaller, async (req, r
     return;
   }
   await query(
-    'INSERT INTO user_spaces (user_id, space_id, role) VALUES ($1,$2,$3) ON CONFLICT (user_id, space_id) DO UPDATE SET role = EXCLUDED.role',
+    'INSERT INTO user_spaces (user_id, space_id, role) VALUES ($1,$2,$3) ON CONFLICT DO NOTHING',
     [target.id, req.params.id, desiredRole],
   );
   const roleLabel = desiredRole === 'installer' ? 'Инженер монтажа' : 'Пользователь';
@@ -1215,12 +1226,8 @@ app.post('/api/spaces/:id/leave', requireAuth, async (req, res) => {
     res.status(403).json({ error: 'forbidden' });
     return;
   }
-  const membership = await query(
-    'SELECT role FROM user_spaces WHERE user_id = $1 AND space_id = $2',
-    [req.user.id, req.params.id],
-  );
-  const membershipRole = membership.rows[0]?.role ?? 'user';
-  if (membershipRole === 'installer') {
+  const role = req.body?.role === 'installer' ? 'installer' : 'user';
+  if (role === 'installer') {
     const installers = await query(
       `SELECT COUNT(*)::int AS count
        FROM user_spaces
@@ -1232,7 +1239,10 @@ app.post('/api/spaces/:id/leave', requireAuth, async (req, res) => {
       return;
     }
   }
-  await query('DELETE FROM user_spaces WHERE user_id = $1 AND space_id = $2', [req.user.id, req.params.id]);
+  await query(
+    'DELETE FROM user_spaces WHERE user_id = $1 AND space_id = $2 AND role = $3',
+    [req.user.id, req.params.id, role],
+  );
   res.json({ ok: true });
 });
 
@@ -1247,6 +1257,7 @@ app.delete('/api/spaces/:id/members/:userId', requireAuth, requireInstaller, asy
     res.status(400).json({ error: 'invalid_user' });
     return;
   }
+  const role = req.query.role === 'installer' ? 'installer' : 'user';
   const targetResult = await query(
     `SELECT users.id, users.role, user_spaces.role AS space_role
      FROM users
@@ -1258,8 +1269,7 @@ app.delete('/api/spaces/:id/members/:userId', requireAuth, requireInstaller, asy
     res.status(404).json({ error: 'user_not_found' });
     return;
   }
-  const targetRole = targetResult.rows[0].space_role ?? targetResult.rows[0].role;
-  if (targetRole === 'installer') {
+  if (role === 'installer') {
     const installers = await query(
       `SELECT COUNT(*)::int AS count
        FROM user_spaces
@@ -1271,7 +1281,10 @@ app.delete('/api/spaces/:id/members/:userId', requireAuth, requireInstaller, asy
       return;
     }
   }
-  await query('DELETE FROM user_spaces WHERE user_id = $1 AND space_id = $2', [userId, req.params.id]);
+  await query(
+    'DELETE FROM user_spaces WHERE user_id = $1 AND space_id = $2 AND role = $3',
+    [userId, req.params.id, role],
+  );
   res.json({ ok: true });
 });
 
@@ -1837,7 +1850,7 @@ const handleReaderScan = async ({ readerId, payload, ts }) => {
 
 app.post('/api/spaces/:id/arm', requireAuth, async (req, res) => {
   const appMode = req.header('x-app-mode');
-  const roleFilter = appMode === 'pro' ? 'installer' : 'user';
+  const roleFilter = resolveRoleFilter(appMode);
   const allowed = await ensureSpaceRole(req.user.id, req.params.id, roleFilter);
   if (!allowed) {
     res.status(403).json({ error: 'forbidden' });
@@ -1850,7 +1863,7 @@ app.post('/api/spaces/:id/arm', requireAuth, async (req, res) => {
 
 app.post('/api/spaces/:id/disarm', requireAuth, async (req, res) => {
   const appMode = req.header('x-app-mode');
-  const roleFilter = appMode === 'pro' ? 'installer' : 'user';
+  const roleFilter = resolveRoleFilter(appMode);
   const allowed = await ensureSpaceRole(req.user.id, req.params.id, roleFilter);
   if (!allowed) {
     res.status(403).json({ error: 'forbidden' });
