@@ -4,12 +4,28 @@ const state = {
   language: 'ru',
   timezone: 'UTC',
   nickname: '',
+  lastNicknameChangeAt: null,
+  lastSpaceCreateAt: null,
+  spaceCreateLockUntil: null,
   avatarUrl: '',
   role: 'user',
 };
 
 const FLASH_DURATION_MS = 15000;
 const logFlashActive = new Map();
+const NICKNAME_COOLDOWN_MS = 7 * 24 * 60 * 60 * 1000;
+const SPACE_CREATE_COOLDOWN_MS = 15 * 60 * 1000;
+
+const showBlockedScreen = () => {
+  document.body.innerHTML = '<div class="blocked-screen">Вы были заблокированы.</div>';
+};
+
+const escapeHtml = (value) => String(value ?? '')
+  .replace(/&/g, '&amp;')
+  .replace(/</g, '&lt;')
+  .replace(/>/g, '&gt;')
+  .replace(/"/g, '&quot;')
+  .replace(/'/g, '&#39;');
 
 const grid = document.getElementById('mainObjectGrid');
 const logTable = document.getElementById('mainLogTable');
@@ -21,12 +37,20 @@ const searchInput = document.getElementById('mainSearch');
 const avatarButton = document.getElementById('avatarButton');
 const profileDropdown = document.getElementById('profileDropdown');
 const profileNickname = document.getElementById('profileNickname');
+const profileNicknameChange = document.getElementById('profileNicknameChange');
 const profileTimezone = document.getElementById('profileTimezone');
 const profileLanguage = document.getElementById('profileLanguage');
 const profileLogout = document.getElementById('profileLogout');
 const switchToUser = document.getElementById('switchToUser');
 const avatarImages = document.querySelectorAll('[data-avatar]');
 const avatarFallbacks = document.querySelectorAll('[data-avatar-fallback]');
+const actionModal = document.getElementById('actionModal');
+const actionModalTitle = document.getElementById('actionModalTitle');
+const actionModalMessage = document.getElementById('actionModalMessage');
+const actionModalForm = document.getElementById('actionModalForm');
+const actionModalConfirm = document.getElementById('actionModalConfirm');
+const actionModalCancel = document.getElementById('actionModalCancel');
+const actionModalClose = document.getElementById('closeActionModal');
 
 const translations = {
   ru: {
@@ -53,6 +77,7 @@ const translations = {
     'status.night': 'Ночной режим',
     'profile.title': 'Профиль',
     'profile.nickname': 'Игровой ник',
+    'profile.nickname.change': 'Сменить',
     'profile.timezone': 'Часовой пояс',
     'profile.language': 'Язык',
     'profile.switchUser': 'Перейти на обычный',
@@ -82,6 +107,7 @@ const translations = {
     'status.night': 'Night mode',
     'profile.title': 'Profile',
     'profile.nickname': 'Game nickname',
+    'profile.nickname.change': 'Change',
     'profile.timezone': 'Time zone',
     'profile.language': 'Language',
     'profile.switchUser': 'Go to user',
@@ -115,6 +141,9 @@ const loadProfileSettings = () => {
     state.language = parsed.language ?? state.language;
     state.timezone = parsed.timezone ?? state.timezone;
     state.nickname = parsed.nickname ?? state.nickname;
+    state.lastNicknameChangeAt = parsed.lastNicknameChangeAt ?? state.lastNicknameChangeAt;
+    state.lastSpaceCreateAt = parsed.lastSpaceCreateAt ?? state.lastSpaceCreateAt;
+    state.spaceCreateLockUntil = parsed.spaceCreateLockUntil ?? state.spaceCreateLockUntil;
     state.avatarUrl = parsed.avatarUrl ?? state.avatarUrl;
   } catch {
     // ignore
@@ -132,22 +161,109 @@ const syncProfileSettings = async () => {
     state.language = payload.user.language ?? state.language;
     state.timezone = payload.user.timezone ?? state.timezone;
     state.nickname = payload.user.minecraft_nickname ?? state.nickname;
+    state.lastNicknameChangeAt = payload.user?.last_nickname_change_at ?? null;
+    state.lastSpaceCreateAt = payload.user?.last_space_create_at ?? null;
     state.avatarUrl = payload.user.discord_avatar_url ?? state.avatarUrl;
     state.role = payload.user.role ?? state.role;
     saveProfileSettings();
     setAvatar(state.avatarUrl);
+    updateNicknameControls();
+    updateSpaceCreateControls();
   } catch {
     // ignore
   }
 };
 
 const saveProfileSettings = () => {
+  const raw = localStorage.getItem('profileSettings');
+  let existing = {};
+  if (raw) {
+    try {
+      existing = JSON.parse(raw) ?? {};
+    } catch {
+      existing = {};
+    }
+  }
   localStorage.setItem('profileSettings', JSON.stringify({
+    ...existing,
     language: state.language,
     timezone: state.timezone,
     nickname: state.nickname,
+    lastNicknameChangeAt: state.lastNicknameChangeAt,
+    lastSpaceCreateAt: state.lastSpaceCreateAt,
+    spaceCreateLockUntil: state.spaceCreateLockUntil,
     avatarUrl: state.avatarUrl,
   }));
+};
+
+const formatLockUntil = (lockUntil) => {
+  const date = new Date(lockUntil);
+  return `${date.toLocaleDateString('ru-RU')} ${date.toLocaleTimeString('ru-RU', { hour: '2-digit', minute: '2-digit' })}`;
+};
+
+const getNicknameLockUntil = (lastChangedAt) => {
+  if (!lastChangedAt) return null;
+  const lastTimestamp = new Date(lastChangedAt).getTime();
+  if (Number.isNaN(lastTimestamp)) return null;
+  const lockUntil = lastTimestamp + NICKNAME_COOLDOWN_MS;
+  return Date.now() < lockUntil ? lockUntil : null;
+};
+
+const updateNicknameControls = () => {
+  const lockUntil = getNicknameLockUntil(state.lastNicknameChangeAt);
+  const locked = Boolean(lockUntil);
+  if (profileNickname) profileNickname.disabled = locked;
+  if (profileNicknameChange) {
+    profileNicknameChange.disabled = locked;
+    if (locked && lockUntil) {
+      profileNicknameChange.title = `Смена доступна после ${formatLockUntil(lockUntil)}`;
+    } else {
+      profileNicknameChange.removeAttribute('title');
+    }
+  }
+};
+
+const getSpaceCreateLockUntil = () => {
+  const lockUntilFromOverride = state.spaceCreateLockUntil;
+  const lockUntilFromLastCreate = (() => {
+    if (!state.lastSpaceCreateAt) return null;
+    const lastTimestamp = new Date(state.lastSpaceCreateAt).getTime();
+    if (Number.isNaN(lastTimestamp)) return null;
+    const lockUntil = lastTimestamp + SPACE_CREATE_COOLDOWN_MS;
+    return Date.now() < lockUntil ? lockUntil : null;
+  })();
+  const lockUntil = Math.max(lockUntilFromOverride ?? 0, lockUntilFromLastCreate ?? 0);
+  return lockUntil > Date.now() ? lockUntil : null;
+};
+
+let spaceCreateUnlockTimerId = null;
+
+const applyLockState = (button, locked, title) => {
+  if (!button) return;
+  button.disabled = false;
+  button.classList.toggle('button--locked', locked);
+  button.setAttribute('aria-disabled', locked ? 'true' : 'false');
+  if (title) button.title = title;
+  else button.removeAttribute('title');
+};
+
+const updateSpaceCreateControls = () => {
+  const lockUntil = getSpaceCreateLockUntil();
+  const locked = Boolean(lockUntil);
+  const title = locked && lockUntil ? `Создание доступно после ${formatLockUntil(lockUntil)}` : '';
+  applyLockState(addSpaceBtn, locked, title);
+  if (spaceCreateUnlockTimerId) {
+    clearTimeout(spaceCreateUnlockTimerId);
+    spaceCreateUnlockTimerId = null;
+  }
+  if (lockUntil) {
+    const delay = Math.max(lockUntil - Date.now(), 0) + 50;
+    spaceCreateUnlockTimerId = setTimeout(() => {
+      state.spaceCreateLockUntil = null;
+      saveProfileSettings();
+      updateSpaceCreateControls();
+    }, delay);
+  }
 };
 
 const setAvatar = (avatarUrl) => {
@@ -171,6 +287,52 @@ const setAvatar = (avatarUrl) => {
   });
 };
 
+const openActionModal = ({
+  title = 'Подтвердите действие',
+  message = '',
+  confirmText = 'Подтвердить',
+  cancelText = 'Отмена',
+} = {}) => new Promise((resolve) => {
+  if (!actionModal || !actionModalConfirm || !actionModalCancel) {
+    resolve(null);
+    return;
+  }
+
+  if (actionModalTitle) actionModalTitle.textContent = title;
+  if (actionModalMessage) actionModalMessage.textContent = message;
+  actionModalConfirm.textContent = confirmText;
+  actionModalCancel.textContent = cancelText;
+
+  if (actionModalForm) {
+    actionModalForm.innerHTML = '';
+    actionModalForm.classList.add('hidden');
+  }
+
+  const close = (result) => {
+    actionModalConfirm.removeEventListener('click', handleConfirm);
+    actionModalCancel.removeEventListener('click', handleCancel);
+    actionModalClose?.removeEventListener('click', handleCancel);
+    actionModal.removeEventListener('click', handleBackdrop);
+    actionModal.classList.remove('modal--open');
+    resolve(result);
+  };
+
+  const handleConfirm = () => close({ confirmed: true });
+  const handleCancel = () => close(null);
+  const handleBackdrop = (event) => {
+    if (event.target === actionModal) {
+      close(null);
+    }
+  };
+
+  actionModalConfirm.addEventListener('click', handleConfirm);
+  actionModalCancel.addEventListener('click', handleCancel);
+  actionModalClose?.addEventListener('click', handleCancel);
+  actionModal.addEventListener('click', handleBackdrop);
+
+  actionModal.classList.add('modal--open');
+});
+
 const apiFetch = async (path) => {
   const token = localStorage.getItem('authToken');
   const response = await fetch(path, {
@@ -184,7 +346,15 @@ const apiFetch = async (path) => {
       window.location.href = 'login.html';
       throw new Error('unauthorized');
     }
-    throw new Error(`API error: ${response.status}`);
+    const payload = await response.json().catch(() => ({}));
+    if (payload?.error === 'user_blocked') {
+      showBlockedScreen();
+      throw new Error('user_blocked');
+    }
+    if (payload?.error === 'db_auth_failed') {
+      window.alert('Ошибка подключения к базе данных. Проверьте POSTGRES_PASSWORD и перезапустите Docker Compose.');
+    }
+    throw new Error(payload.error ?? `API error: ${response.status}`);
   }
   return response.json();
 };
@@ -256,10 +426,11 @@ const renderObjects = (spaces) => {
     const shouldFlash = Boolean(localStorage.getItem(alarmKey));
     card.className = `object-card ${shouldFlash ? 'object-card--alarm object-card--alarm-flash' : ''}`;
     card.innerHTML = `
-      <div class="object-card__title">${space.name}</div>
-      <div class="object-card__meta">${t('pcn.object.hubId')} ${space.hubId ?? '—'}</div>
+      <div class="object-card__title">${escapeHtml(space.name)}</div>
+      <div class="object-card__meta">${t('pcn.object.hubId')} ${escapeHtml(space.hubId ?? '—')}</div>
       <div class="object-card__status">${t(`status.${space.status}`) ?? space.status}</div>
-      <div class="object-card__meta">${space.address}</div>
+      <div class="object-card__meta">${escapeHtml(space.server ?? '—')}</div>
+      <div class="object-card__meta">${escapeHtml(space.address)}</div>
     `;
     card.addEventListener('click', () => {
       localStorage.removeItem(alarmKey);
@@ -355,13 +526,15 @@ const renderLogs = (logs) => {
       logFlashActive.delete(flashKey);
     }
     row.className = `log-row ${isAlarm ? 'log-row--alarm' : ''} ${shouldFlash ? 'log-row--alarm-flash' : ''} ${isRestore ? 'log-row--restore' : ''} ${isHub ? 'log-row--hub' : ''}`;
-    const rawText = isHub ? log.text.replace(/\n/g, '<br />') : log.text;
-    const text = isHub ? rawText : translateLogText(rawText);
-    const timeLabel = formatLogTime(logTimestamp) ?? log.time;
+    const rawText = isHub ? log.text : translateLogText(log.text);
+    const safeText = escapeHtml(rawText);
+    const text = isHub ? safeText.replace(/\n/g, '<br />') : safeText;
+    const timeLabel = escapeHtml(formatLogTime(logTimestamp) ?? log.time);
+    const spaceLabel = escapeHtml(log.spaceName);
     row.innerHTML = `
       <span>${timeLabel}</span>
       <span>${text}</span>
-      <span class="muted">${log.spaceName}</span>
+      <span class="muted">${spaceLabel}</span>
     `;
     logTable.appendChild(row);
   });
@@ -399,6 +572,12 @@ if (refreshBtn) {
 
 if (addSpaceBtn) {
   addSpaceBtn.addEventListener('click', () => {
+    const lockUntil = getSpaceCreateLockUntil();
+    if (lockUntil) {
+      updateSpaceCreateControls();
+      window.alert(`Создавать объекты можно не чаще, чем раз в 15 минут. Доступно после ${formatLockUntil(lockUntil)}.`);
+      return;
+    }
     window.location.href = 'main.html?create=1';
   });
 }
@@ -425,8 +604,13 @@ const initProfileMenu = async () => {
 
   loadProfileSettings();
   setAvatar(state.avatarUrl);
+  updateNicknameControls();
+  updateSpaceCreateControls();
   await syncProfileSettings();
   if (profileNickname) profileNickname.value = state.nickname;
+  let confirmedNickname = state.nickname;
+  updateNicknameControls();
+  updateSpaceCreateControls();
   if (profileTimezone) {
     const option = profileTimezone.querySelector(`option[value="${state.timezone}"]`);
     profileTimezone.value = option ? state.timezone : 'UTC';
@@ -442,15 +626,63 @@ const initProfileMenu = async () => {
     state.nickname = event.target.value;
     saveProfileSettings();
   });
-  profileNickname?.addEventListener('blur', () => {
-    fetch('/api/auth/me', {
-      method: 'PATCH',
-      headers: {
-        'Content-Type': 'application/json',
-        Authorization: `Bearer ${localStorage.getItem('authToken') ?? ''}`,
-      },
-      body: JSON.stringify({ minecraft_nickname: state.nickname }),
-    }).catch(() => null);
+  profileNicknameChange?.addEventListener('click', async () => {
+    if (!profileNickname || profileNickname.disabled) return;
+    const nextNickname = profileNickname.value.trim();
+    if (!nextNickname) {
+      window.alert('Введите корректный ник.');
+      return;
+    }
+    if (nextNickname === confirmedNickname) {
+      window.alert('Ник уже установлен.');
+      return;
+    }
+    const modalResult = await openActionModal({
+      title: 'Сменить ник?',
+      message: 'Ник нельзя сменить будет в течении следующих 7 дней.',
+      confirmText: 'Сменить',
+    });
+    if (!modalResult?.confirmed) {
+      profileNickname.value = confirmedNickname;
+      return;
+    }
+    try {
+      const response = await fetch('/api/auth/me', {
+        method: 'PATCH',
+        headers: {
+          'Content-Type': 'application/json',
+          Authorization: `Bearer ${localStorage.getItem('authToken') ?? ''}`,
+          'X-App-Mode': 'pro',
+        },
+        body: JSON.stringify({ minecraft_nickname: nextNickname }),
+      });
+      if (response.ok) {
+        const payload = await response.json().catch(() => ({}));
+        confirmedNickname = payload.user?.minecraft_nickname ?? nextNickname;
+        state.nickname = confirmedNickname;
+        state.lastNicknameChangeAt = payload.user?.last_nickname_change_at ?? null;
+        profileNickname.value = confirmedNickname;
+        saveProfileSettings();
+        updateNicknameControls();
+        return;
+      }
+      const payload = await response.json().catch(() => ({}));
+      const errorMessage = payload?.error === 'nickname_too_long'
+        ? 'Ник должен быть не длиннее 16 символов.'
+        : payload?.error === 'nickname_cooldown'
+          ? 'Сменить ник можно раз в 7 дней.'
+          : payload?.error === 'invalid_nickname'
+            ? 'Введите корректный ник.'
+            : payload?.error === 'nickname_taken'
+              ? 'Такой ник уже используется.'
+              : 'Не удалось обновить ник.';
+      window.alert(errorMessage);
+      profileNickname.value = confirmedNickname;
+      saveProfileSettings();
+    } catch {
+      profileNickname.value = confirmedNickname;
+      saveProfileSettings();
+    }
   });
   profileTimezone?.addEventListener('change', (event) => {
     state.timezone = event.target.value;
@@ -481,6 +713,9 @@ const initProfileMenu = async () => {
   });
   profileLogout?.addEventListener('click', async () => {
     state.nickname = '';
+    state.lastNicknameChangeAt = null;
+    state.lastSpaceCreateAt = null;
+    state.spaceCreateLockUntil = null;
     state.avatarUrl = '';
     saveProfileSettings();
     try {
