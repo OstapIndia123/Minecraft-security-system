@@ -926,6 +926,11 @@ app.get('/api/spaces/:id/logs', requireAuth, async (req, res) => {
     res.status(403).json({ error: 'forbidden' });
     return;
   }
+  const whereClauses = ['space_id = $1'];
+  const params = [req.params.id];
+  if (appMode !== 'pro') {
+    whereClauses.push("type <> 'hub_raw'", "type <> 'hub'");
+  }
   const result = await query(
     `SELECT time,
             text,
@@ -933,10 +938,10 @@ app.get('/api/spaces/:id/logs', requireAuth, async (req, res) => {
             type,
             created_at
      FROM logs
-     WHERE space_id = $1
+     WHERE ${whereClauses.join(' AND ')}
      ORDER BY id DESC
      LIMIT 200`,
-    [req.params.id],
+    params,
   );
   res.json(result.rows.map(mapLog));
 });
@@ -944,6 +949,10 @@ app.get('/api/spaces/:id/logs', requireAuth, async (req, res) => {
 app.get('/api/logs', requireAuth, async (req, res) => {
   const appMode = req.header('x-app-mode');
   const roleFilter = appMode === 'pro' ? 'installer' : 'user';
+  const whereClauses = ['user_spaces.user_id = $1', 'user_spaces.role = $2'];
+  if (appMode !== 'pro') {
+    whereClauses.push("logs.type <> 'hub_raw'", "logs.type <> 'hub'");
+  }
   const result = await query(
     `SELECT logs.time,
             logs.text,
@@ -955,7 +964,7 @@ app.get('/api/logs', requireAuth, async (req, res) => {
      FROM logs
      JOIN spaces ON spaces.id = logs.space_id
      JOIN user_spaces ON user_spaces.space_id = spaces.id
-     WHERE user_spaces.user_id = $1 AND user_spaces.role = $2
+     WHERE ${whereClauses.join(' AND ')}
      ORDER BY logs.id DESC
      LIMIT 300`,
     [req.user.id, roleFilter],
