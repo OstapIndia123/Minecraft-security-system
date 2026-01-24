@@ -140,7 +140,7 @@ const seed = async () => {
     },
   ];
 
-  const userIds = [];
+  const userRecords = [];
   for (const user of users) {
     const result = await query(
       `INSERT INTO users (email, password_hash, role, minecraft_nickname, language, timezone, discord_avatar_url, last_nickname_change_at)
@@ -157,12 +157,15 @@ const seed = async () => {
         null,
       ],
     );
-    userIds.push(result.rows[0].id);
+    userRecords.push({ id: result.rows[0].id, role: user.role });
   }
 
-  for (const userId of userIds) {
+  for (const userRecord of userRecords) {
     for (const space of spaces) {
-      await query('INSERT INTO user_spaces (user_id, space_id, role) VALUES ($1,$2,$3)', [userId, space.id, 'installer']);
+      await query(
+        'INSERT INTO user_spaces (user_id, space_id, role) VALUES ($1,$2,$3)',
+        [userRecord.id, space.id, userRecord.role],
+      );
     }
   }
 
