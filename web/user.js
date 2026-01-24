@@ -524,7 +524,7 @@ const translateLogText = (text) => {
 };
 
 const renderLogs = (logs) => {
-  const filtered = logs.filter((log) => log.type === 'security' || log.type === 'alarm' || log.type === 'restore');
+  const filtered = logs.filter((log) => log.type !== 'hub_raw' && log.type !== 'hub' && !/^Событие хаба/.test(log.text ?? ''));
   logTable.innerHTML = '';
   if (!filtered.length) {
     logTable.innerHTML = `<div class="empty-state">${t('user.empty.logs')}</div>`;
