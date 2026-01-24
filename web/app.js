@@ -1053,7 +1053,7 @@ const renderMembers = (members) => {
             if (error.message === 'last_installer') {
               showToast('Нельзя удалить последнего инженера монтажа.');
             } else {
-              handleApiError(error, member.is_self ? 'Не удалось покинуть пространство.' : 'Не удалось удалить пользователя.');
+              handleApiError(error, 'Не удалось удалить пользователя.');
             }
           } finally {
             hideLoading();

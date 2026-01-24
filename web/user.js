@@ -10,6 +10,7 @@ const state = {
 
 let spacesCache = [];
 const NICKNAME_COOLDOWN_MS = 7 * 24 * 60 * 60 * 1000;
+const USER_LOG_FILTER = 'security';
 
 const escapeHtml = (value) => String(value ?? '')
   .replace(/&/g, '&amp;')
@@ -523,13 +524,19 @@ const translateLogText = (text) => {
   return text;
 };
 
+const filterUserLogs = (logs) => {
+  if (USER_LOG_FILTER !== 'security') return logs;
+  return logs.filter((log) => log.type === 'security' || log.type === 'alarm' || log.type === 'restore');
+};
+
 const renderLogs = (logs) => {
+  const filtered = filterUserLogs(logs);
   logTable.innerHTML = '';
-  if (!logs.length) {
+  if (!filtered.length) {
     logTable.innerHTML = `<div class="empty-state">${t('user.empty.logs')}</div>`;
     return;
   }
-  logs.forEach((log) => {
+  filtered.forEach((log) => {
     const row = document.createElement('div');
     row.className = `log-row ${log.type === 'alarm' ? 'log-row--alarm' : ''}`;
     const timestamp = log.createdAtMs ?? (log.createdAt ? new Date(`${log.createdAt}Z`).getTime() : null);
