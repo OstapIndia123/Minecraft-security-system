@@ -5,9 +5,18 @@ const state = {
   timezone: 'UTC',
   role: 'user',
   avatarUrl: '',
+  lastNicknameChangeAt: null,
 };
 
 let spacesCache = [];
+const NICKNAME_COOLDOWN_MS = 7 * 24 * 60 * 60 * 1000;
+
+const escapeHtml = (value) => String(value ?? '')
+  .replace(/&/g, '&amp;')
+  .replace(/</g, '&lt;')
+  .replace(/>/g, '&gt;')
+  .replace(/"/g, '&quot;')
+  .replace(/'/g, '&#39;');
 
 const objectList = document.getElementById('userObjectList');
 const spaceIdEl = document.getElementById('userSpaceId');
@@ -22,12 +31,20 @@ const panels = document.querySelectorAll('.panel');
 const avatarButton = document.getElementById('avatarButton');
 const profileDropdown = document.getElementById('profileDropdown');
 const profileNickname = document.getElementById('profileNickname');
+const profileNicknameChange = document.getElementById('profileNicknameChange');
 const profileTimezone = document.getElementById('profileTimezone');
 const profileLanguage = document.getElementById('profileLanguage');
 const profileLogout = document.getElementById('profileLogout');
 const switchToPro = document.getElementById('switchToPro');
 const avatarImages = document.querySelectorAll('[data-avatar]');
 const avatarFallbacks = document.querySelectorAll('[data-avatar-fallback]');
+const actionModal = document.getElementById('actionModal');
+const actionModalTitle = document.getElementById('actionModalTitle');
+const actionModalMessage = document.getElementById('actionModalMessage');
+const actionModalForm = document.getElementById('actionModalForm');
+const actionModalConfirm = document.getElementById('actionModalConfirm');
+const actionModalCancel = document.getElementById('actionModalCancel');
+const actionModalClose = document.getElementById('closeActionModal');
 
 const translations = {
   ru: {
@@ -46,6 +63,7 @@ const translations = {
     'status.night': 'Ночной режим',
     'profile.title': 'Профиль',
     'profile.nickname': 'Игровой ник',
+    'profile.nickname.change': 'Сменить',
     'profile.timezone': 'Часовой пояс',
     'profile.language': 'Язык',
     'profile.switchPro': 'Перейти на PRO',
@@ -67,6 +85,7 @@ const translations = {
     'status.night': 'Night mode',
     'profile.title': 'Profile',
     'profile.nickname': 'Game nickname',
+    'profile.nickname.change': 'Change',
     'profile.timezone': 'Time zone',
     'profile.language': 'Language',
     'profile.switchPro': 'Go to PRO',
@@ -155,6 +174,52 @@ const setAvatar = (avatarUrl) => {
   });
 };
 
+const openActionModal = ({
+  title = 'Подтвердите действие',
+  message = '',
+  confirmText = 'Подтвердить',
+  cancelText = 'Отмена',
+} = {}) => new Promise((resolve) => {
+  if (!actionModal || !actionModalConfirm || !actionModalCancel) {
+    resolve(null);
+    return;
+  }
+
+  if (actionModalTitle) actionModalTitle.textContent = title;
+  if (actionModalMessage) actionModalMessage.textContent = message;
+  actionModalConfirm.textContent = confirmText;
+  actionModalCancel.textContent = cancelText;
+
+  if (actionModalForm) {
+    actionModalForm.innerHTML = '';
+    actionModalForm.classList.add('hidden');
+  }
+
+  const close = (result) => {
+    actionModalConfirm.removeEventListener('click', handleConfirm);
+    actionModalCancel.removeEventListener('click', handleCancel);
+    actionModalClose?.removeEventListener('click', handleCancel);
+    actionModal.removeEventListener('click', handleBackdrop);
+    actionModal.classList.remove('modal--open');
+    resolve(result);
+  };
+
+  const handleConfirm = () => close({ confirmed: true });
+  const handleCancel = () => close(null);
+  const handleBackdrop = (event) => {
+    if (event.target === actionModal) {
+      close(null);
+    }
+  };
+
+  actionModalConfirm.addEventListener('click', handleConfirm);
+  actionModalCancel.addEventListener('click', handleCancel);
+  actionModalClose?.addEventListener('click', handleCancel);
+  actionModal.addEventListener('click', handleBackdrop);
+
+  actionModal.classList.add('modal--open');
+});
+
 const syncProfileSettings = async () => {
   try {
     const response = await fetch('/api/auth/me', {
@@ -166,6 +231,7 @@ const syncProfileSettings = async () => {
     state.language = payload.user.language ?? state.language;
     state.timezone = payload.user.timezone ?? state.timezone;
     state.role = payload.user.role ?? state.role;
+    state.lastNicknameChangeAt = payload.user?.last_nickname_change_at ?? null;
     state.avatarUrl = payload.user.discord_avatar_url ?? state.avatarUrl;
     saveProfileSettings({
       nickname: payload.user.minecraft_nickname ?? '',
@@ -176,6 +242,29 @@ const syncProfileSettings = async () => {
     setAvatar(state.avatarUrl);
   } catch {
     // ignore
+  }
+};
+
+const getNicknameLockUntil = (lastChangedAt) => {
+  if (!lastChangedAt) return null;
+  const lastTimestamp = new Date(lastChangedAt).getTime();
+  if (Number.isNaN(lastTimestamp)) return null;
+  const lockUntil = lastTimestamp + NICKNAME_COOLDOWN_MS;
+  return Date.now() < lockUntil ? lockUntil : null;
+};
+
+const updateNicknameControls = () => {
+  const lockUntil = getNicknameLockUntil(state.lastNicknameChangeAt);
+  const locked = Boolean(lockUntil);
+  if (profileNickname) profileNickname.disabled = locked;
+  if (profileNicknameChange) {
+    profileNicknameChange.disabled = locked;
+    if (locked && lockUntil) {
+      const date = new Date(lockUntil);
+      profileNicknameChange.title = `Смена доступна после ${date.toLocaleDateString('ru-RU')} ${date.toLocaleTimeString('ru-RU', { hour: '2-digit', minute: '2-digit' })}`;
+    } else {
+      profileNicknameChange.removeAttribute('title');
+    }
   }
 };
 
@@ -209,6 +298,7 @@ const initProfileMenu = async () => {
   applyProfileSettings(settings);
   setAvatar(state.avatarUrl);
   if (profileNickname) profileNickname.value = settings.nickname ?? '';
+  let confirmedNickname = settings.nickname ?? '';
   if (profileTimezone) {
     const desired = settings.timezone ?? 'UTC';
     const option = profileTimezone.querySelector(`option[value="${desired}"]`);
@@ -220,20 +310,70 @@ const initProfileMenu = async () => {
   }
   if (profileLanguage) profileLanguage.value = settings.language ?? 'ru';
   await syncProfileSettings();
+  const syncedSettings = loadProfileSettings();
+  if (profileNickname) profileNickname.value = syncedSettings.nickname ?? '';
+  confirmedNickname = syncedSettings.nickname ?? confirmedNickname;
   applyTranslations();
+  updateNicknameControls();
 
   profileNickname?.addEventListener('input', (event) => {
     saveProfileSettings({ ...loadProfileSettings(), nickname: event.target.value, avatarUrl: state.avatarUrl });
   });
-  profileNickname?.addEventListener('blur', (event) => {
-    fetch('/api/auth/me', {
-      method: 'PATCH',
-      headers: {
-        'Content-Type': 'application/json',
-        Authorization: `Bearer ${localStorage.getItem('authToken') ?? ''}`,
-      },
-      body: JSON.stringify({ minecraft_nickname: event.target.value }),
-    }).catch(() => null);
+  profileNicknameChange?.addEventListener('click', async () => {
+    if (!profileNickname || profileNickname.disabled) return;
+    const nextNickname = profileNickname.value.trim();
+    if (!nextNickname) {
+      window.alert('Введите корректный ник.');
+      return;
+    }
+    if (nextNickname === confirmedNickname) {
+      window.alert('Ник уже установлен.');
+      return;
+    }
+    const modalResult = await openActionModal({
+      title: 'Сменить ник?',
+      message: 'Ник нельзя сменить будет в течении следующих 7 дней.',
+      confirmText: 'Сменить',
+    });
+    if (!modalResult?.confirmed) {
+      profileNickname.value = confirmedNickname;
+      return;
+    }
+    try {
+      const response = await fetch('/api/auth/me', {
+        method: 'PATCH',
+        headers: {
+          'Content-Type': 'application/json',
+          Authorization: `Bearer ${localStorage.getItem('authToken') ?? ''}`,
+        },
+        body: JSON.stringify({ minecraft_nickname: nextNickname }),
+      });
+      if (response.ok) {
+        const payload = await response.json().catch(() => ({}));
+        confirmedNickname = payload.user?.minecraft_nickname ?? nextNickname;
+        state.lastNicknameChangeAt = payload.user?.last_nickname_change_at ?? null;
+        profileNickname.value = confirmedNickname;
+        saveProfileSettings({ ...loadProfileSettings(), nickname: confirmedNickname, avatarUrl: state.avatarUrl });
+        updateNicknameControls();
+        return;
+      }
+      const payload = await response.json().catch(() => ({}));
+      const errorMessage = payload?.error === 'nickname_too_long'
+        ? 'Ник должен быть не длиннее 16 символов.'
+        : payload?.error === 'nickname_cooldown'
+          ? 'Сменить ник можно раз в 7 дней.'
+          : payload?.error === 'invalid_nickname'
+            ? 'Введите корректный ник.'
+            : payload?.error === 'nickname_taken'
+              ? 'Такой ник уже используется.'
+              : 'Не удалось обновить ник.';
+      window.alert(errorMessage);
+      profileNickname.value = confirmedNickname;
+      saveProfileSettings({ ...loadProfileSettings(), nickname: confirmedNickname, avatarUrl: state.avatarUrl });
+    } catch {
+      profileNickname.value = confirmedNickname;
+      saveProfileSettings({ ...loadProfileSettings(), nickname: confirmedNickname, avatarUrl: state.avatarUrl });
+    }
   });
   profileTimezone?.addEventListener('change', (event) => {
     saveProfileSettings({ ...loadProfileSettings(), timezone: event.target.value, avatarUrl: state.avatarUrl });
@@ -285,8 +425,8 @@ const renderSpaces = (spaces) => {
     const item = document.createElement('button');
     item.className = `object-item ${space.id === state.selectedSpaceId ? 'object-item--active' : ''}`;
     item.innerHTML = `
-      <div class="object-item__title">${space.name}</div>
-      <div class="object-item__meta">${space.id}</div>
+      <div class="object-item__title">${escapeHtml(space.name)}</div>
+      <div class="object-item__meta">${escapeHtml(space.id)}</div>
     `;
     item.addEventListener('click', () => {
       state.selectedSpaceId = space.id;
@@ -302,7 +442,9 @@ const renderStatus = (space) => {
   spaceIdEl.textContent = space.id;
   spaceStateEl.textContent = t(`status.${space.status}`) ?? space.status;
   spaceStateEl.className = `status-card__state ${statusTone[space.status] ?? ''}`;
-  spaceMetaEl.textContent = space.address ?? '—';
+  const serverLabel = space.server ?? '—';
+  const cityLabel = space.city ?? '—';
+  spaceMetaEl.textContent = `${space.address ?? '—'} • ${serverLabel} • ${cityLabel}`;
 };
 
 const renderDevices = (devices) => {
@@ -318,19 +460,19 @@ const renderDevices = (devices) => {
     button.className = `device-item ${device.id === state.selectedDeviceId ? 'device-item--active' : ''}`;
     button.innerHTML = `
       <div>
-        <div class="device-item__title">${device.name}</div>
-        <div class="device-item__meta">${device.room ?? '—'}</div>
+        <div class="device-item__title">${escapeHtml(device.name)}</div>
+        <div class="device-item__meta">${escapeHtml(device.room ?? '—')}</div>
       </div>
-      <span class="device-item__status">${device.status ?? '—'}</span>
+      <span class="device-item__status">${escapeHtml(device.status ?? '—')}</span>
     `;
     button.addEventListener('click', () => {
       state.selectedDeviceId = device.id;
       renderDevices(devices);
       deviceDetails.innerHTML = `
         <div class="detail-card">
-          <h3>${device.name}</h3>
-          <p>Тип: ${device.type}</p>
-          <p>Сторона: ${device.side ?? '—'}</p>
+          <h3>${escapeHtml(device.name)}</h3>
+          <p>Тип: ${escapeHtml(device.type)}</p>
+          <p>Сторона: ${escapeHtml(device.side ?? '—')}</p>
         </div>
       `;
     });
@@ -391,12 +533,13 @@ const renderLogs = (logs) => {
     const row = document.createElement('div');
     row.className = `log-row ${log.type === 'alarm' ? 'log-row--alarm' : ''}`;
     const timestamp = log.createdAtMs ?? (log.createdAt ? new Date(`${log.createdAt}Z`).getTime() : null);
-    const timeLabel = formatLogTime(timestamp) ?? log.time;
-    const text = translateLogText(log.text);
+    const timeLabel = escapeHtml(formatLogTime(timestamp) ?? log.time);
+    const text = escapeHtml(translateLogText(log.text));
+    const whoLabel = escapeHtml(log.who);
     row.innerHTML = `
       <span>${timeLabel}</span>
       <span>${text}</span>
-      <span class="muted">${log.who}</span>
+      <span class="muted">${whoLabel}</span>
     `;
     logTable.appendChild(row);
   });

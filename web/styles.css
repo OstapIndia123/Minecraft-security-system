@@ -474,12 +474,19 @@ body {
 }
 
 .form-grid input,
-.form-grid select {
+.form-grid select,
+.form-grid textarea {
   background: #222;
   border: 1px solid #2a2a2a;
   color: var(--text);
   border-radius: 10px;
   padding: 10px;
+}
+
+.notes-input {
+  min-height: 44px;
+  resize: vertical;
+  overflow: hidden;
 }
 
 .form-grid button {
@@ -728,6 +735,16 @@ body {
   font-size: 12px;
 }
 
+.profile-field__row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.profile-field__row input {
+  flex: 1;
+}
+
 .profile-field input,
 .profile-field select {
   background: var(--panel-light);
@@ -735,6 +752,11 @@ body {
   border-radius: 10px;
   padding: 8px 10px;
   color: var(--text);
+}
+
+.profile-field input:disabled {
+  opacity: 0.6;
+  cursor: not-allowed;
 }
 
 .profile-logout {
