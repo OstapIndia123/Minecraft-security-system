@@ -18,6 +18,7 @@ const port = Number(process.env.PORT ?? 8080);
 
 const MAX_NICKNAME_LENGTH = 16;
 const NICKNAME_COOLDOWN_MS = 7 * 24 * 60 * 60 * 1000;
+const SPACE_CREATE_COOLDOWN_MS = 15 * 60 * 1000;
 const MIN_INTERVAL_MS = 300;
 const MAX_SIREN_DURATION_SEC = 120;
 const MAX_DELAY_SECONDS = 120;
@@ -91,6 +92,15 @@ const canChangeNickname = (lastChangedAt) => {
   return { allowed: false, retryAfterMs: NICKNAME_COOLDOWN_MS - elapsed };
 };
 
+const canCreateSpace = (lastCreatedAt) => {
+  if (!lastCreatedAt) return { allowed: true, retryAfterMs: 0 };
+  const lastTs = new Date(lastCreatedAt).getTime();
+  if (Number.isNaN(lastTs)) return { allowed: true, retryAfterMs: 0 };
+  const elapsed = Date.now() - lastTs;
+  if (elapsed >= SPACE_CREATE_COOLDOWN_MS) return { allowed: true, retryAfterMs: 0 };
+  return { allowed: false, retryAfterMs: SPACE_CREATE_COOLDOWN_MS - elapsed };
+};
+
 const getAuthToken = (req) => {
   const header = req.header('authorization');
   if (header?.startsWith('Bearer ')) {
@@ -103,7 +113,7 @@ const loadSessionUser = async (token) => {
   if (!token) return null;
   const result = await query(
     `SELECT users.id, users.email, users.role, users.minecraft_nickname, users.discord_id, users.discord_avatar_url,
-            users.language, users.timezone, users.last_nickname_change_at
+            users.language, users.timezone, users.last_nickname_change_at, users.last_space_create_at
      FROM sessions
      JOIN users ON users.id = sessions.user_id
      WHERE sessions.token = $1 AND sessions.expires_at > NOW()`,
@@ -987,6 +997,11 @@ app.get('/api/logs', requireAuth, async (req, res) => {
 
 app.post('/api/spaces', requireAuth, requireInstaller, async (req, res) => {
   const { hubId, name, address, server, city, timezone } = req.body ?? {};
+  const cooldown = canCreateSpace(req.user.last_space_create_at);
+  if (!cooldown.allowed) {
+    res.status(429).json({ error: 'space_create_cooldown', retryAfterMs: cooldown.retryAfterMs });
+    return;
+  }
   const normalizedName = normalizeText(name);
   const normalizedAddress = normalizeText(address) || '—';
   const normalizedServer = normalizeText(server) || '—';
@@ -1040,6 +1055,7 @@ app.post('/api/spaces', requireAuth, requireInstaller, async (req, res) => {
   await appendLog(generatedId, 'Создано пространство', 'UI', 'system');
   await appendLog(generatedId, 'Хаб привязан к пространству', 'UI', 'system');
   await query('INSERT INTO user_spaces (user_id, space_id, role) VALUES ($1,$2,$3)', [req.user.id, generatedId, 'installer']);
+  await query('UPDATE users SET last_space_create_at = $1 WHERE id = $2', [new Date(), req.user.id]);
   await query('INSERT INTO hubs (id, space_id) VALUES ($1,$2)', [normalizedHubId, generatedId]);
   const space = await query('SELECT * FROM spaces WHERE id = $1', [generatedId]);
   const result = mapSpace(space.rows[0]);

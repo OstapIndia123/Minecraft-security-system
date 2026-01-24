@@ -24,6 +24,7 @@ CREATE TABLE users (
   language TEXT NOT NULL DEFAULT 'ru',
   timezone TEXT NOT NULL DEFAULT 'UTC',
   last_nickname_change_at TIMESTAMP,
+  last_space_create_at TIMESTAMP,
   created_at TIMESTAMP NOT NULL DEFAULT NOW()
 );
 

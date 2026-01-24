@@ -608,6 +608,10 @@ const handleApiError = (error, fallbackMessage) => {
     showToast('Сменить ник можно раз в 7 дней.');
     return;
   }
+  if (error.message === 'space_create_cooldown') {
+    showToast('Создавать объекты можно не чаще, чем раз в 15 минут.');
+    return;
+  }
   if (error.message === 'note_too_long') {
     showToast('Примечание должно быть до 100 символов.');
     return;
