@@ -1,6 +1,7 @@
 const state = {
   selectedSpaceId: null,
   selectedDeviceId: null,
+  logFilter: 'all',
   language: 'ru',
   timezone: 'UTC',
   role: 'user',
@@ -25,6 +26,7 @@ const spaceMetaEl = document.getElementById('userSpaceMeta');
 const deviceList = document.getElementById('userDeviceList');
 const deviceDetails = document.getElementById('userDeviceDetails');
 const logTable = document.getElementById('userLogTable');
+const logFilters = document.querySelectorAll('#userLogFilters .chip');
 const chipActions = document.querySelectorAll('.status-actions .chip');
 const tabs = document.querySelectorAll('.tab');
 const panels = document.querySelectorAll('.panel');
@@ -54,6 +56,10 @@ const translations = {
     'user.tabs.log': 'Лог',
     'user.equipment.title': 'Оборудование',
     'user.log.title': 'Лог событий',
+    'user.log.filters.all': 'Все',
+    'user.log.filters.security': 'Охранные',
+    'user.log.filters.access': 'Доступ',
+    'user.log.filters.system': 'Система',
     'user.actions.arm': 'Под охрану',
     'user.actions.disarm': 'С охраны',
     'user.empty.devices': 'Нет устройств',
@@ -76,6 +82,10 @@ const translations = {
     'user.tabs.log': 'Log',
     'user.equipment.title': 'Equipment',
     'user.log.title': 'Event log',
+    'user.log.filters.all': 'All',
+    'user.log.filters.security': 'Security',
+    'user.log.filters.access': 'Access',
+    'user.log.filters.system': 'System',
     'user.actions.arm': 'Arm',
     'user.actions.disarm': 'Disarm',
     'user.empty.devices': 'No devices',
@@ -523,8 +533,20 @@ const translateLogText = (text) => {
   return text;
 };
 
+const filterLogs = (logs) => {
+  const withoutHubEvents = logs.filter((log) => log.type !== 'hub_raw' && log.type !== 'hub');
+  if (state.logFilter === 'all') {
+    return withoutHubEvents;
+  }
+  if (state.logFilter === 'security') {
+    return withoutHubEvents.filter((log) => log.type === 'security' || log.type === 'alarm' || log.type === 'restore');
+  }
+  return withoutHubEvents.filter((log) => log.type === state.logFilter);
+};
+
 const renderLogs = (logs) => {
-  const filtered = logs.filter((log) => log.type !== 'hub_raw' && log.type !== 'hub' && !/^Событие хаба/.test(log.text ?? ''));
+  const filtered = filterLogs(logs)
+    .filter((log) => !/^Событие хаба/.test(log.text ?? ''));
   logTable.innerHTML = '';
   if (!filtered.length) {
     logTable.innerHTML = `<div class="empty-state">${t('user.empty.logs')}</div>`;
@@ -594,6 +616,16 @@ tabs.forEach((tab) => {
     tab.classList.add('tab--active');
     const target = document.getElementById(tab.dataset.tab);
     if (target) target.classList.add('panel--active');
+  });
+});
+
+logFilters.forEach((button) => {
+  button.addEventListener('click', async () => {
+    if (!state.selectedSpaceId) return;
+    logFilters.forEach((btn) => btn.classList.remove('chip--active'));
+    button.classList.add('chip--active');
+    state.logFilter = button.dataset.log ?? 'all';
+    await loadSpace(state.selectedSpaceId);
   });
 });
 

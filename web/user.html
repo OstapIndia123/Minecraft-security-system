@@ -132,6 +132,12 @@
           <div class="panel" id="user-log">
             <div class="panel__header">
               <h2 data-i18n="user.log.title">Лог событий</h2>
+              <div class="filters" id="userLogFilters">
+                <button class="chip chip--active" data-log="all" data-i18n="user.log.filters.all">Все</button>
+                <button class="chip" data-log="security" data-i18n="user.log.filters.security">Охранные</button>
+                <button class="chip" data-log="access" data-i18n="user.log.filters.access">Доступ</button>
+                <button class="chip" data-log="system" data-i18n="user.log.filters.system">Система</button>
+              </div>
             </div>
             <div class="log-table" id="userLogTable"></div>
           </div>
