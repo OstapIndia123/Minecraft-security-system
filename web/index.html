@@ -127,6 +127,21 @@
       </main>
     </div>
 
+    <div class="modal" id="actionModal" aria-hidden="true">
+      <div class="modal__content">
+        <div class="modal__header">
+          <h3 id="actionModalTitle">Подтвердите действие</h3>
+          <button class="ghost-button" id="closeActionModal" aria-label="Закрыть">✕</button>
+        </div>
+        <p id="actionModalMessage"></p>
+        <form class="form-grid hidden" id="actionModalForm"></form>
+        <div class="modal__actions">
+          <button class="button button--ghost" id="actionModalCancel" type="button">Отмена</button>
+          <button class="button button--primary" id="actionModalConfirm" type="button">Подтвердить</button>
+        </div>
+      </div>
+    </div>
+
     <script src="main.js"></script>
   </body>
 </html>

@@ -171,7 +171,7 @@
               <h3 data-i18n="engineer.object.edit">Редактировать объект</h3>
               <form class="form-grid" id="editForm">
                 <input type="text" name="name" data-i18n-placeholder="engineer.object.name" placeholder="Название" maxlength="16" required />
-                <input type="text" name="address" data-i18n-placeholder="engineer.object.coords" placeholder="Координаты" maxlength="120" />
+                <input type="text" name="address" data-i18n-placeholder="engineer.object.coords" placeholder="Координаты" maxlength="15" />
                 <input type="text" name="server" data-i18n-placeholder="engineer.object.server" placeholder="Сервер" maxlength="16" />
                 <input type="text" name="city" data-i18n-placeholder="engineer.object.city" placeholder="Город" maxlength="60" />
                 <button class="button button--primary" type="submit" data-i18n="engineer.object.save">Сохранить</button>
@@ -183,8 +183,8 @@
               <div class="attach-hub">
                 <h4 data-i18n="engineer.object.attachHub">Привязать хаб</h4>
                 <form class="form-grid" id="attachHubForm">
-                  <p class="muted">Подключите хаб и дождитесь подтверждения.</p>
-                  <button class="button button--primary" type="submit" data-i18n="engineer.object.attach">Запустить регистрацию</button>
+                  <input type="text" name="hubId" data-i18n-placeholder="engineer.object.hubId" placeholder="ID хаба" maxlength="40" required />
+                  <button class="button button--primary" type="submit" data-i18n="engineer.object.attach">Привязать</button>
                 </form>
               </div>
             </div>
@@ -286,8 +286,9 @@
           <button class="ghost-button" id="closeModal" aria-label="Закрыть">✕</button>
         </div>
         <form class="form-grid" id="spaceForm">
+          <input type="text" name="hubId" placeholder="ID хаба" maxlength="40" required />
           <input type="text" name="name" placeholder="Название" maxlength="16" required />
-          <input type="text" name="address" placeholder="Координаты" maxlength="120" />
+          <input type="text" name="address" placeholder="Координаты" maxlength="15" />
           <input type="text" name="server" placeholder="Сервер" maxlength="16" />
           <input type="text" name="city" placeholder="Город" maxlength="60" />
           <button class="button button--primary" type="submit">Создать</button>
@@ -381,17 +382,6 @@
           <button class="button button--ghost" id="actionModalCancel" type="button">Отмена</button>
           <button class="button button--primary" id="actionModalConfirm" type="button">Подтвердить</button>
         </div>
-      </div>
-    </div>
-
-    <div class="modal" id="hubInstallModal" aria-hidden="true">
-      <div class="modal__content">
-        <div class="modal__header">
-          <h3>Установите хаб</h3>
-          <button class="ghost-button" id="closeHubInstall" aria-label="Закрыть">✕</button>
-        </div>
-        <p id="hubInstallMessage">Установите хаб и включите его.</p>
-        <p class="muted">Осталось: <span id="hubInstallCountdown">60</span> сек.</p>
       </div>
     </div>
 

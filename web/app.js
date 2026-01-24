@@ -75,10 +75,6 @@ const attachHubForm = document.getElementById('attachHubForm');
 const guardModal = document.getElementById('guardModal');
 const guardModalClose = document.getElementById('closeGuardModal');
 const guardModalOk = document.getElementById('guardModalOk');
-const hubInstallModal = document.getElementById('hubInstallModal');
-const hubInstallMessage = document.getElementById('hubInstallMessage');
-const hubInstallCountdown = document.getElementById('hubInstallCountdown');
-const hubInstallClose = document.getElementById('closeHubInstall');
 const backToMain = document.getElementById('backToMain');
 const avatarButton = document.getElementById('avatarButton');
 const profileDropdown = document.getElementById('profileDropdown');
@@ -574,70 +570,6 @@ const showGuardModal = () => {
   guardModal?.classList.add('modal--open');
 };
 
-let hubRegistrationTimer = null;
-let hubRegistrationPoller = null;
-
-const closeHubInstallModal = () => {
-  hubInstallModal?.classList.remove('modal--open');
-  if (hubRegistrationTimer) {
-    clearInterval(hubRegistrationTimer);
-    hubRegistrationTimer = null;
-  }
-  if (hubRegistrationPoller) {
-    clearInterval(hubRegistrationPoller);
-    hubRegistrationPoller = null;
-  }
-};
-
-const startHubRegistrationMonitor = (spaceId, registration) => {
-  if (!hubInstallModal || !registration?.pending) return;
-  const expiresAt = registration.expiresAt ?? (Date.now() + 60_000);
-  if (hubInstallMessage) {
-    hubInstallMessage.textContent = 'Установите хаб и включите его.';
-  }
-  hubInstallModal.classList.add('modal--open');
-  const updateCountdown = () => {
-    const secondsLeft = Math.max(0, Math.ceil((expiresAt - Date.now()) / 1000));
-    if (hubInstallCountdown) hubInstallCountdown.textContent = String(secondsLeft);
-    if (secondsLeft <= 0) {
-      closeHubInstallModal();
-      showToast('Не удалось подтвердить установку хаба.');
-    }
-  };
-  updateCountdown();
-  hubRegistrationTimer = setInterval(updateCountdown, 1000);
-  hubRegistrationPoller = setInterval(async () => {
-    try {
-      const status = await apiFetch(`/api/spaces/${spaceId}/hub-registration`);
-      if (!status.pending) {
-        closeHubInstallModal();
-        if (status.hubId) {
-          await refreshAll();
-          showToast('Хаб зарегистрирован.');
-        } else if (status.expired) {
-          showToast('Не удалось подтвердить установку хаба.');
-        }
-      }
-    } catch (error) {
-      console.error(error);
-    }
-  }, 2000);
-};
-
-const checkHubRegistration = async (spaceId) => {
-  if (!spaceId || hubRegistrationTimer || hubRegistrationPoller) return;
-  try {
-    const status = await apiFetch(`/api/spaces/${spaceId}/hub-registration`);
-    if (status?.pending) {
-      startHubRegistrationMonitor(spaceId, status);
-    } else if (status?.expired) {
-      showToast('Не удалось подтвердить установку хаба.');
-    }
-  } catch (error) {
-    console.error(error);
-  }
-};
-
 const isSpaceArmed = () => {
   const space = spaces.find((item) => item.id === state.selectedSpaceId);
   return space?.status === 'armed';
@@ -689,7 +621,11 @@ const handleApiError = (error, fallbackMessage) => {
     return;
   }
   if (error.message === 'hub_pending') {
-    showToast('Уже идёт регистрация хаба.');
+    showToast('Этот хаб уже ожидает регистрации.');
+    return;
+  }
+  if (error.message === 'invalid_hub_id') {
+    showToast('Некорректный ID хаба.');
     return;
   }
   showToast(fallbackMessage);
@@ -816,7 +752,6 @@ const renderObjectList = () => {
       localStorage.setItem('selectedSpaceId', space.id);
       await loadLogs(space.id);
       renderAll();
-      await checkHubRegistration(space.id);
     });
     objectList.appendChild(card);
   });
@@ -1594,9 +1529,6 @@ const refreshAll = async () => {
   }
   await loadMembers();
   renderAll();
-  if (space) {
-    await checkHubRegistration(space.id);
-  }
 };
 
 if (refreshBtn) {
@@ -1693,9 +1625,6 @@ if (spaceForm) {
       spaceForm.reset();
       showToast('Пространство создано.');
       modal?.classList.remove('modal--open');
-      if (created.hubRegistration?.pending) {
-        startHubRegistrationMonitor(created.id, created.hubRegistration);
-      }
     } catch (error) {
       console.error(error);
       handleApiError(error, 'Не удалось создать пространство.');
@@ -2029,18 +1958,17 @@ if (attachHubForm) {
     const space = spaces.find((item) => item.id === state.selectedSpaceId);
     if (!space) return;
 
+    const formData = new FormData(attachHubForm);
+    const payload = Object.fromEntries(formData.entries());
     try {
       showLoading();
-      const response = await apiFetch(`/api/spaces/${space.id}/attach-hub`, {
+      await apiFetch(`/api/spaces/${space.id}/attach-hub`, {
         method: 'POST',
-        body: JSON.stringify({}),
+        body: JSON.stringify(payload),
       });
       attachHubForm.reset();
       await refreshAll();
-      showToast('Ожидание установки хаба.');
-      if (response.hubRegistration?.pending) {
-        startHubRegistrationMonitor(space.id, response.hubRegistration);
-      }
+      showToast('Хаб привязан.');
     } catch (error) {
       console.error(error);
       if (error.message === 'space_armed') {
@@ -2070,18 +1998,6 @@ if (guardModal) {
   guardModal.addEventListener('click', (event) => {
     if (event.target === guardModal) {
       guardModal.classList.remove('modal--open');
-    }
-  });
-}
-
-if (hubInstallClose && hubInstallModal) {
-  hubInstallClose.addEventListener('click', closeHubInstallModal);
-}
-
-if (hubInstallModal) {
-  hubInstallModal.addEventListener('click', (event) => {
-    if (event.target === hubInstallModal) {
-      closeHubInstallModal();
     }
   });
 }

@@ -38,6 +38,13 @@ const profileLogout = document.getElementById('profileLogout');
 const switchToPro = document.getElementById('switchToPro');
 const avatarImages = document.querySelectorAll('[data-avatar]');
 const avatarFallbacks = document.querySelectorAll('[data-avatar-fallback]');
+const actionModal = document.getElementById('actionModal');
+const actionModalTitle = document.getElementById('actionModalTitle');
+const actionModalMessage = document.getElementById('actionModalMessage');
+const actionModalForm = document.getElementById('actionModalForm');
+const actionModalConfirm = document.getElementById('actionModalConfirm');
+const actionModalCancel = document.getElementById('actionModalCancel');
+const actionModalClose = document.getElementById('closeActionModal');
 
 const translations = {
   ru: {
@@ -167,6 +174,52 @@ const setAvatar = (avatarUrl) => {
   });
 };
 
+const openActionModal = ({
+  title = 'Подтвердите действие',
+  message = '',
+  confirmText = 'Подтвердить',
+  cancelText = 'Отмена',
+} = {}) => new Promise((resolve) => {
+  if (!actionModal || !actionModalConfirm || !actionModalCancel) {
+    resolve(null);
+    return;
+  }
+
+  if (actionModalTitle) actionModalTitle.textContent = title;
+  if (actionModalMessage) actionModalMessage.textContent = message;
+  actionModalConfirm.textContent = confirmText;
+  actionModalCancel.textContent = cancelText;
+
+  if (actionModalForm) {
+    actionModalForm.innerHTML = '';
+    actionModalForm.classList.add('hidden');
+  }
+
+  const close = (result) => {
+    actionModalConfirm.removeEventListener('click', handleConfirm);
+    actionModalCancel.removeEventListener('click', handleCancel);
+    actionModalClose?.removeEventListener('click', handleCancel);
+    actionModal.removeEventListener('click', handleBackdrop);
+    actionModal.classList.remove('modal--open');
+    resolve(result);
+  };
+
+  const handleConfirm = () => close({ confirmed: true });
+  const handleCancel = () => close(null);
+  const handleBackdrop = (event) => {
+    if (event.target === actionModal) {
+      close(null);
+    }
+  };
+
+  actionModalConfirm.addEventListener('click', handleConfirm);
+  actionModalCancel.addEventListener('click', handleCancel);
+  actionModalClose?.addEventListener('click', handleCancel);
+  actionModal.addEventListener('click', handleBackdrop);
+
+  actionModal.classList.add('modal--open');
+});
+
 const syncProfileSettings = async () => {
   try {
     const response = await fetch('/api/auth/me', {
@@ -277,8 +330,12 @@ const initProfileMenu = async () => {
       window.alert('Ник уже установлен.');
       return;
     }
-    const confirmed = window.confirm('Ник нельзя сменить будет в течении следующих 3-х дней. Продолжить?');
-    if (!confirmed) {
+    const modalResult = await openActionModal({
+      title: 'Сменить ник?',
+      message: 'Ник нельзя сменить будет в течении следующих 3-х дней.',
+      confirmText: 'Сменить',
+    });
+    if (!modalResult?.confirmed) {
       profileNickname.value = confirmedNickname;
       return;
     }
