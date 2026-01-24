@@ -1045,7 +1045,8 @@ const renderMembers = (members) => {
         card.querySelector('button').addEventListener('click', async () => {
           try {
             showLoading();
-            await removeMember(member.id, member.space_role);
+            const roleToRemove = member.space_role ?? 'user';
+            await removeMember(member.id, roleToRemove);
             if (member.is_self) {
               showToast('Роль пользователя удалена.');
             }

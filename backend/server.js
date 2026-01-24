@@ -148,6 +148,17 @@ const ensureSpaceRole = async (userId, spaceId, role) => {
   return result.rows.length > 0;
 };
 
+const resolveMembershipRole = (roles, requestedRole, preferredRole) => {
+  if (!roles.length) return null;
+  if (requestedRole) {
+    return roles.includes(requestedRole) ? requestedRole : null;
+  }
+  if (roles.includes('user')) return 'user';
+  if (roles.length === 1) return roles[0];
+  if (preferredRole && roles.includes(preferredRole)) return preferredRole;
+  return roles[0];
+};
+
 const ensureNicknameAvailable = async (nickname, userId) => {
   if (!nickname) return true;
   const result = await query(
@@ -1221,13 +1232,19 @@ app.post('/api/spaces/:id/leave', requireAuth, async (req, res) => {
   }
   const appMode = req.header('x-app-mode');
   const requestedRole = req.query.role === 'installer' ? 'installer' : req.query.role === 'user' ? 'user' : null;
-  const membershipRole = requestedRole ?? (appMode === 'pro' ? 'installer' : 'user');
-  const membership = await query(
-    'SELECT role FROM user_spaces WHERE user_id = $1 AND space_id = $2 AND role = $3',
-    [req.user.id, req.params.id, membershipRole],
+  const roleRows = await query(
+    'SELECT role FROM user_spaces WHERE user_id = $1 AND space_id = $2',
+    [req.user.id, req.params.id],
   );
-  if (!membership.rows.length) {
+  const roles = roleRows.rows.map((row) => row.role);
+  if (!roles.length) {
     res.status(404).json({ error: 'user_not_found' });
+    return;
+  }
+  const preferredRole = appMode === 'pro' ? 'installer' : 'user';
+  const membershipRole = resolveMembershipRole(roles, requestedRole, preferredRole);
+  if (!membershipRole) {
+    res.json({ ok: true });
     return;
   }
   if (membershipRole === 'installer') {
@@ -1264,22 +1281,16 @@ app.delete('/api/spaces/:id/members/:userId', requireAuth, requireInstaller, asy
     'SELECT role FROM user_spaces WHERE user_id = $1 AND space_id = $2',
     [userId, req.params.id],
   );
-  if (!roleRows.rows.length) {
+  const roles = roleRows.rows.map((row) => row.role);
+  if (!roles.length) {
     res.status(404).json({ error: 'user_not_found' });
     return;
   }
   const requestedRole = req.query.role === 'installer' ? 'installer' : req.query.role === 'user' ? 'user' : null;
-  let targetRole = requestedRole;
+  const preferredRole = requestedRole ? null : 'user';
+  const targetRole = resolveMembershipRole(roles, requestedRole, preferredRole);
   if (!targetRole) {
-    if (roleRows.rows.length === 1) {
-      targetRole = roleRows.rows[0].role;
-    } else {
-      res.status(400).json({ error: 'missing_role' });
-      return;
-    }
-  }
-  if (!roleRows.rows.some((row) => row.role === targetRole)) {
-    res.status(404).json({ error: 'user_not_found' });
+    res.json({ ok: true });
     return;
   }
   if (targetRole === 'installer') {
