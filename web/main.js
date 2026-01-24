@@ -197,10 +197,20 @@ const formatLockUntil = (lockUntil) => {
   return `${date.toLocaleDateString('ru-RU')} ${date.toLocaleTimeString('ru-RU', { hour: '2-digit', minute: '2-digit' })}`;
 };
 
+const getTimestampMs = (value) => {
+  if (!value) return null;
+  if (typeof value === 'number' && Number.isFinite(value)) return value;
+  const raw = value instanceof Date ? value.toISOString() : String(value);
+  if (!raw) return null;
+  const hasTimezone = /([zZ]|[+-]\d{2}:?\d{2})$/.test(raw);
+  const date = new Date(hasTimezone ? raw : `${raw}Z`);
+  const time = date.getTime();
+  return Number.isNaN(time) ? null : time;
+};
+
 const getNicknameLockUntil = (lastChangedAt) => {
-  if (!lastChangedAt) return null;
-  const lastTimestamp = new Date(lastChangedAt).getTime();
-  if (Number.isNaN(lastTimestamp)) return null;
+  const lastTimestamp = getTimestampMs(lastChangedAt);
+  if (!lastTimestamp) return null;
   const lockUntil = lastTimestamp + NICKNAME_COOLDOWN_MS;
   return Date.now() < lockUntil ? lockUntil : null;
 };
@@ -222,9 +232,8 @@ const updateNicknameControls = () => {
 const getSpaceCreateLockUntil = () => {
   const lockUntilFromOverride = state.spaceCreateLockUntil;
   const lockUntilFromLastCreate = (() => {
-    if (!state.lastSpaceCreateAt) return null;
-    const lastTimestamp = new Date(state.lastSpaceCreateAt).getTime();
-    if (Number.isNaN(lastTimestamp)) return null;
+    const lastTimestamp = getTimestampMs(state.lastSpaceCreateAt);
+    if (!lastTimestamp) return null;
     const lockUntil = lastTimestamp + SPACE_CREATE_COOLDOWN_MS;
     return Date.now() < lockUntil ? lockUntil : null;
   })();
