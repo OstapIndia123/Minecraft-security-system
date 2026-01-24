@@ -128,6 +128,13 @@ const logFilters = document.querySelectorAll('#logFilters .chip');
 
 const translations = {
   ru: {
+    'admin.title': 'Админ-панель',
+    'admin.subtitle': 'Полный доступ ко всем объектам',
+    'admin.actions.users': 'Админ',
+    'admin.users.title': 'Пользователи',
+    'admin.login.title': 'Вход в админ-панель',
+    'admin.login.password': 'Пароль',
+    'admin.login.submit': 'Войти',
     'engineer.title': 'Объекты',
     'engineer.subtitle': 'Управление пространствами и событиями',
     'engineer.actions.arm': 'Под охрану',
@@ -227,6 +234,13 @@ const translations = {
     'profile.logout': 'Выйти',
   },
   'en-US': {
+    'admin.title': 'Admin panel',
+    'admin.subtitle': 'Full access to all spaces',
+    'admin.actions.users': 'Admin',
+    'admin.users.title': 'Users',
+    'admin.login.title': 'Admin login',
+    'admin.login.password': 'Password',
+    'admin.login.submit': 'Sign in',
     'engineer.title': 'Objects',
     'engineer.subtitle': 'Space and event management',
     'engineer.actions.arm': 'Arm',

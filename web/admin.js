@@ -5,14 +5,50 @@ const openAdminUsers = document.getElementById('openAdminUsers');
 const adminUsersModal = document.getElementById('adminUsersModal');
 const closeAdminUsers = document.getElementById('closeAdminUsers');
 const adminUsersList = document.getElementById('adminUsersList');
+const profileLanguage = document.getElementById('profileLanguage');
 
 const getAdminToken = () => localStorage.getItem('adminToken');
+
+const adminTranslations = {
+  ru: {
+    emptyUsers: 'Пользователи не найдены.',
+    block: 'Заблокировать',
+    unblock: 'Разблокировать',
+    remove: 'Удалить',
+    removeConfirm: (name) => `Удалить аккаунт ${name}? Это действие необратимо.`,
+    invalidPassword: 'Неверный пароль.',
+  },
+  'en-US': {
+    emptyUsers: 'No users found.',
+    block: 'Block',
+    unblock: 'Unblock',
+    remove: 'Delete',
+    removeConfirm: (name) => `Delete account ${name}? This action cannot be undone.`,
+    invalidPassword: 'Incorrect password.',
+  },
+};
+
+const getAdminLanguage = () => {
+  try {
+    const parsed = JSON.parse(localStorage.getItem('profileSettingsAdmin') ?? '{}');
+    return parsed.language ?? 'ru';
+  } catch {
+    return 'ru';
+  }
+};
+
+const tAdmin = (key, arg) => {
+  const lang = getAdminLanguage();
+  const dict = adminTranslations[lang] ?? adminTranslations.ru;
+  const value = dict[key] ?? adminTranslations.ru[key] ?? key;
+  return typeof value === 'function' ? value(arg) : value;
+};
 
 const renderUsers = (users) => {
   if (!adminUsersList) return;
   adminUsersList.innerHTML = '';
   if (!users.length) {
-    adminUsersList.textContent = 'Пользователи не найдены.';
+    adminUsersList.textContent = tAdmin('emptyUsers');
     return;
   }
   users.forEach((user) => {
@@ -31,7 +67,7 @@ const renderUsers = (users) => {
     actions.className = 'admin-users__actions';
     const toggle = document.createElement('button');
     toggle.className = `button ${user.is_blocked ? 'button--primary' : 'button--ghost'}`;
-    toggle.textContent = user.is_blocked ? 'Разблокировать' : 'Заблокировать';
+    toggle.textContent = user.is_blocked ? tAdmin('unblock') : tAdmin('block');
     toggle.addEventListener('click', async () => {
       const token = getAdminToken();
       if (!token) return;
@@ -50,9 +86,9 @@ const renderUsers = (users) => {
 
     const remove = document.createElement('button');
     remove.className = 'button button--danger';
-    remove.textContent = 'Удалить';
+    remove.textContent = tAdmin('remove');
     remove.addEventListener('click', async () => {
-      const confirmed = window.confirm(`Удалить аккаунт ${name}? Это действие необратимо.`);
+      const confirmed = window.confirm(tAdmin('removeConfirm', name));
       if (!confirmed) return;
       const token = getAdminToken();
       if (!token) return;
@@ -128,7 +164,7 @@ adminLoginForm?.addEventListener('submit', async (event) => {
     body: JSON.stringify({ password }),
   });
   if (!response.ok) {
-    alert('Неверный пароль.');
+    alert(tAdmin('invalidPassword'));
     return;
   }
   const payload = await response.json();
@@ -140,3 +176,9 @@ adminLoginForm?.addEventListener('submit', async (event) => {
 if (!getAdminToken()) {
   openLoginModal();
 }
+
+profileLanguage?.addEventListener('change', () => {
+  if (adminUsersModal?.classList.contains('modal--open')) {
+    loadUsers().catch(() => null);
+  }
+});
