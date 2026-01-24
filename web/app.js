@@ -1,4 +1,5 @@
-const isAdminPage = document.body?.dataset?.admin === 'true';
+const isAdminPage = document.body?.dataset?.admin === 'true'
+  || window.location.pathname.includes('admin-panel');
 const profileStorageKey = isAdminPage ? 'profileSettingsAdmin' : 'profileSettings';
 const adminTokenKey = 'adminToken';
 
