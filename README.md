@@ -44,6 +44,7 @@ POSTGRES_PASSWORD=postgres
 ### Если `seed.js` падает с `password authentication failed`
 Postgres сохраняет пароль в volume при первом запуске. Если вы поменяли `POSTGRES_PASSWORD`
 после инициализации volume, контейнер продолжит требовать старый пароль и сидинг упадёт.
+Та же проблема проявляется в `docker compose logs app` как `code: '28P01'` после авторизации.
 
 Варианты решения:
 ```bash

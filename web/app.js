@@ -710,6 +710,10 @@ const handleApiError = (error, fallbackMessage) => {
     showToast('Этот хаб уже ожидает регистрации.');
     return;
   }
+  if (error.message === 'db_auth_failed') {
+    showToast('Ошибка подключения к базе данных. Проверьте POSTGRES_PASSWORD и перезапустите Docker Compose.');
+    return;
+  }
   if (error.message === 'invalid_hub_id') {
     showToast('Некорректный ID хаба.');
     return;

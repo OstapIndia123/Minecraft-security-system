@@ -342,7 +342,11 @@ const apiFetch = async (path) => {
       window.location.href = 'login.html';
       throw new Error('unauthorized');
     }
-    throw new Error(`API error: ${response.status}`);
+    const payload = await response.json().catch(() => ({}));
+    if (payload?.error === 'db_auth_failed') {
+      window.alert('Ошибка подключения к базе данных. Проверьте POSTGRES_PASSWORD и перезапустите Docker Compose.');
+    }
+    throw new Error(payload.error ?? `API error: ${response.status}`);
   }
   return response.json();
 };

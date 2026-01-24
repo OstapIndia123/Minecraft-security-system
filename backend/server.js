@@ -123,14 +123,23 @@ const loadSessionUser = async (token) => {
 };
 
 const requireAuth = async (req, res, next) => {
-  const token = getAuthToken(req);
-  const user = await loadSessionUser(token);
-  if (!user) {
-    res.status(401).json({ error: 'unauthorized' });
-    return;
+  try {
+    const token = getAuthToken(req);
+    const user = await loadSessionUser(token);
+    if (!user) {
+      res.status(401).json({ error: 'unauthorized' });
+      return;
+    }
+    req.user = user;
+    next();
+  } catch (error) {
+    console.error('Auth check failed', error);
+    if (error?.code === '28P01') {
+      res.status(503).json({ error: 'db_auth_failed' });
+      return;
+    }
+    res.status(500).json({ error: 'auth_failed' });
   }
-  req.user = user;
-  next();
 };
 
 const requireInstaller = (req, res, next) => {
