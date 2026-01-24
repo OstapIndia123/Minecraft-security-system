@@ -1033,19 +1033,22 @@ const renderMembers = (members) => {
         card.className = 'member-card';
         const baseLabel = escapeHtml(member.minecraft_nickname ?? member.email ?? '—');
         const label = member.is_self ? `${baseLabel} (${t('engineer.members.you')})` : baseLabel;
+        const isSelf = member.is_self;
+        const isUserRole = member.space_role !== 'installer';
+        const actionLabel = isSelf && isUserRole ? t('engineer.members.delete') : (isSelf ? t('engineer.members.leave') : t('engineer.members.delete'));
         card.innerHTML = `
           <div>
             <div class="member-card__title">${label}</div>
             <div class="member-card__meta">ID: ${member.id}</div>
           </div>
           <button class="button button--ghost ${member.is_self ? '' : 'button--danger'}" data-member-id="${member.id}">
-            ${member.is_self ? t('engineer.members.leave') : t('engineer.members.delete')}
+            ${actionLabel}
           </button>
         `;
         card.querySelector('button').addEventListener('click', async () => {
           try {
             showLoading();
-            if (member.is_self) {
+            if (member.is_self && !isUserRole) {
               await leaveSpace(member.space_role);
               showToast('Вы покинули пространство.');
             } else {
