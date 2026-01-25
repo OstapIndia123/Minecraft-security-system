@@ -2244,6 +2244,16 @@ app.post('/api/hub/events', requireWebhookToken, async (req, res) => {
           continue;
         }
         if (zoneType === 'delayed' && status === 'armed' && !entryDelayTimers.has(spaceId)) {
+          if (spaceAlarmState.get(spaceId)) {
+            await appendLog(spaceId, `Тревога шлейфа: ${zone.name}`, 'Zone', 'alarm');
+            zoneAlarmState.set(`${spaceId}:${zone.id}`, true);
+            spaceAlarmState.set(spaceId, true);
+            if (!silent) {
+              await startSirenTimers(spaceId, spaceRow.rows[0]?.hub_id);
+            }
+            await query('UPDATE spaces SET issues = true WHERE id = $1', [spaceId]);
+            continue;
+          }
           const delaySeconds = clampDelaySeconds(config.delaySeconds ?? 30) ?? 0;
           await startEntryDelay(spaceId, spaceRow.rows[0]?.hub_id, delaySeconds, zone.name, zone.id);
           continue;
