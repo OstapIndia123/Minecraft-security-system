@@ -8,19 +8,56 @@ const hashPassword = (password) => {
   return `scrypt$${salt}$${hash}`;
 };
 
+const normalizeText = (value) => (value ?? '').toString().trim();
+const MAX_NICKNAME_LENGTH = 16;
+
+const buildUniqueNickname = async (nickname) => {
+  const base = normalizeText(nickname) || 'User';
+  const exists = await query(
+    'SELECT 1 FROM users WHERE minecraft_nickname IS NOT NULL AND lower(minecraft_nickname) = lower($1) LIMIT 1',
+    [base],
+  );
+  if (!exists.rows.length) {
+    return base.slice(0, MAX_NICKNAME_LENGTH);
+  }
+  for (let counter = 1; counter < 100; counter += 1) {
+    const suffix = `-${counter}`;
+    const trimmedBase = base.slice(0, Math.max(1, MAX_NICKNAME_LENGTH - suffix.length));
+    const candidate = `${trimmedBase}${suffix}`;
+    const result = await query(
+      'SELECT 1 FROM users WHERE minecraft_nickname IS NOT NULL AND lower(minecraft_nickname) = lower($1) LIMIT 1',
+      [candidate],
+    );
+    if (!result.rows.length) {
+      return candidate;
+    }
+  }
+  return `${base.slice(0, MAX_NICKNAME_LENGTH - 5)}-${crypto.randomInt(1000, 9999)}`;
+};
+
 const seed = async () => {
   const schema = await readFile(new URL('./schema.sql', import.meta.url));
   await query(schema.toString());
+  try {
+    await query(
+      'TRUNCATE reader_sessions, keys, devices, logs, user_spaces, sessions, users, spaces, hubs RESTART IDENTITY CASCADE',
+    );
+  } catch (error) {
+    if (error?.code !== '42P01') {
+      throw error;
+    }
+  }
 
   const spaces = [
     {
       id: '261156',
       hub_id: '0008951F',
-      name: 'Без номера объекта',
+      name: 'Без номера',
       address: 'x:-8 y:79 z:23',
       status: 'armed',
       hub_online: true,
       issues: false,
+      server: 'Основной',
       city: 'Калуш',
       timezone: 'Europe/Kyiv',
       company: {
@@ -63,8 +100,8 @@ const seed = async () => {
   for (const space of spaces) {
     await query('INSERT INTO hubs (id, space_id) VALUES ($1,$2)', [space.hub_id.replace('HUB-', ''), space.id]);
     await query(
-      `INSERT INTO spaces (id, hub_id, name, address, status, hub_online, issues, city, timezone, company, contacts, notes, photos)
-       VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13)`,
+      `INSERT INTO spaces (id, hub_id, name, address, status, hub_online, issues, server, city, timezone, company, contacts, notes, photos)
+       VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14)`,
       [
         space.id,
         space.hub_id.replace('HUB-', ''),
@@ -73,6 +110,7 @@ const seed = async () => {
         space.status,
         space.hub_online,
         space.issues,
+        space.server ?? '—',
         space.city,
         space.timezone,
         JSON.stringify(space.company),
@@ -119,47 +157,83 @@ const seed = async () => {
     );
   }
 
-  const users = [
-    {
-      email: 'pro@example.com',
-      password: 'pro-demo',
-      role: 'installer',
-      nickname: 'Installer',
-      language: 'ru',
-      timezone: 'Europe/Kyiv',
-    },
-    {
-      email: 'user@example.com',
-      password: 'user-demo',
-      role: 'user',
-      nickname: 'User',
-      language: 'ru',
-      timezone: 'Europe/Kyiv',
-    },
-  ];
+  const seedDiscordId = normalizeText(process.env.SEED_DISCORD_ID);
+  const seedDiscordNickname = normalizeText(process.env.SEED_DISCORD_NICKNAME) || 'Installer';
 
-  const userIds = [];
+  const users = seedDiscordId
+    ? [
+        {
+          email: `discord:${seedDiscordId}`,
+          password: `discord-${seedDiscordId}`,
+          role: 'installer',
+          nickname: seedDiscordNickname,
+          language: 'ru',
+          timezone: 'Europe/Kyiv',
+          discordId: seedDiscordId,
+        },
+      ]
+    : [
+        {
+          email: 'pro@example.com',
+          password: 'pro-demo',
+          role: 'installer',
+          nickname: 'Installer',
+          language: 'ru',
+          timezone: 'Europe/Kyiv',
+          discordId: null,
+        },
+        {
+          email: 'user@example.com',
+          password: 'user-demo',
+          role: 'user',
+          nickname: 'User',
+          language: 'ru',
+          timezone: 'Europe/Kyiv',
+          discordId: null,
+        },
+      ];
+
+  const userRecords = [];
   for (const user of users) {
+    const uniqueNickname = await buildUniqueNickname(user.nickname);
     const result = await query(
-      `INSERT INTO users (email, password_hash, role, minecraft_nickname, language, timezone, discord_avatar_url)
-       VALUES ($1,$2,$3,$4,$5,$6,$7)
+      `INSERT INTO users (email, password_hash, role, minecraft_nickname, discord_id, language, timezone, discord_avatar_url, last_nickname_change_at, last_space_create_at, is_blocked)
+       VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11)
        RETURNING id`,
       [
         user.email,
         hashPassword(user.password),
         user.role,
-        user.nickname,
+        uniqueNickname,
+        user.discordId,
         user.language,
         user.timezone,
         null,
+        null,
+        null,
+        false,
       ],
     );
-    userIds.push(result.rows[0].id);
+    userRecords.push({ id: result.rows[0].id, role: user.role });
   }
 
-  for (const userId of userIds) {
+  for (const userRecord of userRecords) {
     for (const space of spaces) {
-      await query('INSERT INTO user_spaces (user_id, space_id, role) VALUES ($1,$2,$3)', [userId, space.id, 'installer']);
+      if (seedDiscordId) {
+        await query(
+          'INSERT INTO user_spaces (user_id, space_id, role) VALUES ($1,$2,$3)',
+          [userRecord.id, space.id, 'installer'],
+        );
+        await query(
+          'INSERT INTO user_spaces (user_id, space_id, role) VALUES ($1,$2,$3)',
+          [userRecord.id, space.id, 'user'],
+        );
+      } else {
+        await query(
+          'INSERT INTO user_spaces (user_id, space_id, role) VALUES ($1,$2,$3)',
+          [userRecord.id, space.id, userRecord.role],
+        );
+      }
     }
   }
 
@@ -168,6 +242,11 @@ const seed = async () => {
 };
 
 seed().catch((error) => {
+  if (error?.code === '28P01') {
+    console.error('Seed failed: invalid database credentials (code 28P01).');
+    console.error('Check POSTGRES_PASSWORD / DATABASE_URL and note that existing Postgres volumes keep the old password.');
+    console.error('For Docker Compose you can reset the database with: docker compose down -v');
+  }
   console.error('Seed failed', error);
   process.exit(1);
 });
