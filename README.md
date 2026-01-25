@@ -2,8 +2,8 @@
 
 Документация по архитектуре и авторизации через дискорд или launcher token.
 
-## Быстрый старт (UI + backend демо + аккаунты)
-```bash, НЕ выполнять одновременно!!
+## Быстрый старт, НЕ выполнять одновременно!!
+```bash
 git clone https://github.com/OstapIndia123/Minecraft-security-system.git
 cd Minecraft-security-system
 nano docker-compose.yml # настроить обязательно!
