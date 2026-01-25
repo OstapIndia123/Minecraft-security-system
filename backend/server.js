@@ -489,6 +489,7 @@ const spaceAlarmState = new Map();
 const pendingArmTimers = new Map();
 const entryDelayTimers = new Map();
 const entryDelayFailed = new Map();
+const zoneAlarmState = new Map();
 const lightBlinkTimers = new Map();
 const lastKeyScans = new Map();
 const keyScanWaiters = new Map();
@@ -638,7 +639,7 @@ const startPendingArm = async (spaceId, hubId, delaySeconds, who, logMessage) =>
   pendingArmTimers.set(spaceId, timer);
 };
 
-const startEntryDelay = async (spaceId, hubId, delaySeconds, zoneName) => {
+const startEntryDelay = async (spaceId, hubId, delaySeconds, zoneName, zoneId) => {
   if (!hubId || entryDelayTimers.has(spaceId) || entryDelayFailed.get(spaceId)) return;
   const resolvedDelay = clampDelaySeconds(delaySeconds) ?? 0;
   await appendLog(spaceId, 'Начало снятия', 'Zone', 'security');
@@ -658,6 +659,9 @@ const startEntryDelay = async (spaceId, hubId, delaySeconds, zoneName) => {
       );
       if (zoneName) {
         await appendLog(spaceId, `Тревога шлейфа: ${zoneName}`, 'Zone', 'alarm');
+      }
+      if (zoneId) {
+        zoneAlarmState.set(`${spaceId}:${zoneId}`, true);
       }
       spaceAlarmState.set(spaceId, true);
       await startSirenTimers(spaceId, spaceRow.rows[0]?.hub_id);
@@ -2228,6 +2232,7 @@ app.post('/api/hub/events', requireWebhookToken, async (req, res) => {
       if (shouldCheck && !bypass && !isNormal) {
         if (entryDelayFailed.get(spaceId)) {
           await appendLog(spaceId, `Тревога шлейфа: ${zone.name}`, 'Zone', 'alarm');
+          zoneAlarmState.set(`${spaceId}:${zone.id}`, true);
           spaceAlarmState.set(spaceId, true);
           if (!silent) {
             await startSirenTimers(spaceId, spaceRow.rows[0]?.hub_id);
@@ -2235,15 +2240,19 @@ app.post('/api/hub/events', requireWebhookToken, async (req, res) => {
           await query('UPDATE spaces SET issues = true WHERE id = $1', [spaceId]);
           continue;
         }
+        if (zoneType === 'delayed' && status === 'armed' && entryDelayTimers.has(spaceId)) {
+          continue;
+        }
         if (zoneType === 'delayed' && status === 'armed' && !entryDelayTimers.has(spaceId)) {
           const delaySeconds = clampDelaySeconds(config.delaySeconds ?? 30) ?? 0;
-          await startEntryDelay(spaceId, spaceRow.rows[0]?.hub_id, delaySeconds, zone.name);
+          await startEntryDelay(spaceId, spaceRow.rows[0]?.hub_id, delaySeconds, zone.name, zone.id);
           continue;
         }
         if (zoneType === 'pass' && entryDelayTimers.has(spaceId)) {
           continue;
         }
         await appendLog(spaceId, `Тревога шлейфа: ${zone.name}`, 'Zone', 'alarm');
+        zoneAlarmState.set(`${spaceId}:${zone.id}`, true);
         spaceAlarmState.set(spaceId, true);
         if (!silent) {
           await startSirenTimers(spaceId, spaceRow.rows[0]?.hub_id);
@@ -2251,8 +2260,9 @@ app.post('/api/hub/events', requireWebhookToken, async (req, res) => {
         await query('UPDATE spaces SET issues = true WHERE id = $1', [spaceId]);
       }
 
-      if (isNormal && currentStatus === 'Нарушение') {
+      if (isNormal && currentStatus === 'Нарушение' && zoneAlarmState.get(`${spaceId}:${zone.id}`)) {
         await appendLog(spaceId, `Восстановление шлейфа: ${zone.name}`, 'Zone', 'restore');
+        zoneAlarmState.delete(`${spaceId}:${zone.id}`);
       }
     }
 
