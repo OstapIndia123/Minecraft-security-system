@@ -17,6 +17,9 @@ const translations = {
     'auth.errors.discord': 'Не удалось войти через Discord.',
     'auth.errors.launcher': 'Не удалось войти через лаунчер.',
     'auth.errors.nickname_taken': 'Такой ник уже занят.',
+    'auth.errors.nickname_too_long': 'Ник должен быть не длиннее 16 символов.',
+    'auth.errors.nickname_cooldown': 'Сменить ник можно раз в 7 дней.',
+    'auth.errors.invalid_nickname': 'Введите корректный ник.',
   },
   'en-US': {
     'auth.actions.discordOnly': 'Sign in with Discord',
@@ -30,6 +33,9 @@ const translations = {
     'auth.errors.discord': 'Unable to sign in with Discord.',
     'auth.errors.launcher': 'Unable to sign in with the launcher.',
     'auth.errors.nickname_taken': 'That nickname is already taken.',
+    'auth.errors.nickname_too_long': 'Nickname must be 16 characters or fewer.',
+    'auth.errors.nickname_cooldown': 'You can change your nickname once every 7 days.',
+    'auth.errors.invalid_nickname': 'Please enter a valid nickname.',
   },
 };
 
@@ -90,8 +96,21 @@ const showNicknameModal = (role, token) => {
         body: JSON.stringify({ minecraft_nickname: nickname }),
       });
       if (!response.ok) {
-        if (response.status === 409) {
+        const payload = await response.json().catch(() => ({}));
+        if (payload?.error === 'nickname_taken' || response.status === 409) {
           showError(translations[language]?.['auth.errors.nickname_taken'] ?? 'Nickname already taken.');
+          return;
+        }
+        if (payload?.error === 'nickname_too_long') {
+          showError(translations[language]?.['auth.errors.nickname_too_long'] ?? 'Nickname too long.');
+          return;
+        }
+        if (payload?.error === 'invalid_nickname') {
+          showError(translations[language]?.['auth.errors.invalid_nickname'] ?? 'Invalid nickname.');
+          return;
+        }
+        if (payload?.error === 'nickname_cooldown') {
+          showError(translations[language]?.['auth.errors.nickname_cooldown'] ?? 'Nickname can be changed every 7 days.');
           return;
         }
         throw new Error('nickname_update_failed');
@@ -128,8 +147,15 @@ const handleLauncherLogin = async (launcherToken) => {
   try {
     const response = await fetch(`/api/auth/launcher?token=${encodeURIComponent(launcherToken)}`);
     if (!response.ok) {
-      if (response.status === 409) {
+      const payload = await response.json().catch(() => ({}));
+      if (payload?.error === 'nickname_taken' || response.status === 409) {
         showError(translations[language]?.['auth.errors.nickname_taken'] ?? 'Nickname already taken.');
+      } else if (payload?.error === 'nickname_too_long') {
+        showError(translations[language]?.['auth.errors.nickname_too_long'] ?? 'Nickname too long.');
+      } else if (payload?.error === 'invalid_nickname') {
+        showError(translations[language]?.['auth.errors.invalid_nickname'] ?? 'Invalid nickname.');
+      } else if (payload?.error === 'nickname_cooldown') {
+        showError(translations[language]?.['auth.errors.nickname_cooldown'] ?? 'Nickname can be changed every 7 days.');
       } else {
         showError(translations[language]?.['auth.errors.launcher'] ?? 'Launcher login failed.');
       }
