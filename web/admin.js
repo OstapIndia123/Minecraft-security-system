@@ -1,3 +1,4 @@
+(() => {
 const adminLoginModal = document.getElementById('adminLoginModal');
 const adminLoginForm = document.getElementById('adminLoginForm');
 const adminPassword = document.getElementById('adminPassword');
@@ -182,3 +183,4 @@ profileLanguage?.addEventListener('change', () => {
     loadUsers().catch(() => null);
   }
 });
+})();
