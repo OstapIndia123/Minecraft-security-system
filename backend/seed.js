@@ -50,34 +50,34 @@ const seed = async () => {
 
   const spaces = [
     {
-      id: '261156',
-      hub_id: '0008951F',
+      id: '452354',
+      hub_id: '00543651F',
       name: 'Без номера',
       address: 'x:-8 y:79 z:23',
       status: 'armed',
       hub_online: true,
       issues: false,
       server: 'Основной',
-      city: 'Калуш',
+      city: 'Насрал',
       timezone: 'Europe/Kyiv',
       company: {
-        name: 'АО «Явир-2000»',
-        country: 'Украина',
-        pcs: '+380931702200',
-        site: 'https://yavir2000.com',
-        email: 'ajax@yavir2000.com',
+        name: 'Насрал2000',
+        country: 'satirize',
+        pcs: '@discord',
+        site: 'нет',
+        email: 'нет',
       },
       contacts: [
-        { name: 'Иванна', role: 'Ответственное лицо', phone: '+380 97 000 00 00' },
-        { name: 'Павлюк О.', role: 'Инженер монтажа', phone: '+380 50 000 00 00' },
+        { name: 'Питер', role: 'Ответственное лицо', phone: '@discord' },
+        { name: 'Питер', role: 'Инженер монтажа', phone: '@discord' },
       ],
       notes: ['Постановка через reader на стороне EAST.', 'Сирена на стороне SOUTH.'],
       photos: [],
       devices: [
         {
           id: 'zone-entrance',
-          name: 'вхід',
-          room: 'коридор',
+          name: 'вход',
+          room: 'корридор',
           status: 'Норма',
           type: 'zone',
           side: 'north',
@@ -86,7 +86,7 @@ const seed = async () => {
         {
           id: 'reader-key',
           name: 'брелок',
-          room: 'спальня дит',
+          room: 'спальняя',
           status: 'Норма',
           type: 'reader',
           side: 'east',
@@ -145,9 +145,9 @@ const seed = async () => {
   }
 
   const logs = [
-    ['261156', '04:11:43', 'Пользователь Aramaic поставил объект 261156 под охрану', 'Aramaic', 'security'],
-    ['261156', '04:07:43', 'Добавлен новый пользователь Aramaic', 'АО «Явир-2000»', 'system'],
-    ['261156', '03:11:14', 'Инженер Павлюк О. получил доступ к объекту', 'Явир2000', 'access'],
+    ['№Объекта', '04:11:43', 'Пользователь Питер поставил объект №Объекта под охрану', 'Питер', 'security'],
+    ['№Объекта', '04:07:43', 'Добавлен новый пользователь Питер', 'Насрал2000', 'system'],
+    ['№Объекта', '03:11:14', 'Инженер Питер получил доступ к объекту', 'Насрал2000', 'access'],
   ];
 
   for (const [spaceId, time, text, who, type] of logs) {
@@ -177,7 +177,7 @@ const seed = async () => {
           email: 'pro@example.com',
           password: 'pro-demo',
           role: 'installer',
-          nickname: 'Installer',
+          nickname: 'УДАЛИТЬ',
           language: 'ru',
           timezone: 'Europe/Kyiv',
           discordId: null,
@@ -186,7 +186,7 @@ const seed = async () => {
           email: 'user@example.com',
           password: 'user-demo',
           role: 'user',
-          nickname: 'User',
+          nickname: 'УДАЛИТЬ',
           language: 'ru',
           timezone: 'Europe/Kyiv',
           discordId: null,
