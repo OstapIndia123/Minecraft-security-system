@@ -3,7 +3,7 @@ import cors from 'cors';
 import crypto from 'node:crypto';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { query } from './db.js';
+import { isDbAuthFailed, query } from './db.js';
 
 const app = express();
 const __filename = fileURLToPath(import.meta.url);
@@ -61,6 +61,13 @@ app.use(express.json({ limit: '1mb' }));
 app.use(express.static(path.resolve(__dirname, '..', 'web')));
 app.get(['/blocked', '/blocked.html'], (req, res) => {
   res.sendFile(path.resolve(__dirname, '..', 'web', 'blocked.html'));
+});
+app.use((req, res, next) => {
+  if (req.path.startsWith('/api') && isDbAuthFailed() && req.path !== '/api/admin/login') {
+    res.status(503).json({ error: 'db_auth_failed' });
+    return;
+  }
+  next();
 });
 
 const hashPassword = (password, salt) => {
