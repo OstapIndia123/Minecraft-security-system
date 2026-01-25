@@ -1,5 +1,6 @@
 const isAdminPage = document.body?.dataset?.admin === 'true'
-  || window.location.pathname.includes('admin-panel');
+  || window.location.pathname.toLowerCase().includes('admin-panel')
+  || Boolean(document.getElementById('adminLoginModal'));
 const profileStorageKey = isAdminPage ? 'profileSettingsAdmin' : 'profileSettings';
 const adminTokenKey = 'adminToken';
 
@@ -756,8 +757,10 @@ const apiFetch = async (path, options = {}) => {
   const response = await fetch(path, { ...options, headers });
   if (!response.ok) {
   if (response.status === 401) {
-    localStorage.removeItem('authToken');
-    window.location.href = 'login.html';
+    if (!isAdminPage) {
+      localStorage.removeItem('authToken');
+      window.location.href = 'login.html';
+    }
     throw new Error('unauthorized');
   }
   const payload = await response.json().catch(() => ({}));
