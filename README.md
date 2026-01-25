@@ -19,6 +19,88 @@ npm run dev
 
 Примечание: `npm run seed` пересоздаёт таблицы и сбрасывает данные.
 
+## Docker Compose (backend + hub-backend + Postgres)
+```bash
+docker compose up --build
+```
+
+По умолчанию контейнер поднимает:
+- UI + backend: http://localhost:8080
+- Hub API: http://localhost:8090
+- WebSocket модов: ws://localhost:5080?token=dev-secret-change-me
+
+При необходимости задайте свои значения прямо в `docker-compose.yml` (блок `environment`).
+Например:
+```
+WEBHOOK_TOKEN=change-me
+WS_AUTH_TOKEN=change-me
+WEBHOOK_URL=http://127.0.0.1:8080/api/hub/events
+POSTGRES_PASSWORD=postgres
+```
+
+### Если `seed.js` падает с `password authentication failed`
+Postgres сохраняет пароль в volume при первом запуске. Если вы поменяли `POSTGRES_PASSWORD`
+после инициализации volume, контейнер продолжит требовать старый пароль и сидинг упадёт.
+Та же проблема проявляется в `docker compose logs app` как `code: '28P01'` после авторизации.
+
+Варианты решения:
+```bash
+# Полный сброс БД (удалит данные в pgdata)
+docker compose down -v
+docker compose up -d --build
+docker compose exec app node backend/seed.js
+```
+
+Либо выставьте `POSTGRES_PASSWORD` равным старому паролю (который был при первом запуске volume).
+
+Для безопасного доступа извне рекомендуется проксировать WebSocket через TLS (wss)
+и держать порты 5080/8090 закрытыми на фаерволе, оставив доступ только к 8080.
+
+Чтобы добавить иконку сайта, положите файл `web/favicon.png` (PNG) — он будет
+подхвачен страницами автоматически.
+
+## Админ-панель (пароль, отдельная ссылка)
+Админ-панель доступна по отдельной странице:
+```
+/admin-panel-9f3c.html
+```
+Пароль задаётся через переменную окружения в `docker-compose.yml`:
+```
+ADMIN_PANEL_PASSWORD=your-strong-password
+```
+Если хотите сменить секретный URL, переименуйте файл `web/admin-panel-9f3c.html`
+и сохраните атрибут `data-admin="true"` в теге `<body>`.
+
+### Настройка wsUrl для мода
+Токен WS передаётся через query‑параметр `token` (не через путь).
+Пример для локального подключения:
+```
+wsUrl: ws://127.0.0.1:5080?token=dev-secret-change-me
+```
+Для продакшена рекомендуется TLS‑прокси и `wss`:
+```
+wsUrl: wss://security.example.com/ws?token=YOUR_TOKEN
+```
+В этом случае прокси должен проксировать `wss://.../ws` на `ws://app:5080`.
+
+Если сборка падает из-за недоступности Docker Hub, можно указать локальный/зеркальный
+образ Node.js через build-arg:
+```bash
+docker compose build --build-arg BASE_IMAGE=registry.example.com/node:20-alpine
+```
+
+Если недоступен npm registry, можно:
+1) положить `backend/node_modules` и `hub-backend/node_modules` в репозиторий/каталог сборки (они будут скопированы в образ),
+2) либо указать свой npm registry:
+```bash
+docker compose build --build-arg NPM_REGISTRY=https://registry.npmjs.org
+```
+Если сеть полностью недоступна, можно пропустить установку npm зависимостей (при наличии
+предсобранных `node_modules`):
+```bash
+docker compose build --build-arg SKIP_NPM_INSTALL=true
+```
+
 Откройте:
 - Вход: http://localhost:8080/login.html
 - PRO (Режим ПЦН): http://localhost:8080/index.html
