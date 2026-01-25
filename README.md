@@ -7,7 +7,7 @@
 git clone https://github.com/OstapIndia123/Minecraft-security-system.git
 cd Minecraft-security-system
 nano docker-compose.yml # настроить обязательно!
-docker compose build # если падает на этом моменте, проверьте настроина ли у вас сеть в вашем докер клиенте, а именно DNS
+docker compose build # если падает на этом моменте, проверьте настроина ли у вас сеть в вашем докер клиенте, а именно DNS, см. docs/docker-hub-troubleshooting.md
 docker compose up -d                        
 docker compose exec app node backend/seed.js # запускаем seed
 docker compose restart app # чтобы применилось
