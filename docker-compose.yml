@@ -7,13 +7,13 @@ services:
         NPM_REGISTRY: ""
         SKIP_NPM_INSTALL: "false"
     environment:
-      DATABASE_URL: postgres://postgres:${POSTGRES_PASSWORD:-postgres}@postgres:5432/${POSTGRES_DB:-minecraft_security}
+      DATABASE_URL: postgres://postgres:postgres@postgres:5432/minecraft_security
       PORT: 8080
       HUB_API_URL: http://127.0.0.1:8090
       WEBHOOK_TOKEN: dev-secret-change-me
       WS_AUTH_TOKEN: dev-secret-change-me
       WEBHOOK_URL: http://127.0.0.1:8080/api/hub/events
-      ADMIN_PANEL_PASSWORD: ${ADMIN_PANEL_PASSWORD:-}
+      ADMIN_PANEL_PASSWORD: ""
       DISCORD_CLIENT_ID: ""
       DISCORD_CLIENT_SECRET: ""
       DISCORD_REDIRECT_URI: http://127.0.0.1:8080/api/auth/discord/callback
