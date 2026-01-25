@@ -9,49 +9,15 @@ const hashPassword = (password) => {
 };
 
 const normalizeText = (value) => (value ?? '').toString().trim();
-const MAX_NICKNAME_LENGTH = 16;
-
-const buildUniqueNickname = async (nickname) => {
-  const base = normalizeText(nickname) || 'User';
-  const exists = await query(
-    'SELECT 1 FROM users WHERE minecraft_nickname IS NOT NULL AND lower(minecraft_nickname) = lower($1) LIMIT 1',
-    [base],
-  );
-  if (!exists.rows.length) {
-    return base.slice(0, MAX_NICKNAME_LENGTH);
-  }
-  for (let counter = 1; counter < 100; counter += 1) {
-    const suffix = `-${counter}`;
-    const trimmedBase = base.slice(0, Math.max(1, MAX_NICKNAME_LENGTH - suffix.length));
-    const candidate = `${trimmedBase}${suffix}`;
-    const result = await query(
-      'SELECT 1 FROM users WHERE minecraft_nickname IS NOT NULL AND lower(minecraft_nickname) = lower($1) LIMIT 1',
-      [candidate],
-    );
-    if (!result.rows.length) {
-      return candidate;
-    }
-  }
-  return `${base.slice(0, MAX_NICKNAME_LENGTH - 5)}-${crypto.randomInt(1000, 9999)}`;
-};
 
 const seed = async () => {
   const schema = await readFile(new URL('./schema.sql', import.meta.url));
   await query(schema.toString());
-  try {
-    await query(
-      'TRUNCATE reader_sessions, keys, devices, logs, user_spaces, sessions, users, spaces, hubs RESTART IDENTITY CASCADE',
-    );
-  } catch (error) {
-    if (error?.code !== '42P01') {
-      throw error;
-    }
-  }
 
   const spaces = [
     {
-      id: '452354',
-      hub_id: '00543651F',
+      id: '№Объекта',
+      hub_id: '——',
       name: 'Без номера',
       address: 'x:-8 y:79 z:23',
       status: 'armed',
@@ -195,7 +161,6 @@ const seed = async () => {
 
   const userRecords = [];
   for (const user of users) {
-    const uniqueNickname = await buildUniqueNickname(user.nickname);
     const result = await query(
       `INSERT INTO users (email, password_hash, role, minecraft_nickname, discord_id, language, timezone, discord_avatar_url, last_nickname_change_at, last_space_create_at, is_blocked)
        VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11)
@@ -204,7 +169,7 @@ const seed = async () => {
         user.email,
         hashPassword(user.password),
         user.role,
-        uniqueNickname,
+        user.nickname,
         user.discordId,
         user.language,
         user.timezone,
