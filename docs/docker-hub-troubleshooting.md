@@ -1,5 +1,19 @@
 # Docker Hub troubleshooting (DNS/registry)
 
+ну мне вот эта помогло:
+
+```
+sudo mkdir -p /etc/docker
+sudo tee /etc/docker/daemon.json > /dev/null <<'JSON'
+{
+  "dns": ["1.1.1.1", "8.8.8.8"]
+}
+JSON
+```
+
+Прост dns сервера для демона докера прописал и всё. Дальше хуйня какая-то
+
+
 These steps help verify if Docker Hub and npm registry are reachable from the host.
 
 ## 1) Check DNS resolver
