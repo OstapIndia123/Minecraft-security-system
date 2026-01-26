@@ -28,7 +28,7 @@ const escapeHtml = (value) => String(value ?? '')
 const alarmAudio = typeof Audio !== 'undefined' ? new Audio(ALARM_SOUND_PATH) : null;
 if (alarmAudio) {
   alarmAudio.loop = true;
-  alarmAudio.preload = 'none';
+  alarmAudio.preload = 'auto';
 }
 let alarmAudioActive = false;
 
@@ -47,6 +47,26 @@ const setAlarmSoundActive = async (active) => {
     alarmAudio.currentTime = 0;
   }
 };
+
+const ensureAlarmAudioLoaded = async () => {
+  if (!alarmAudio) return;
+  alarmAudio.load();
+  try {
+    const response = await fetch(ALARM_SOUND_PATH, { method: 'HEAD', cache: 'no-store' });
+    if (!response.ok) {
+      console.warn('Alarm audio unavailable:', response.status, response.statusText);
+      return;
+    }
+    const contentType = response.headers.get('content-type');
+    if (contentType && !contentType.includes('audio')) {
+      console.warn('Unexpected alarm audio content-type:', contentType);
+    }
+  } catch (error) {
+    console.warn('Alarm audio fetch failed:', error);
+  }
+};
+
+ensureAlarmAudioLoaded().catch(() => null);
 
 const grid = document.getElementById('mainObjectGrid');
 const logTable = document.getElementById('mainLogTable');
