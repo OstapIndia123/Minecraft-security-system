@@ -802,10 +802,9 @@ const getAuthToken = () => {
 
 const apiFetch = async (path, options = {}) => {
   const token = getAuthToken();
-  const appMode = isAdminPage || state.role === 'installer' || state.role === 'admin' ? 'pro' : 'user';
   const headers = {
     'Content-Type': 'application/json',
-    'X-App-Mode': appMode,
+    'X-App-Mode': 'pro',
     ...(token ? { Authorization: `Bearer ${token}` } : {}),
     ...(isAdminPage && token ? { 'X-Admin-Token': token } : {}),
     ...(options.headers ?? {}),
