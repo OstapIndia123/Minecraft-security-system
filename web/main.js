@@ -412,6 +412,16 @@ const formatLogTime = (timestamp) => {
   });
 };
 
+const hasActiveAlarmFlash = (space) => {
+  const prefix = `logFlash:${space.name}:`;
+  for (const [key, expiresAt] of logFlashActive.entries()) {
+    if (key.startsWith(prefix) && expiresAt > Date.now()) {
+      return true;
+    }
+  }
+  return false;
+};
+
 const renderObjects = (spaces) => {
   const query = (searchInput?.value ?? '').trim().toLowerCase();
   const filtered = spaces.filter((space) => {
@@ -439,7 +449,7 @@ const renderObjects = (spaces) => {
 
   filtered.forEach((space) => {
     const card = document.createElement('button');
-    const shouldFlash = space.issues;
+    const shouldFlash = space.issues || hasActiveAlarmFlash(space);
     card.className = `object-card ${shouldFlash ? 'object-card--alarm object-card--alarm-flash' : ''}`;
     card.innerHTML = `
       <div class="object-card__title">${escapeHtml(space.name)}</div>
@@ -455,7 +465,7 @@ const renderObjects = (spaces) => {
     });
     grid.appendChild(card);
   });
-  setAlarmSoundActive(filtered.some((space) => space.issues)).catch(() => null);
+  setAlarmSoundActive(filtered.some((space) => space.issues || hasActiveAlarmFlash(space))).catch(() => null);
 };
 
 const translateLogText = (text) => {
@@ -558,8 +568,8 @@ const renderLogs = (logs) => {
 
 const refresh = async () => {
   const [spaces, logs] = await Promise.all([apiFetch('/api/spaces'), apiFetch('/api/logs')]);
-  renderObjects(spaces);
   renderLogs(logs);
+  renderObjects(spaces);
 };
 
 filterButtons.forEach((button) => {
