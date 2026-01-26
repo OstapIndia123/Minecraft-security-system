@@ -60,3 +60,23 @@
    docker compose up --build -d
    ```
 2. Проверить логи и `/health`.
+
+## 8. Troubleshooting клиента
+### Crash при старте с ошибкой `NoClassDefFoundError: org/yaml/snakeyaml/DumperOptions`
+Если клиент падает в `hubmod` с `NoClassDefFoundError: org/yaml/snakeyaml/DumperOptions`,
+это означает, что зависимость SnakeYAML не попала внутрь jar‑файла мода.
+
+Решение: при сборке мода убедитесь, что SnakeYAML включён в fat/shaded jar.
+Например, для Fabric Loom можно добавить зависимость и включить её в remapJar:
+```gradle
+dependencies {
+    modImplementation("org.yaml:snakeyaml:2.2.0")
+    include("org.yaml:snakeyaml:2.2.0")
+}
+
+loom {
+    // remapJar соберёт include в итоговый jar
+}
+```
+Либо добавьте `org.yaml:snakeyaml` в список библиотек экземпляра
+(Prism/Launcher's libraries), чтобы класс был доступен на клиенте.
