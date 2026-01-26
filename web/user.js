@@ -12,7 +12,6 @@ const state = {
 let spacesCache = [];
 const FLASH_DURATION_MS = 15000;
 const logFlashActive = new Map();
-let hasAlarmLogs = false;
 const NICKNAME_COOLDOWN_MS = 7 * 24 * 60 * 60 * 1000;
 const ALARM_SOUND_PATH = '/alarm.mp3';
 
@@ -337,14 +336,17 @@ const getLogFlashKey = (log, spaceId) => {
 };
 
 const registerAlarmFlashes = (logs, spaceId) => {
-  let hasAlarm = false;
   logs.forEach((log) => {
     if (log.type !== 'alarm') return;
-    hasAlarm = true;
+    const logTimestamp = getLogTimestamp(log);
+    if (!logTimestamp) return;
     const flashKey = getLogFlashKey(log, spaceId);
-    logFlashActive.set(flashKey, Date.now() + FLASH_DURATION_MS);
+    const hasSeen = localStorage.getItem(flashKey);
+    if (!hasSeen) {
+      localStorage.setItem(flashKey, String(Date.now()));
+      logFlashActive.set(flashKey, Date.now() + FLASH_DURATION_MS);
+    }
   });
-  return hasAlarm;
 };
 
 const hasAnyActiveAlarmFlash = () => {
@@ -616,13 +618,13 @@ const filterLogs = (logs) => {
 
 const renderLogs = (logs, spaceId) => {
   const logsSource = logs ?? [];
-  hasAlarmLogs = registerAlarmFlashes(logsSource, spaceId);
+  registerAlarmFlashes(logsSource, spaceId);
   const filtered = filterLogs(logsSource)
     .filter((log) => !/^Событие хаба/.test(log.text ?? ''));
   logTable.innerHTML = '';
   if (!filtered.length) {
     logTable.innerHTML = `<div class="empty-state">${t('user.empty.logs')}</div>`;
-    setAlarmSoundActive(hasAlarmLogs || hasAnyActiveAlarmFlash()).catch(() => null);
+    setAlarmSoundActive(hasAnyActiveAlarmFlash()).catch(() => null);
     return;
   }
   filtered.forEach((log) => {
@@ -644,7 +646,7 @@ const renderLogs = (logs, spaceId) => {
     `;
     logTable.appendChild(row);
   });
-  setAlarmSoundActive(hasAlarmLogs || hasAnyActiveAlarmFlash()).catch(() => null);
+  setAlarmSoundActive(hasAnyActiveAlarmFlash()).catch(() => null);
 };
 
 const loadSpace = async (spaceId) => {
