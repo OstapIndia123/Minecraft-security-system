@@ -3,11 +3,11 @@
   <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
-    <title>Minecraft Security System — Демо интерфейс</title>
+    <title>Minecraft Security System — Admin</title>
     <link rel="stylesheet" href="styles.css" />
     <link rel="icon" href="/favicon.png" type="image/png" />
   </head>
-  <body>
+  <body data-admin="true">
     <div class="app-shell">
       <aside class="sidebar">
         <div class="sidebar__header">
@@ -39,8 +39,8 @@
         <header class="topbar">
           <div class="topbar__left">
             <div class="topbar__title">
-              <h1 data-i18n="engineer.title">Объекты</h1>
-              <p data-i18n="engineer.subtitle">Управление пространствами и событиями</p>
+              <h1 data-i18n="admin.title">Админ-панель</h1>
+              <p data-i18n="admin.subtitle">Полный доступ ко всем объектам</p>
             </div>
             <div class="search">
               <span class="icon">🔍</span>
@@ -50,6 +50,7 @@
           <div class="topbar__right">
             <button class="button button--ghost" id="refreshBtn" data-i18n="engineer.actions.refresh">Обновить</button>
             <button class="button button--primary" id="openCreate" data-i18n="engineer.actions.add">Добавить объект</button>
+            <button class="button button--ghost" id="openAdminUsers" data-i18n="admin.actions.users">Админ</button>
             <div class="profile-menu" id="profileMenu">
               <button class="avatar-button" id="avatarButton" aria-label="Профиль">
                 <img class="avatar-button__image" data-avatar alt="Discord avatar" />
@@ -63,7 +64,7 @@
                   </div>
                   <div>
                     <div class="profile-dropdown__title" data-i18n="profile.title">Профиль</div>
-                    <div class="profile-dropdown__subtitle">Discord</div>
+                    <div class="profile-dropdown__subtitle" id="profileSubtitle">Admin</div>
                   </div>
                 </div>
                 <label class="profile-field">
@@ -296,6 +297,35 @@
       </div>
     </div>
 
+    <div class="modal modal--fullscreen" id="adminUsersModal" aria-hidden="true">
+      <div class="modal__content modal__content--fullscreen">
+        <div class="modal__header">
+          <h3 data-i18n="admin.users.title">Пользователи</h3>
+          <button class="icon-button" id="closeAdminUsers" aria-label="Закрыть">✕</button>
+        </div>
+        <div class="modal__body">
+          <div class="admin-users" id="adminUsersList"></div>
+        </div>
+      </div>
+    </div>
+
+    <div class="modal" id="adminLoginModal" aria-hidden="true">
+      <div class="modal__content">
+        <div class="modal__header">
+          <h3 data-i18n="admin.login.title">Вход в админ-панель</h3>
+        </div>
+        <form class="modal__body" id="adminLoginForm">
+          <label class="form-field">
+            <span data-i18n="admin.login.password">Пароль</span>
+            <input type="password" id="adminPassword" required />
+          </label>
+          <div class="modal__actions">
+            <button class="button button--primary" type="submit" data-i18n="admin.login.submit">Войти</button>
+          </div>
+        </form>
+      </div>
+    </div>
+
     <div class="modal" id="deviceModal" aria-hidden="true">
       <div class="modal__content">
         <div class="modal__header">
@@ -396,6 +426,7 @@
       </div>
     </div>
 
-    <script src="app.js?v=2026-01-24"></script>
+    <script src="app.js?v=2026-01-25"></script>
+    <script src="admin.js?v=2026-01-25"></script>
   </body>
 </html>
