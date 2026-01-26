@@ -5,6 +5,8 @@
     <meta name="viewport" content="width=device-width, initial-scale=1" />
     <title>Minecraft Security System — Режим пользователя</title>
     <link rel="stylesheet" href="styles.css" />
+    <link rel="preload" href="/alarm.mp3" as="audio" />
+    <link rel="icon" href="/favicon.png" type="image/png" />
   </head>
   <body>
     <div class="app-shell">
@@ -45,7 +47,10 @@
                 </div>
                 <label class="profile-field">
                   <span data-i18n="profile.nickname">Игровой ник</span>
-                  <input type="text" id="profileNickname" placeholder="PlayerName" />
+                  <div class="profile-field__row">
+                    <input type="text" id="profileNickname" placeholder="PlayerName" maxlength="16" />
+                    <button class="button button--danger profile-nickname-action" id="profileNicknameChange" type="button" data-i18n="profile.nickname.change">Сменить</button>
+                  </div>
                 </label>
                 <label class="profile-field">
                   <span data-i18n="profile.timezone">Часовой пояс</span>
@@ -128,6 +133,12 @@
           <div class="panel" id="user-log">
             <div class="panel__header">
               <h2 data-i18n="user.log.title">Лог событий</h2>
+              <div class="filters" id="userLogFilters">
+                <button class="chip chip--active" data-log="all" data-i18n="user.log.filters.all">Все</button>
+                <button class="chip" data-log="security" data-i18n="user.log.filters.security">Охранные</button>
+                <button class="chip" data-log="access" data-i18n="user.log.filters.access">Доступ</button>
+                <button class="chip" data-log="system" data-i18n="user.log.filters.system">Система</button>
+              </div>
             </div>
             <div class="log-table" id="userLogTable"></div>
           </div>
@@ -135,6 +146,21 @@
       </main>
     </div>
 
-    <script src="user.js"></script>
+    <div class="modal" id="actionModal" aria-hidden="true">
+      <div class="modal__content">
+        <div class="modal__header">
+          <h3 id="actionModalTitle">Подтвердите действие</h3>
+          <button class="ghost-button" id="closeActionModal" aria-label="Закрыть">✕</button>
+        </div>
+        <p id="actionModalMessage"></p>
+        <form class="form-grid hidden" id="actionModalForm"></form>
+        <div class="modal__actions">
+          <button class="button button--ghost" id="actionModalCancel" type="button">Отмена</button>
+          <button class="button button--primary" id="actionModalConfirm" type="button">Подтвердить</button>
+        </div>
+      </div>
+    </div>
+
+    <script src="user.js?v=20260124"></script>
   </body>
 </html>
