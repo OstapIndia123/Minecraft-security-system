@@ -376,10 +376,11 @@ const openActionModal = ({
 
 const apiFetch = async (path) => {
   const token = localStorage.getItem('authToken');
+  const appMode = state.role === 'installer' || state.role === 'admin' ? 'pro' : 'user';
   const response = await fetch(path, {
     headers: token
-      ? { Authorization: `Bearer ${token}`, 'X-App-Mode': 'pro' }
-      : { 'X-App-Mode': 'pro' },
+      ? { Authorization: `Bearer ${token}`, 'X-App-Mode': appMode }
+      : { 'X-App-Mode': appMode },
   });
   if (!response.ok) {
     if (response.status === 401) {
