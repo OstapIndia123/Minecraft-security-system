@@ -13,6 +13,7 @@ const state = {
 
 const FLASH_DURATION_MS = 15000;
 const logFlashActive = new Map();
+let hasAlarmLogs = false;
 const NICKNAME_COOLDOWN_MS = 7 * 24 * 60 * 60 * 1000;
 const SPACE_CREATE_COOLDOWN_MS = 15 * 60 * 1000;
 const ALARM_SOUND_PATH = '/alarm.mp3';
@@ -419,17 +420,14 @@ const getLogFlashKey = (log) => {
 };
 
 const registerAlarmFlashes = (logs) => {
+  let hasAlarm = false;
   logs.forEach((log) => {
     if (log.type !== 'alarm') return;
-    const logTimestamp = getLogTimestamp(log);
-    if (!logTimestamp) return;
+    hasAlarm = true;
     const flashKey = getLogFlashKey(log);
-    const hasSeen = localStorage.getItem(flashKey);
-    if (!hasSeen) {
-      localStorage.setItem(flashKey, String(Date.now()));
-      logFlashActive.set(flashKey, Date.now() + FLASH_DURATION_MS);
-    }
+    logFlashActive.set(flashKey, Date.now() + FLASH_DURATION_MS);
   });
+  return hasAlarm;
 };
 
 const hasActiveAlarmFlash = (space) => {
@@ -504,7 +502,7 @@ const renderObjects = (spaces) => {
     });
     grid.appendChild(card);
   });
-  const shouldSound = spaces.some((space) => space.issues) || hasAnyActiveAlarmFlash();
+  const shouldSound = spaces.some((space) => space.issues) || hasAlarmLogs || hasAnyActiveAlarmFlash();
   setAlarmSoundActive(shouldSound).catch(() => null);
 };
 
@@ -549,7 +547,7 @@ const translateLogText = (text) => {
 
 const renderLogs = (logs) => {
   const logsSource = logs ?? [];
-  registerAlarmFlashes(logsSource);
+  hasAlarmLogs = registerAlarmFlashes(logsSource);
   const filtered = state.logFilter === 'all'
     ? logsSource.filter((log) => log.type !== 'hub_raw')
     : logsSource.filter((log) => {

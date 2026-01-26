@@ -25,6 +25,7 @@ const state = {
 let spaces = [];
 const FLASH_DURATION_MS = 15000;
 const logFlashActive = new Map();
+let hasAlarmLogs = false;
 const NICKNAME_COOLDOWN_MS = 7 * 24 * 60 * 60 * 1000;
 const SPACE_CREATE_COOLDOWN_MS = 15 * 60 * 1000;
 const ALARM_SOUND_PATH = '/alarm.mp3';
@@ -901,17 +902,14 @@ const getLogFlashKey = (log, spaceId) => {
 };
 
 const registerAlarmFlashes = (logs, spaceId) => {
+  let hasAlarm = false;
   logs.forEach((log) => {
     if (log.type !== 'alarm') return;
-    const logTimestamp = getLogTimestamp(log);
-    if (!logTimestamp) return;
+    hasAlarm = true;
     const flashKey = getLogFlashKey(log, spaceId);
-    const hasSeen = localStorage.getItem(flashKey);
-    if (!hasSeen) {
-      localStorage.setItem(flashKey, String(Date.now()));
-      logFlashActive.set(flashKey, Date.now() + FLASH_DURATION_MS);
-    }
+    logFlashActive.set(flashKey, Date.now() + FLASH_DURATION_MS);
   });
+  return hasAlarm;
 };
 
 const hasActiveAlarmFlash = (spaceId) => {
@@ -981,7 +979,7 @@ const renderObjectList = () => {
     });
     objectList.appendChild(card);
   });
-  const shouldSound = spaces.some((space) => space.issues) || hasAnyActiveAlarmFlash();
+  const shouldSound = spaces.some((space) => space.issues) || hasAlarmLogs || hasAnyActiveAlarmFlash();
   setAlarmSoundActive(shouldSound).catch(() => null);
 };
 
@@ -1747,6 +1745,7 @@ if (deviceSearch) {
 
 const refreshAll = async () => {
   await loadSpaces();
+  await loadGlobalLogs();
   if (state.selectedSpaceId && !spaces.some((space) => space.id === state.selectedSpaceId)) {
     state.selectedSpaceId = null;
     state.selectedDeviceId = null;
@@ -1758,6 +1757,16 @@ const refreshAll = async () => {
   }
   await loadMembers();
   renderAll();
+};
+
+const loadGlobalLogs = async () => {
+  try {
+    const logs = await apiFetch('/api/logs');
+    hasAlarmLogs = registerAlarmFlashes(logs);
+  } catch (error) {
+    console.error(error);
+    hasAlarmLogs = false;
+  }
 };
 
 if (refreshBtn) {
