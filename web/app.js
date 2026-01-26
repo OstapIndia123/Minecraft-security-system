@@ -911,12 +911,7 @@ const renderObjectList = () => {
   filtered.forEach((space) => {
     const card = document.createElement('button');
     const isAlarm = space.issues;
-    const alarmFlash = (space.logs ?? []).some((log) => {
-      if (log.type !== 'alarm') return false;
-      const logTimestamp = getLogTimestamp(log);
-      const flashKey = `logFlash:${space.id}:${logTimestamp ?? log.time}:${log.text}`;
-      return logFlashActive.get(flashKey) > Date.now();
-    });
+    const alarmFlash = isAlarm;
     card.className = `object-card ${space.id === state.selectedSpaceId ? 'object-card--active' : ''} ${
       isAlarm ? 'object-card--alarm' : ''
     } ${alarmFlash ? 'object-card--alarm-flash' : ''}`;
@@ -937,7 +932,7 @@ const renderObjectList = () => {
     });
     objectList.appendChild(card);
   });
-  setAlarmSoundActive(Boolean(objectList.querySelector('.object-card--alarm-flash'))).catch(() => null);
+  setAlarmSoundActive(spaces.some((space) => space.issues)).catch(() => null);
 };
 
 const renderSpaceHeader = (space) => {

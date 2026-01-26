@@ -2222,8 +2222,9 @@ app.post('/api/hub/events', requireWebhookToken, async (req, res) => {
       const newStatus = isNormal ? 'Норма' : 'Нарушение';
       await query('UPDATE devices SET status = $1 WHERE id = $2', [newStatus, zone.id]);
 
-      const spaceRow = await query('SELECT status, hub_id FROM spaces WHERE id = $1', [spaceId]);
+      const spaceRow = await query('SELECT status, hub_id, issues FROM spaces WHERE id = $1', [spaceId]);
       const status = spaceRow.rows[0]?.status ?? 'disarmed';
+      const hasActiveIssues = Boolean(spaceRow.rows[0]?.issues || spaceAlarmState.get(spaceId));
       const zoneType = config.zoneType ?? 'instant';
       const bypass = Boolean(config.bypass);
       const silent = Boolean(config.silent);
@@ -2244,7 +2245,7 @@ app.post('/api/hub/events', requireWebhookToken, async (req, res) => {
           continue;
         }
         if (zoneType === 'delayed' && status === 'armed' && !entryDelayTimers.has(spaceId)) {
-          if (spaceAlarmState.get(spaceId)) {
+          if (hasActiveIssues) {
             await appendLog(spaceId, `Тревога шлейфа: ${zone.name}`, 'Zone', 'alarm');
             zoneAlarmState.set(`${spaceId}:${zone.id}`, true);
             spaceAlarmState.set(spaceId, true);
