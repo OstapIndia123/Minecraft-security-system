@@ -27,6 +27,8 @@ const FLASH_DURATION_MS = 15000;
 const logFlashActive = new Map();
 const NICKNAME_COOLDOWN_MS = 7 * 24 * 60 * 60 * 1000;
 const SPACE_CREATE_COOLDOWN_MS = 15 * 60 * 1000;
+const ALARM_SOUND_PATH = '/alarm.mp3';
+const ALARM_SOUND_COOLDOWN_MS = 5000;
 
 const escapeHtml = (value) => String(value ?? '')
   .replace(/&/g, '&amp;')
@@ -34,6 +36,58 @@ const escapeHtml = (value) => String(value ?? '')
   .replace(/>/g, '&gt;')
   .replace(/"/g, '&quot;')
   .replace(/'/g, '&#39;');
+
+const alarmAudio = typeof Audio !== 'undefined' ? new Audio(ALARM_SOUND_PATH) : null;
+if (alarmAudio) {
+  alarmAudio.loop = true;
+  alarmAudio.preload = 'auto';
+}
+let alarmAudioActive = false;
+let lastAlarmSoundAt = 0;
+
+const setAlarmSoundActive = async (active) => {
+  if (!alarmAudio) return;
+  if (active === alarmAudioActive) return;
+  alarmAudioActive = active;
+  if (active) {
+    const now = Date.now();
+    if (now - lastAlarmSoundAt < ALARM_SOUND_COOLDOWN_MS) return;
+    lastAlarmSoundAt = now;
+    try {
+      await alarmAudio.play();
+    } catch {
+      // Ignore autoplay restrictions until user interaction.
+    }
+  } else {
+    alarmAudio.pause();
+    alarmAudio.currentTime = 0;
+  }
+};
+
+const notifySecurityEvent = async ({ title, body, tag }) => {
+  if (typeof Notification === 'undefined') return;
+  if (Notification.permission === 'denied') return;
+  if (Notification.permission === 'default') {
+    const permission = await Notification.requestPermission();
+    if (permission !== 'granted') return;
+  }
+  try {
+    new Notification(title, { body, tag });
+  } catch {
+    // Ignore notification failures in unsupported contexts.
+  }
+};
+
+const notifyLogEvent = async (space, log) => {
+  if (!space || !log) return;
+  if (log.type !== 'security' && log.type !== 'alarm') return;
+  const key = `notify:${space.id}:${log.createdAt ?? log.time}:${log.text}`;
+  if (localStorage.getItem(key)) return;
+  localStorage.setItem(key, String(Date.now()));
+  const title = log.type === 'alarm' ? 'Охранное событие: тревога' : 'Охранное событие';
+  const body = `${space.name}: ${log.text}`;
+  await notifySecurityEvent({ title, body, tag: key });
+};
 
 const objectList = document.getElementById('objectList');
 const spaceIdEl = document.getElementById('spaceId');
@@ -857,9 +911,15 @@ const renderObjectList = () => {
   filtered.forEach((space) => {
     const card = document.createElement('button');
     const isAlarm = space.issues;
+    const alarmFlash = (space.logs ?? []).some((log) => {
+      if (log.type !== 'alarm') return false;
+      const logTimestamp = getLogTimestamp(log);
+      const flashKey = `logFlash:${space.id}:${logTimestamp ?? log.time}:${log.text}`;
+      return logFlashActive.get(flashKey) > Date.now();
+    });
     card.className = `object-card ${space.id === state.selectedSpaceId ? 'object-card--active' : ''} ${
       isAlarm ? 'object-card--alarm' : ''
-    }`;
+    } ${alarmFlash ? 'object-card--alarm-flash' : ''}`;
     card.innerHTML = `
       <div class="object-card__title">${escapeHtml(space.name)}</div>
       <div class="object-card__meta">${t('engineer.object.hubId')} ${escapeHtml(space.hubId ?? '—')}</div>
@@ -877,6 +937,7 @@ const renderObjectList = () => {
     });
     objectList.appendChild(card);
   });
+  setAlarmSoundActive(Boolean(objectList.querySelector('.object-card--alarm-flash'))).catch(() => null);
 };
 
 const renderSpaceHeader = (space) => {
@@ -1722,6 +1783,7 @@ const pollLogs = async () => {
       state.lastLogKey = logKey;
       space.logs = logs;
       renderLogs(space);
+      notifyLogEvent(space, lastLog).catch(() => null);
       if (lastLog?.type === 'alarm' || lastLog?.type === 'restore') {
         await refreshAll();
       }
