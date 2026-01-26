@@ -486,6 +486,7 @@ const pulseReaderOutput = async (readerId, level, durationMs = MIN_INTERVAL_MS) 
 const sirenTimers = new Map();
 const sirenStopTimeouts = new Map();
 const spaceAlarmState = new Map();
+const alarmSinceArmed = new Map();
 const pendingArmTimers = new Map();
 const entryDelayTimers = new Map();
 const entryDelayFailed = new Map();
@@ -651,6 +652,7 @@ const startEntryDelay = async (spaceId, hubId, delaySeconds, zoneName, zoneId) =
     const status = spaceRow.rows[0]?.status ?? 'disarmed';
     if (status === 'armed') {
       entryDelayFailed.set(spaceId, true);
+      alarmSinceArmed.set(spaceId, true);
       await appendLog(
         spaceId,
         'Неудачное снятие с охраны, выслать группу реагирования!',
@@ -1969,9 +1971,13 @@ const updateStatus = async (spaceId, status, who, logMessage) => {
   if (status !== 'armed') {
     await stopSirenTimers(spaceId, space.hubId);
     spaceAlarmState.set(spaceId, false);
+    alarmSinceArmed.delete(spaceId);
     await clearEntryDelay(spaceId, space.hubId);
     await clearPendingArm(spaceId, space.hubId);
     entryDelayFailed.delete(spaceId);
+  }
+  if (status === 'armed') {
+    alarmSinceArmed.set(spaceId, false);
   }
   space.devices = await loadDevices(spaceId, space.hubId, space.hubOnline);
   return space;
@@ -2224,7 +2230,9 @@ app.post('/api/hub/events', requireWebhookToken, async (req, res) => {
 
       const spaceRow = await query('SELECT status, hub_id, issues FROM spaces WHERE id = $1', [spaceId]);
       const status = spaceRow.rows[0]?.status ?? 'disarmed';
-      const hasActiveIssues = Boolean(spaceRow.rows[0]?.issues || spaceAlarmState.get(spaceId));
+      const hasActiveIssues = Boolean(
+        spaceRow.rows[0]?.issues || spaceAlarmState.get(spaceId) || alarmSinceArmed.get(spaceId),
+      );
       const zoneType = config.zoneType ?? 'instant';
       const bypass = Boolean(config.bypass);
       const silent = Boolean(config.silent);
@@ -2235,6 +2243,7 @@ app.post('/api/hub/events', requireWebhookToken, async (req, res) => {
           await appendLog(spaceId, `Тревога шлейфа: ${zone.name}`, 'Zone', 'alarm');
           zoneAlarmState.set(`${spaceId}:${zone.id}`, true);
           spaceAlarmState.set(spaceId, true);
+          alarmSinceArmed.set(spaceId, true);
           if (!silent) {
             await startSirenTimers(spaceId, spaceRow.rows[0]?.hub_id);
           }
@@ -2249,6 +2258,7 @@ app.post('/api/hub/events', requireWebhookToken, async (req, res) => {
             await appendLog(spaceId, `Тревога шлейфа: ${zone.name}`, 'Zone', 'alarm');
             zoneAlarmState.set(`${spaceId}:${zone.id}`, true);
             spaceAlarmState.set(spaceId, true);
+            alarmSinceArmed.set(spaceId, true);
             if (!silent) {
               await startSirenTimers(spaceId, spaceRow.rows[0]?.hub_id);
             }
@@ -2265,6 +2275,7 @@ app.post('/api/hub/events', requireWebhookToken, async (req, res) => {
         await appendLog(spaceId, `Тревога шлейфа: ${zone.name}`, 'Zone', 'alarm');
         zoneAlarmState.set(`${spaceId}:${zone.id}`, true);
         spaceAlarmState.set(spaceId, true);
+        alarmSinceArmed.set(spaceId, true);
         if (!silent) {
           await startSirenTimers(spaceId, spaceRow.rows[0]?.hub_id);
         }

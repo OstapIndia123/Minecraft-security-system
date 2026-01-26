@@ -15,6 +15,7 @@ const FLASH_DURATION_MS = 15000;
 const logFlashActive = new Map();
 const NICKNAME_COOLDOWN_MS = 7 * 24 * 60 * 60 * 1000;
 const SPACE_CREATE_COOLDOWN_MS = 15 * 60 * 1000;
+const ALARM_SOUND_PATH = '/alarm.mp3';
 
 const escapeHtml = (value) => String(value ?? '')
   .replace(/&/g, '&amp;')
@@ -22,6 +23,29 @@ const escapeHtml = (value) => String(value ?? '')
   .replace(/>/g, '&gt;')
   .replace(/"/g, '&quot;')
   .replace(/'/g, '&#39;');
+
+const alarmAudio = typeof Audio !== 'undefined' ? new Audio(ALARM_SOUND_PATH) : null;
+if (alarmAudio) {
+  alarmAudio.loop = true;
+  alarmAudio.preload = 'auto';
+}
+let alarmAudioActive = false;
+
+const setAlarmSoundActive = async (active) => {
+  if (!alarmAudio) return;
+  if (active === alarmAudioActive) return;
+  alarmAudioActive = active;
+  if (active) {
+    try {
+      await alarmAudio.play();
+    } catch {
+      // Ignore autoplay restrictions.
+    }
+  } else {
+    alarmAudio.pause();
+    alarmAudio.currentTime = 0;
+  }
+};
 
 const grid = document.getElementById('mainObjectGrid');
 const logTable = document.getElementById('mainLogTable');
@@ -415,11 +439,7 @@ const renderObjects = (spaces) => {
 
   filtered.forEach((space) => {
     const card = document.createElement('button');
-    const alarmKey = `alarmPending:${space.id}`;
-    if (space.issues && !localStorage.getItem(alarmKey)) {
-      localStorage.setItem(alarmKey, String(Date.now()));
-    }
-    const shouldFlash = Boolean(localStorage.getItem(alarmKey));
+    const shouldFlash = space.issues;
     card.className = `object-card ${shouldFlash ? 'object-card--alarm object-card--alarm-flash' : ''}`;
     card.innerHTML = `
       <div class="object-card__title">${escapeHtml(space.name)}</div>
@@ -429,13 +449,13 @@ const renderObjects = (spaces) => {
       <div class="object-card__meta">${escapeHtml(space.address)}</div>
     `;
     card.addEventListener('click', () => {
-      localStorage.removeItem(alarmKey);
       const url = new URL('main.html', window.location.href);
       url.searchParams.set('spaceId', space.id);
       window.location.href = url.toString();
     });
     grid.appendChild(card);
   });
+  setAlarmSoundActive(filtered.some((space) => space.issues)).catch(() => null);
 };
 
 const translateLogText = (text) => {
