@@ -10,7 +10,10 @@ const state = {
 };
 
 let spacesCache = [];
+const FLASH_DURATION_MS = 15000;
+const logFlashActive = new Map();
 const NICKNAME_COOLDOWN_MS = 7 * 24 * 60 * 60 * 1000;
+const ALARM_SOUND_PATH = '/alarm.mp3';
 
 const escapeHtml = (value) => String(value ?? '')
   .replace(/&/g, '&amp;')
@@ -18,6 +21,29 @@ const escapeHtml = (value) => String(value ?? '')
   .replace(/>/g, '&gt;')
   .replace(/"/g, '&quot;')
   .replace(/'/g, '&#39;');
+
+const alarmAudio = typeof Audio !== 'undefined' ? new Audio(ALARM_SOUND_PATH) : null;
+if (alarmAudio) {
+  alarmAudio.loop = true;
+  alarmAudio.preload = 'none';
+}
+let alarmAudioActive = false;
+
+const setAlarmSoundActive = async (active) => {
+  if (!alarmAudio) return;
+  if (active === alarmAudioActive) return;
+  alarmAudioActive = active;
+  if (active) {
+    try {
+      await alarmAudio.play();
+    } catch {
+      // Ignore autoplay restrictions.
+    }
+  } else {
+    alarmAudio.pause();
+    alarmAudio.currentTime = 0;
+  }
+};
 
 const objectList = document.getElementById('userObjectList');
 const spaceIdEl = document.getElementById('userSpaceId');
@@ -294,6 +320,48 @@ const formatLogTime = (timestamp) => {
   });
 };
 
+const getLogTimestamp = (log) => {
+  if (log.createdAtMs) return log.createdAtMs;
+  const raw = log.createdAt ?? log.created_at;
+  if (!raw) return null;
+  const parsed = new Date(`${raw}Z`);
+  if (Number.isNaN(parsed.getTime())) return null;
+  return parsed.getTime();
+};
+
+const getLogFlashKey = (log, spaceId) => {
+  const spaceKey = spaceId ?? 'unknown';
+  const timestamp = getLogTimestamp(log) ?? log.time ?? 'unknown';
+  return `logFlash:${spaceKey}:${timestamp}:${log.text}`;
+};
+
+const registerAlarmFlashes = (logs, spaceId) => {
+  logs.forEach((log) => {
+    if (log.type !== 'alarm') return;
+    const logTimestamp = getLogTimestamp(log);
+    if (!logTimestamp) return;
+    const flashKey = getLogFlashKey(log, spaceId);
+    const hasSeen = localStorage.getItem(flashKey);
+    if (!hasSeen) {
+      localStorage.setItem(flashKey, String(Date.now()));
+      logFlashActive.set(flashKey, Date.now() + FLASH_DURATION_MS);
+    }
+  });
+};
+
+const hasAnyActiveAlarmFlash = () => {
+  const now = Date.now();
+  let active = false;
+  for (const [key, expiresAt] of logFlashActive.entries()) {
+    if (expiresAt > now) {
+      active = true;
+      continue;
+    }
+    logFlashActive.delete(key);
+  }
+  return active;
+};
+
 const initProfileMenu = async () => {
   if (!avatarButton || !profileDropdown) return;
   const toggle = (open) => {
@@ -548,18 +616,26 @@ const filterLogs = (logs) => {
   return withoutHubEvents.filter((log) => log.type === state.logFilter);
 };
 
-const renderLogs = (logs) => {
-  const filtered = filterLogs(logs)
+const renderLogs = (logs, spaceId) => {
+  const logsSource = logs ?? [];
+  registerAlarmFlashes(logsSource, spaceId);
+  const filtered = filterLogs(logsSource)
     .filter((log) => !/^Событие хаба/.test(log.text ?? ''));
   logTable.innerHTML = '';
   if (!filtered.length) {
     logTable.innerHTML = `<div class="empty-state">${t('user.empty.logs')}</div>`;
+    setAlarmSoundActive(hasAnyActiveAlarmFlash()).catch(() => null);
     return;
   }
   filtered.forEach((log) => {
     const row = document.createElement('div');
-    row.className = `log-row ${log.type === 'alarm' ? 'log-row--alarm' : ''}`;
-    const timestamp = log.createdAtMs ?? (log.createdAt ? new Date(`${log.createdAt}Z`).getTime() : null);
+    const timestamp = getLogTimestamp(log);
+    const flashKey = getLogFlashKey(log, spaceId);
+    const shouldFlash = logFlashActive.get(flashKey) > Date.now();
+    if (!shouldFlash) {
+      logFlashActive.delete(flashKey);
+    }
+    row.className = `log-row ${log.type === 'alarm' ? 'log-row--alarm' : ''} ${shouldFlash ? 'log-row--alarm-flash' : ''}`;
     const timeLabel = escapeHtml(formatLogTime(timestamp) ?? log.time);
     const text = escapeHtml(translateLogText(log.text));
     const whoLabel = escapeHtml(log.who);
@@ -570,6 +646,7 @@ const renderLogs = (logs) => {
     `;
     logTable.appendChild(row);
   });
+  setAlarmSoundActive(hasAnyActiveAlarmFlash()).catch(() => null);
 };
 
 const loadSpace = async (spaceId) => {
@@ -577,7 +654,7 @@ const loadSpace = async (spaceId) => {
   renderStatus(space);
   renderDevices(space.devices ?? []);
   const logs = await apiFetch(`/api/spaces/${spaceId}/logs`);
-  renderLogs(logs);
+  renderLogs(logs, spaceId);
 };
 
 const loadSpaces = async () => {

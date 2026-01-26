@@ -27,7 +27,7 @@ const escapeHtml = (value) => String(value ?? '')
 const alarmAudio = typeof Audio !== 'undefined' ? new Audio(ALARM_SOUND_PATH) : null;
 if (alarmAudio) {
   alarmAudio.loop = true;
-  alarmAudio.preload = 'auto';
+  alarmAudio.preload = 'none';
 }
 let alarmAudioActive = false;
 
@@ -412,14 +412,53 @@ const formatLogTime = (timestamp) => {
   });
 };
 
+const getLogFlashKey = (log) => {
+  const spaceKey = log.spaceId ?? log.spaceName ?? 'unknown';
+  const timestamp = getLogTimestamp(log) ?? log.time ?? 'unknown';
+  return `logFlash:${spaceKey}:${timestamp}:${log.text}`;
+};
+
+const registerAlarmFlashes = (logs) => {
+  logs.forEach((log) => {
+    if (log.type !== 'alarm') return;
+    const logTimestamp = getLogTimestamp(log);
+    if (!logTimestamp) return;
+    const flashKey = getLogFlashKey(log);
+    const hasSeen = localStorage.getItem(flashKey);
+    if (!hasSeen) {
+      localStorage.setItem(flashKey, String(Date.now()));
+      logFlashActive.set(flashKey, Date.now() + FLASH_DURATION_MS);
+    }
+  });
+};
+
 const hasActiveAlarmFlash = (space) => {
-  const prefix = `logFlash:${space.name}:`;
+  const prefix = `logFlash:${space.id}:`;
+  const now = Date.now();
+  let hasActive = false;
   for (const [key, expiresAt] of logFlashActive.entries()) {
-    if (key.startsWith(prefix) && expiresAt > Date.now()) {
-      return true;
+    if (expiresAt <= now) {
+      logFlashActive.delete(key);
+      continue;
+    }
+    if (key.startsWith(prefix)) {
+      hasActive = true;
     }
   }
-  return false;
+  return hasActive;
+};
+
+const hasAnyActiveAlarmFlash = () => {
+  const now = Date.now();
+  let active = false;
+  for (const [key, expiresAt] of logFlashActive.entries()) {
+    if (expiresAt > now) {
+      active = true;
+      continue;
+    }
+    logFlashActive.delete(key);
+  }
+  return active;
 };
 
 const renderObjects = (spaces) => {
@@ -465,7 +504,8 @@ const renderObjects = (spaces) => {
     });
     grid.appendChild(card);
   });
-  setAlarmSoundActive(filtered.some((space) => space.issues || hasActiveAlarmFlash(space))).catch(() => null);
+  const shouldSound = spaces.some((space) => space.issues) || hasAnyActiveAlarmFlash();
+  setAlarmSoundActive(shouldSound).catch(() => null);
 };
 
 const translateLogText = (text) => {
@@ -508,9 +548,11 @@ const translateLogText = (text) => {
 };
 
 const renderLogs = (logs) => {
+  const logsSource = logs ?? [];
+  registerAlarmFlashes(logsSource);
   const filtered = state.logFilter === 'all'
-    ? logs.filter((log) => log.type !== 'hub_raw')
-    : logs.filter((log) => {
+    ? logsSource.filter((log) => log.type !== 'hub_raw')
+    : logsSource.filter((log) => {
         if (state.logFilter === 'security') {
           return log.type === 'security' || log.type === 'alarm' || log.type === 'restore';
         }
@@ -541,12 +583,7 @@ const renderLogs = (logs) => {
     const isAlarm = log.type === 'alarm';
     const isRestore = log.type === 'restore';
     const isHub = log.type === 'hub_raw';
-    const flashKey = `logFlash:${log.spaceName}:${logTimestamp ?? log.time}:${log.text}`;
-    const hasSeen = localStorage.getItem(flashKey);
-    if (isAlarm && logTimestamp && !hasSeen) {
-      localStorage.setItem(flashKey, String(Date.now()));
-      logFlashActive.set(flashKey, Date.now() + FLASH_DURATION_MS);
-    }
+    const flashKey = getLogFlashKey(log);
     const shouldFlash = logFlashActive.get(flashKey) > Date.now();
     if (!shouldFlash) {
       logFlashActive.delete(flashKey);
