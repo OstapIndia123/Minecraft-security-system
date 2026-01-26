@@ -5,6 +5,8 @@
     <meta name="viewport" content="width=device-width, initial-scale=1" />
     <title>Minecraft Security System — Вход</title>
     <link rel="stylesheet" href="styles.css" />
+    <link rel="preload" href="/alarm.mp3" as="fetch" type="audio/mpeg" crossorigin />
+    <link rel="icon" href="/favicon.png" type="image/png" />
   </head>
   <body>
     <div class="auth-shell">
@@ -37,7 +39,7 @@
           <h3 data-i18n="auth.nickname.title">Введите игровой ник</h3>
         </div>
         <form class="form-grid" id="nicknameForm">
-          <input type="text" name="nickname" data-i18n-placeholder="auth.nickname.placeholder" placeholder="Игровой ник" required />
+          <input type="text" name="nickname" data-i18n-placeholder="auth.nickname.placeholder" placeholder="Игровой ник" maxlength="16" required />
           <button class="button button--primary" type="submit" data-i18n="auth.nickname.save">Сохранить</button>
         </form>
       </div>
