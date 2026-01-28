@@ -405,17 +405,16 @@ const formatHubPayload = (payload) => {
   return JSON.stringify(payload, null, 2);
 };
 
-const trimHubLogs = async (hubId) => {
-  await query(
-    `DELETE FROM logs
-     WHERE id IN (
-       SELECT id FROM logs
-       WHERE type = 'hub_raw' AND who = $1
-       ORDER BY id DESC
-       OFFSET 100
-     )`,
-    [hubId],
-  );
+const parsePagination = (req, defaultLimit = 200, maxLimit = 500) => {
+  const requestedLimit = Number(req.query.limit ?? defaultLimit);
+  const requestedOffset = Number(req.query.offset ?? 0);
+  const limit = Number.isFinite(requestedLimit)
+    ? Math.min(Math.max(Math.trunc(requestedLimit), 1), maxLimit)
+    : defaultLimit;
+  const offset = Number.isFinite(requestedOffset)
+    ? Math.max(Math.trunc(requestedOffset), 0)
+    : 0;
+  return { limit, offset };
 };
 
 const requireWebhookToken = (req, res, next) => {
@@ -894,6 +893,20 @@ app.delete('/api/admin/users/:id', requireAdmin, async (req, res) => {
   res.json({ ok: true });
 });
 
+app.post('/api/admin/logs/purge', requireAdmin, async (req, res) => {
+  const days = Number(req.body?.days ?? 0);
+  if (!Number.isFinite(days) || days <= 0) {
+    res.status(400).json({ error: 'invalid_days' });
+    return;
+  }
+  const normalizedDays = Math.min(Math.trunc(days), 3650);
+  const result = await query(
+    'DELETE FROM logs WHERE created_at < NOW() - ($1 * INTERVAL \'1 day\') RETURNING id',
+    [normalizedDays],
+  );
+  res.json({ ok: true, deleted: result.rowCount });
+});
+
 app.get('/api/auth/launcher', async (req, res) => {
   if (!launcherApiUrl) {
     res.status(500).json({ error: 'launcher_not_configured' });
@@ -1098,6 +1111,7 @@ app.get('/api/spaces/:id/logs', requireAuth, async (req, res) => {
   if (appMode !== 'pro') {
     whereClauses.push("type <> 'hub_raw'", "type <> 'hub'");
   }
+  const { limit, offset } = parsePagination(req, 200, 500);
   const result = await query(
     `SELECT time,
             text,
@@ -1107,13 +1121,15 @@ app.get('/api/spaces/:id/logs', requireAuth, async (req, res) => {
      FROM logs
      WHERE ${whereClauses.join(' AND ')}
      ORDER BY id DESC
-     LIMIT 200`,
-    params,
+     LIMIT $${params.length + 1} OFFSET $${params.length + 2}`,
+    [...params, limit + 1, offset],
   );
-  res.json(result.rows.map(mapLog));
+  const mapped = result.rows.map(mapLog);
+  res.json({ logs: mapped.slice(0, limit), hasMore: mapped.length > limit });
 });
 
 app.get('/api/logs', requireAuth, async (req, res) => {
+  const { limit, offset } = parsePagination(req, 200, 500);
   if (req.user.is_admin) {
     const result = await query(
       `SELECT logs.time,
@@ -1126,9 +1142,10 @@ app.get('/api/logs', requireAuth, async (req, res) => {
        FROM logs
        JOIN spaces ON spaces.id = logs.space_id
        ORDER BY logs.id DESC
-       LIMIT 300`,
+       LIMIT $1 OFFSET $2`,
+      [limit + 1, offset],
     );
-    res.json(result.rows.map((row) => {
+    const mapped = result.rows.map((row) => {
       const createdAt = row.created_at;
       const createdAtMs = createdAt ? Date.parse(`${createdAt}Z`) : null;
       return {
@@ -1141,7 +1158,8 @@ app.get('/api/logs', requireAuth, async (req, res) => {
         spaceName: row.space_name,
         spaceId: row.space_id,
       };
-    }));
+    });
+    res.json({ logs: mapped.slice(0, limit), hasMore: mapped.length > limit });
     return;
   }
   const appMode = req.header('x-app-mode');
@@ -1163,10 +1181,10 @@ app.get('/api/logs', requireAuth, async (req, res) => {
      JOIN user_spaces ON user_spaces.space_id = spaces.id
      WHERE ${whereClauses.join(' AND ')}
      ORDER BY logs.id DESC
-     LIMIT 300`,
-    [req.user.id, roleFilter],
+     LIMIT $3 OFFSET $4`,
+    [req.user.id, roleFilter, limit + 1, offset],
   );
-  res.json(result.rows.map((row) => {
+  const mapped = result.rows.map((row) => {
     const createdAt = row.created_at;
     const createdAtMs = createdAt ? Date.parse(`${createdAt}Z`) : null;
     return {
@@ -1179,7 +1197,8 @@ app.get('/api/logs', requireAuth, async (req, res) => {
       spaceName: row.space_name,
       spaceId: row.space_id,
     };
-  }));
+  });
+  res.json({ logs: mapped.slice(0, limit), hasMore: mapped.length > limit });
 });
 
 app.post('/api/spaces', requireAuth, requireInstaller, async (req, res) => {
@@ -2160,7 +2179,6 @@ app.post('/api/hub/events', requireWebhookToken, async (req, res) => {
     'INSERT INTO logs (space_id, time, text, who, type) VALUES ($1,$2,$3,$4,$5)',
     [spaceId, time, hubLogText, hubId, 'hub_raw'],
   );
-  await trimHubLogs(hubId);
 
   const hubStatus = await query('SELECT hub_online FROM spaces WHERE id = $1', [spaceId]);
   const currentHubOnline = hubStatus.rows[0]?.hub_online;

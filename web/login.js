@@ -41,6 +41,11 @@ const translations = {
 
 let language = 'ru';
 
+const detectBrowserLanguage = () => {
+  const lang = navigator.language ?? 'ru';
+  return lang.toLowerCase().startsWith('en') ? 'en-US' : 'ru';
+};
+
 const applyTranslations = () => {
   const dict = translations[language] ?? translations.ru;
   document.querySelectorAll('[data-i18n]').forEach((node) => {
@@ -59,7 +64,10 @@ const applyTranslations = () => {
 
 const syncLanguageFromProfile = () => {
   const raw = localStorage.getItem('profileSettings');
-  if (!raw) return;
+  if (!raw) {
+    language = detectBrowserLanguage();
+    return;
+  }
   try {
     const parsed = JSON.parse(raw);
     language = parsed.language ?? language;

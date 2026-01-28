@@ -63,7 +63,7 @@
                     <div class="avatar-button__circle avatar-button__circle--large" data-avatar-fallback>DS</div>
                   </div>
                   <div>
-                    <div class="profile-dropdown__title" data-i18n="profile.title">Профиль</div>
+            <div class="profile-dropdown__title" data-i18n="profile.title">Профиль</div>
                     <div class="profile-dropdown__subtitle" id="profileSubtitle">Admin</div>
                   </div>
                 </div>
@@ -304,6 +304,18 @@
           <button class="icon-button" id="closeAdminUsers" aria-label="Закрыть">✕</button>
         </div>
         <div class="modal__body">
+          <div class="admin-tools">
+            <h4 data-i18n="admin.logs.title">Логи</h4>
+            <div class="admin-tools__row">
+              <label class="form-field">
+                <span data-i18n="admin.logs.days">Удалить старше (дней)</span>
+                <input type="number" id="adminLogsDays" min="1" max="3650" value="30" />
+              </label>
+              <button class="button button--danger" id="adminLogsPurge" data-i18n="admin.logs.purge">
+                Очистить логи
+              </button>
+            </div>
+          </div>
           <div class="admin-users" id="adminUsersList"></div>
         </div>
       </div>

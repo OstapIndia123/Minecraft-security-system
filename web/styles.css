@@ -162,6 +162,15 @@ body {
   margin-bottom: 6px;
 }
 
+.log-row--hub-offline {
+  color: #ff9f43;
+}
+
+.panel__footer--center {
+  display: flex;
+  justify-content: center;
+}
+
 .object-card__status {
   color: var(--accent);
   font-size: 12px;
@@ -315,6 +324,19 @@ body {
   display: flex;
   align-items: center;
   gap: 8px;
+}
+
+.admin-tools {
+  display: grid;
+  gap: 12px;
+  padding-bottom: 16px;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.08);
+  margin-bottom: 16px;
+}
+
+.admin-tools__row {
+  display: grid;
+  gap: 12px;
 }
 
 .button--link {

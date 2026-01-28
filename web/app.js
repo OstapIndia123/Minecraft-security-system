@@ -20,6 +20,13 @@ const state = {
   spaceCreateLockUntil: null,
   avatarUrl: '',
   role: 'user',
+  logsOffset: 0,
+  logsHasMore: true,
+};
+
+const detectBrowserLanguage = () => {
+  const lang = navigator.language ?? 'ru';
+  return lang.toLowerCase().startsWith('en') ? 'en-US' : 'ru';
 };
 
 let spaces = [];
@@ -180,6 +187,7 @@ const statusTone = {
 const chipActions = document.querySelectorAll('.status-actions .chip');
 const filterButtons = document.querySelectorAll('.nav-pill');
 const logFilters = document.querySelectorAll('#logFilters .chip');
+const logMoreButton = document.getElementById('logMore');
 
 const translations = {
   ru: {
@@ -190,6 +198,9 @@ const translations = {
     'admin.login.title': 'Вход в админ-панель',
     'admin.login.password': 'Пароль',
     'admin.login.submit': 'Войти',
+    'admin.logs.title': 'Логи',
+    'admin.logs.days': 'Удалить старше (дней)',
+    'admin.logs.purge': 'Очистить логи',
     'engineer.title': 'Объекты',
     'engineer.subtitle': 'Управление пространствами и событиями',
     'engineer.actions.arm': 'Под охрану',
@@ -215,6 +226,7 @@ const translations = {
     'engineer.object.hubId': 'ID хаба',
     'engineer.object.hubOffline': 'Хаб не в сети',
     'engineer.object.attach': 'Привязать',
+    'log.actions.more': 'Показать ещё',
     'engineer.contacts.title': 'Контактные лица',
     'engineer.contacts.addTitle': 'Добавить контактное лицо',
     'engineer.contacts.name': 'Имя',
@@ -294,6 +306,9 @@ const translations = {
     'admin.login.title': 'Admin login',
     'admin.login.password': 'Password',
     'admin.login.submit': 'Sign in',
+    'admin.logs.title': 'Logs',
+    'admin.logs.days': 'Delete older than (days)',
+    'admin.logs.purge': 'Purge logs',
     'engineer.title': 'Objects',
     'engineer.subtitle': 'Space and event management',
     'engineer.actions.arm': 'Arm',
@@ -319,6 +334,7 @@ const translations = {
     'engineer.object.hubId': 'Hub ID',
     'engineer.object.hubOffline': 'Hub offline',
     'engineer.object.attach': 'Attach',
+    'log.actions.more': 'Show more',
     'engineer.contacts.title': 'Contacts',
     'engineer.contacts.addTitle': 'Add contact',
     'engineer.contacts.name': 'Name',
@@ -412,7 +428,10 @@ const applyTranslations = () => {
 
 const loadProfileSettings = () => {
   const raw = localStorage.getItem(profileStorageKey);
-  if (!raw) return;
+  if (!raw) {
+    state.language = detectBrowserLanguage();
+    return;
+  }
   try {
     const parsed = JSON.parse(raw);
     state.language = parsed.language ?? state.language;
@@ -502,7 +521,7 @@ const updateNicknameControls = () => {
   if (profileNicknameChange) {
     profileNicknameChange.disabled = locked;
     if (locked && lockUntil) {
-      profileNicknameChange.title = `Смена доступна после ${formatLockUntil(lockUntil)}`;
+      profileNicknameChange.title = translateMessage(`Смена доступна после ${formatLockUntil(lockUntil)}`);
     } else {
       profileNicknameChange.removeAttribute('title');
     }
@@ -536,7 +555,7 @@ const applyLockState = (button, locked, title) => {
 const updateSpaceCreateControls = () => {
   const lockUntil = getSpaceCreateLockUntil();
   const locked = Boolean(lockUntil);
-  const title = locked && lockUntil ? `Создание доступно после ${formatLockUntil(lockUntil)}` : '';
+  const title = locked && lockUntil ? translateMessage(`Создание доступно после ${formatLockUntil(lockUntil)}`) : '';
 
   applyLockState(openCreate, locked, title);
   applyLockState(spaceSubmitButton, locked, title);
@@ -555,8 +574,95 @@ const updateSpaceCreateControls = () => {
   }
 };
 
+const messageTranslations = {
+  'Подтвердите действие': 'Confirm action',
+  'Подтвердить': 'Confirm',
+  'Отмена': 'Cancel',
+  'Такого игрока не существует.': 'Player not found.',
+  'Ник должен быть не длиннее 16 символов.': 'Nickname must be 16 characters or fewer.',
+  'Введите корректный ник.': 'Please enter a valid nickname.',
+  'Такой ник уже используется.': 'That nickname is already in use.',
+  'Сменить ник можно раз в 7 дней.': 'You can change your nickname once every 7 days.',
+  'Создавать объекты можно не чаще, чем раз в 15 минут.': 'You can create spaces no more than once every 15 minutes.',
+  'Примечание должно быть до 100 символов.': 'Notes must be 100 characters or fewer.',
+  'Слишком длинное значение в поле.': 'Value is too long.',
+  'Некорректная ссылка.': 'Invalid URL.',
+  'Этот хаб уже ожидает регистрации.': 'This hub is already awaiting registration.',
+  'Ваш аккаунт заблокирован администратором.': 'Your account has been blocked by an administrator.',
+  'Ошибка подключения к базе данных. Проверьте POSTGRES_PASSWORD и перезапустите Docker Compose.':
+    'Database connection error. Check POSTGRES_PASSWORD and restart Docker Compose.',
+  'Некорректный ID хаба.': 'Invalid hub ID.',
+  'Не удалось загрузить данные.': 'Failed to load data.',
+  'Не удалось загрузить журнал.': 'Failed to load logs.',
+  'Устройство удалено.': 'Device deleted.',
+  'Устройство обновлено.': 'Device updated.',
+  'Роль пользователя удалена.': 'User role removed.',
+  'Нельзя удалить последнего инженера монтажа.': 'Cannot remove the last installer.',
+  'Вы покинули пространство.': 'You left the space.',
+  'Контакт удалён.': 'Contact removed.',
+  'Контакт обновлён.': 'Contact updated.',
+  'Примечание удалено.': 'Note removed.',
+  'Примечание обновлено.': 'Note updated.',
+  'Фото удалено.': 'Photo removed.',
+  'Фото обновлено.': 'Photo updated.',
+  'Запущена постановка под охрану.': 'Arming started.',
+  'Объект поставлен под охрану.': 'Space armed.',
+  'Объект снят с охраны.': 'Space disarmed.',
+  'Ошибка обновления статуса.': 'Failed to update status.',
+  'Данные синхронизированы с хабами.': 'Data synced with hubs.',
+  'Пространство удалено.': 'Space deleted.',
+  'Хаб удалён из пространства.': 'Hub removed from space.',
+  'Пространство создано.': 'Space created.',
+  'Устройство добавлено.': 'Device added.',
+  'Ключ считан.': 'Key read.',
+  'Контакт добавлен.': 'Contact added.',
+  'Примечание добавлено.': 'Note added.',
+  'Пользователь добавлен.': 'User added.',
+  'Инженер добавлен.': 'Installer added.',
+  'Фото добавлено.': 'Photo added.',
+  'Информация обновлена.': 'Information updated.',
+  'Хаб привязан.': 'Hub attached.',
+  'Ник уже установлен.': 'Nickname already set.',
+  'Сменить ник?': 'Change nickname?',
+  'Ник нельзя сменить будет в течении следующих 7 дней.': 'Nickname can be changed again in 7 days.',
+  'Сменить': 'Change',
+  'Не удалось обновить ник.': 'Failed to update nickname.',
+  'Удалить ключ?': 'Delete key?',
+  'Удаление ключа': 'Delete key',
+  'Удалить устройство?': 'Delete device?',
+  'Удаление устройства': 'Delete device',
+  'Удалить контактное лицо?': 'Delete contact?',
+  'Удаление контакта': 'Delete contact',
+  'Удалить примечание?': 'Delete note?',
+  'Удаление примечания': 'Delete note',
+  'Удалить фото?': 'Delete photo?',
+  'Удаление фото': 'Delete photo',
+  'Удалить объект?': 'Delete space?',
+  'Удаление объекта': 'Delete space',
+  'Удалить хаб из пространства?': 'Remove hub from space?',
+  'Удаление хаба': 'Remove hub',
+};
+
+const translateMessage = (message) => {
+  if (state.language !== 'en-US') return message;
+  const raw = String(message ?? '');
+  if (raw.startsWith('Создавать объекты можно не чаще, чем раз в 15 минут. Доступно после ')) {
+    return raw.replace(
+      'Создавать объекты можно не чаще, чем раз в 15 минут. Доступно после ',
+      'You can create spaces no more than once every 15 minutes. Available after ',
+    );
+  }
+  if (raw.startsWith('Создание доступно после ')) {
+    return raw.replace('Создание доступно после ', 'Creation available after ');
+  }
+  if (raw.startsWith('Смена доступна после ')) {
+    return raw.replace('Смена доступна после ', 'Change available after ');
+  }
+  return messageTranslations[raw] ?? raw;
+};
+
 const showToast = (message) => {
-  toast.textContent = message;
+  toast.textContent = translateMessage(message);
   toast.classList.add('toast--show');
   clearTimeout(showToast.timer);
   showToast.timer = setTimeout(() => toast.classList.remove('toast--show'), 2200);
@@ -582,10 +688,10 @@ const openActionModal = ({
     return;
   }
 
-  if (actionModalTitle) actionModalTitle.textContent = title;
-  if (actionModalMessage) actionModalMessage.textContent = message;
-  actionModalConfirm.textContent = confirmText;
-  actionModalCancel.textContent = cancelText;
+  if (actionModalTitle) actionModalTitle.textContent = translateMessage(title);
+  if (actionModalMessage) actionModalMessage.textContent = translateMessage(message);
+  actionModalConfirm.textContent = translateMessage(confirmText);
+  actionModalCancel.textContent = translateMessage(cancelText);
 
   if (actionModalForm) {
     actionModalForm.innerHTML = '';
@@ -859,14 +965,18 @@ const loadSpaces = async () => {
   }
 };
 
-const loadLogs = async (spaceId) => {
+const loadLogs = async (spaceId, reset = true) => {
   try {
-    const logs = await apiFetch(`/api/spaces/${spaceId}/logs`);
     const space = spaces.find((item) => item.id === spaceId);
+    const offset = reset ? 0 : (space?.logsOffset ?? 0);
+    const response = await apiFetch(`/api/spaces/${spaceId}/logs?limit=200&offset=${offset}`);
+    const logs = response.logs ?? [];
     if (space) {
-      space.logs = logs;
-      const lastLog = logs[0];
-      state.lastLogKey = `${logs.length}-${lastLog?.time ?? ''}-${lastLog?.text ?? ''}-${lastLog?.createdAt ?? ''}`;
+      space.logs = reset ? logs : [...(space.logs ?? []), ...logs];
+      space.logsOffset = space.logs.length;
+      space.logsHasMore = Boolean(response.hasMore);
+      const lastLog = space.logs[0];
+      state.lastLogKey = `${space.logs.length}-${lastLog?.time ?? ''}-${lastLog?.text ?? ''}-${lastLog?.createdAt ?? ''}`;
     }
   } catch (error) {
     console.error(error);
@@ -1603,9 +1713,10 @@ const renderLogs = (space) => {
     if (!shouldFlash) {
       logFlashActive.delete(flashKey);
     }
-    row.className = `log-row ${isAlarm ? 'log-row--alarm' : ''} ${shouldFlash ? 'log-row--alarm-flash' : ''} ${isRestore ? 'log-row--restore' : ''} ${isHub ? 'log-row--hub' : ''}`;
-    const rawText = isHub ? log.text : translateLogText(log.text);
-    const safeText = escapeHtml(rawText);
+    const translated = isHub ? log.text : translateLogText(log.text);
+    const isHubOffline = log.text === 'Хаб не в сети' || translated === 'Hub offline';
+    row.className = `log-row ${isAlarm ? 'log-row--alarm' : ''} ${shouldFlash ? 'log-row--alarm-flash' : ''} ${isRestore ? 'log-row--restore' : ''} ${isHub ? 'log-row--hub' : ''} ${isHubOffline ? 'log-row--hub-offline' : ''}`;
+    const safeText = escapeHtml(translated);
     const text = isHub ? safeText.replace(/\n/g, '<br />') : safeText;
     const timeLabel = escapeHtml(formatLogTime(logTimestamp) ?? log.time);
     const whoLabel = escapeHtml(log.who);
@@ -1619,7 +1730,9 @@ const renderLogs = (space) => {
 
   if (!logs.length) {
     logTable.innerHTML = `<div class="empty-state">${t('engineer.empty.logs')}</div>`;
+    logMoreButton?.classList.add('hidden');
   }
+  logMoreButton?.classList.toggle('hidden', !space.logsHasMore);
 };
 
 const renderAll = () => {
@@ -1684,6 +1797,14 @@ logFilters.forEach((button) => {
       renderLogs(space);
     }
   });
+});
+
+logMoreButton?.addEventListener('click', () => {
+  if (!state.selectedSpaceId) return;
+  loadLogs(state.selectedSpaceId, false).then(() => {
+    const space = spaces.find((item) => item.id === state.selectedSpaceId);
+    if (space) renderLogs(space);
+  }).catch(() => null);
 });
 
 const globalSearch = document.getElementById('globalSearch');

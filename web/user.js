@@ -7,6 +7,14 @@ const state = {
   role: 'user',
   avatarUrl: '',
   lastNicknameChangeAt: null,
+  logs: [],
+  logsOffset: 0,
+  logsHasMore: true,
+};
+
+const detectBrowserLanguage = () => {
+  const lang = navigator.language ?? 'ru';
+  return lang.toLowerCase().startsWith('en') ? 'en-US' : 'ru';
 };
 
 let spacesCache = [];
@@ -38,6 +46,7 @@ const profileTimezone = document.getElementById('profileTimezone');
 const profileLanguage = document.getElementById('profileLanguage');
 const profileLogout = document.getElementById('profileLogout');
 const switchToPro = document.getElementById('switchToPro');
+const logMoreButton = document.getElementById('userLogMore');
 const avatarImages = document.querySelectorAll('[data-avatar]');
 const avatarFallbacks = document.querySelectorAll('[data-avatar-fallback]');
 const actionModal = document.getElementById('actionModal');
@@ -65,6 +74,7 @@ const translations = {
     'user.empty.devices': 'Нет устройств',
     'user.empty.logs': 'Нет событий',
     'user.object.hubOffline': 'Хаб не в сети',
+    'log.actions.more': 'Показать ещё',
     'status.armed': 'Под охраной',
     'status.disarmed': 'Снято с охраны',
     'status.night': 'Ночной режим',
@@ -92,6 +102,7 @@ const translations = {
     'user.empty.devices': 'No devices',
     'user.empty.logs': 'No events',
     'user.object.hubOffline': 'Hub offline',
+    'log.actions.more': 'Show more',
     'status.armed': 'Armed',
     'status.disarmed': 'Disarmed',
     'status.night': 'Night mode',
@@ -151,7 +162,9 @@ const apiFetch = async (path, options = {}) => {
 
 const loadProfileSettings = () => {
   const raw = localStorage.getItem('profileSettings');
-  if (!raw) return {};
+  if (!raw) {
+    return { language: detectBrowserLanguage() };
+  }
   try {
     return JSON.parse(raw);
   } catch {
@@ -190,6 +203,30 @@ const setAvatar = (avatarUrl) => {
   });
 };
 
+const messageTranslations = {
+  'Подтвердите действие': 'Confirm action',
+  'Подтвердить': 'Confirm',
+  'Отмена': 'Cancel',
+  'Введите корректный ник.': 'Please enter a valid nickname.',
+  'Ник уже установлен.': 'Nickname already set.',
+  'Сменить ник?': 'Change nickname?',
+  'Ник нельзя сменить будет в течении следующих 7 дней.': 'Nickname can be changed again in 7 days.',
+  'Сменить': 'Change',
+  'Ник должен быть не длиннее 16 символов.': 'Nickname must be 16 characters or fewer.',
+  'Сменить ник можно раз в 7 дней.': 'You can change your nickname once every 7 days.',
+  'Такой ник уже используется.': 'That nickname is already in use.',
+  'Не удалось обновить ник.': 'Failed to update nickname.',
+};
+
+const translateMessage = (message) => {
+  if (state.language !== 'en-US') return message;
+  const raw = String(message ?? '');
+  if (raw.startsWith('Смена доступна после ')) {
+    return raw.replace('Смена доступна после ', 'Change available after ');
+  }
+  return messageTranslations[raw] ?? raw;
+};
+
 const openActionModal = ({
   title = 'Подтвердите действие',
   message = '',
@@ -201,10 +238,10 @@ const openActionModal = ({
     return;
   }
 
-  if (actionModalTitle) actionModalTitle.textContent = title;
-  if (actionModalMessage) actionModalMessage.textContent = message;
-  actionModalConfirm.textContent = confirmText;
-  actionModalCancel.textContent = cancelText;
+  if (actionModalTitle) actionModalTitle.textContent = translateMessage(title);
+  if (actionModalMessage) actionModalMessage.textContent = translateMessage(message);
+  actionModalConfirm.textContent = translateMessage(confirmText);
+  actionModalCancel.textContent = translateMessage(cancelText);
 
   if (actionModalForm) {
     actionModalForm.innerHTML = '';
@@ -277,7 +314,9 @@ const updateNicknameControls = () => {
     profileNicknameChange.disabled = locked;
     if (locked && lockUntil) {
       const date = new Date(lockUntil);
-      profileNicknameChange.title = `Смена доступна после ${date.toLocaleDateString('ru-RU')} ${date.toLocaleTimeString('ru-RU', { hour: '2-digit', minute: '2-digit' })}`;
+      const locale = state.language === 'en-US' ? 'en-US' : 'ru-RU';
+      const timestamp = `${date.toLocaleDateString(locale)} ${date.toLocaleTimeString(locale, { hour: '2-digit', minute: '2-digit' })}`;
+      profileNicknameChange.title = translateMessage(`Смена доступна после ${timestamp}`);
     } else {
       profileNicknameChange.removeAttribute('title');
     }
@@ -339,11 +378,11 @@ const initProfileMenu = async () => {
     if (!profileNickname || profileNickname.disabled) return;
     const nextNickname = profileNickname.value.trim();
     if (!nextNickname) {
-      window.alert('Введите корректный ник.');
+      window.alert(translateMessage('Введите корректный ник.'));
       return;
     }
     if (nextNickname === confirmedNickname) {
-      window.alert('Ник уже установлен.');
+      window.alert(translateMessage('Ник уже установлен.'));
       return;
     }
     const modalResult = await openActionModal({
@@ -383,7 +422,7 @@ const initProfileMenu = async () => {
             : payload?.error === 'nickname_taken'
               ? 'Такой ник уже используется.'
               : 'Не удалось обновить ник.';
-      window.alert(errorMessage);
+      window.alert(translateMessage(errorMessage));
       profileNickname.value = confirmedNickname;
       saveProfileSettings({ ...loadProfileSettings(), nickname: confirmedNickname, avatarUrl: state.avatarUrl });
     } catch {
@@ -565,14 +604,17 @@ const renderLogs = (logs) => {
   logTable.innerHTML = '';
   if (!filtered.length) {
     logTable.innerHTML = `<div class="empty-state">${t('user.empty.logs')}</div>`;
+    logMoreButton?.classList.add('hidden');
     return;
   }
   filtered.forEach((log) => {
     const row = document.createElement('div');
-    row.className = `log-row ${log.type === 'alarm' ? 'log-row--alarm' : ''}`;
+    const translated = translateLogText(log.text);
+    const isHubOffline = log.text === 'Хаб не в сети' || translated === 'Hub offline';
+    row.className = `log-row ${log.type === 'alarm' ? 'log-row--alarm' : ''} ${isHubOffline ? 'log-row--hub-offline' : ''}`;
     const timestamp = log.createdAtMs ?? (log.createdAt ? new Date(`${log.createdAt}Z`).getTime() : null);
     const timeLabel = escapeHtml(formatLogTime(timestamp) ?? log.time);
-    const text = escapeHtml(translateLogText(log.text));
+    const text = escapeHtml(translated);
     const whoLabel = escapeHtml(log.who);
     row.innerHTML = `
       <span>${timeLabel}</span>
@@ -581,14 +623,25 @@ const renderLogs = (logs) => {
     `;
     logTable.appendChild(row);
   });
+  logMoreButton?.classList.toggle('hidden', !state.logsHasMore);
 };
 
 const loadSpace = async (spaceId) => {
   const space = await apiFetch(`/api/spaces/${spaceId}`);
   renderStatus(space);
   renderDevices(space.devices ?? []);
-  const logs = await apiFetch(`/api/spaces/${spaceId}/logs`);
-  renderLogs(logs);
+  await loadLogs(true);
+};
+
+const loadLogs = async (reset = false) => {
+  if (!state.selectedSpaceId) return;
+  const offset = reset ? 0 : state.logsOffset;
+  const response = await apiFetch(`/api/spaces/${state.selectedSpaceId}/logs?limit=200&offset=${offset}`);
+  const logs = response.logs ?? [];
+  state.logs = reset ? logs : [...state.logs, ...logs];
+  state.logsOffset = state.logs.length;
+  state.logsHasMore = Boolean(response.hasMore);
+  renderLogs(state.logs);
 };
 
 const loadSpaces = async () => {
@@ -640,8 +693,12 @@ logFilters.forEach((button) => {
     logFilters.forEach((btn) => btn.classList.remove('chip--active'));
     button.classList.add('chip--active');
     state.logFilter = button.dataset.log ?? 'all';
-    await loadSpace(state.selectedSpaceId);
+    await loadLogs(true);
   });
+});
+
+logMoreButton?.addEventListener('click', () => {
+  loadLogs(false).catch(() => null);
 });
 
 const init = async () => {

@@ -6,6 +6,8 @@ const openAdminUsers = document.getElementById('openAdminUsers');
 const adminUsersModal = document.getElementById('adminUsersModal');
 const closeAdminUsers = document.getElementById('closeAdminUsers');
 const adminUsersList = document.getElementById('adminUsersList');
+const adminLogsDays = document.getElementById('adminLogsDays');
+const adminLogsPurge = document.getElementById('adminLogsPurge');
 const profileLanguage = document.getElementById('profileLanguage');
 
 const getAdminToken = () => localStorage.getItem('adminToken');
@@ -18,6 +20,9 @@ const adminTranslations = {
     remove: 'Удалить',
     removeConfirm: (name) => `Удалить аккаунт ${name}? Это действие необратимо.`,
     invalidPassword: 'Неверный пароль.',
+    purgeConfirm: (days) => `Удалить логи старше ${days} дн.?`,
+    purgeDone: (count) => `Удалено логов: ${count}`,
+    purgeFailed: 'Не удалось очистить логи.',
   },
   'en-US': {
     emptyUsers: 'No users found.',
@@ -26,6 +31,9 @@ const adminTranslations = {
     remove: 'Delete',
     removeConfirm: (name) => `Delete account ${name}? This action cannot be undone.`,
     invalidPassword: 'Incorrect password.',
+    purgeConfirm: (days) => `Delete logs older than ${days} days?`,
+    purgeDone: (count) => `Logs deleted: ${count}`,
+    purgeFailed: 'Failed to purge logs.',
   },
 };
 
@@ -36,6 +44,18 @@ const getAdminLanguage = () => {
   } catch {
     return 'ru';
   }
+};
+
+const detectBrowserLanguage = () => {
+  const lang = navigator.language ?? 'ru';
+  return lang.toLowerCase().startsWith('en') ? 'en-US' : 'ru';
+};
+
+const ensureAdminLanguage = () => {
+  const raw = localStorage.getItem('profileSettingsAdmin');
+  if (raw) return;
+  const language = detectBrowserLanguage();
+  localStorage.setItem('profileSettingsAdmin', JSON.stringify({ language }));
 };
 
 const tAdmin = (key, arg) => {
@@ -177,6 +197,28 @@ adminLoginForm?.addEventListener('submit', async (event) => {
 if (!getAdminToken()) {
   openLoginModal();
 }
+
+adminLogsPurge?.addEventListener('click', async () => {
+  const token = getAdminToken();
+  if (!token) return;
+  const days = Number(adminLogsDays?.value ?? 0);
+  if (!Number.isFinite(days) || days <= 0) return;
+  const confirmed = window.confirm(tAdmin('purgeConfirm', days));
+  if (!confirmed) return;
+  const response = await fetch('/api/admin/logs/purge', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', 'X-Admin-Token': token },
+    body: JSON.stringify({ days }),
+  });
+  if (!response.ok) {
+    window.alert(tAdmin('purgeFailed'));
+    return;
+  }
+  const payload = await response.json();
+  window.alert(tAdmin('purgeDone', payload.deleted ?? 0));
+});
+
+ensureAdminLanguage();
 
 profileLanguage?.addEventListener('change', () => {
   if (adminUsersModal?.classList.contains('modal--open')) {

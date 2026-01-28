@@ -9,6 +9,14 @@ const state = {
   spaceCreateLockUntil: null,
   avatarUrl: '',
   role: 'user',
+  logs: [],
+  logsOffset: 0,
+  logsHasMore: true,
+};
+
+const detectBrowserLanguage = () => {
+  const lang = navigator.language ?? 'ru';
+  return lang.toLowerCase().startsWith('en') ? 'en-US' : 'ru';
 };
 
 const FLASH_DURATION_MS = 15000;
@@ -54,6 +62,7 @@ const addSpaceBtn = document.getElementById('mainAddSpace');
 const filterButtons = document.querySelectorAll('#mainFilters .chip');
 const logFilters = document.querySelectorAll('#mainLogFilters .chip');
 const searchInput = document.getElementById('mainSearch');
+const logMoreButton = document.getElementById('mainLogMore');
 const avatarButton = document.getElementById('avatarButton');
 const profileDropdown = document.getElementById('profileDropdown');
 const profileNickname = document.getElementById('profileNickname');
@@ -93,6 +102,7 @@ const translations = {
     'pcn.empty.logs': 'Нет событий по выбранному фильтру',
     'pcn.object.hubId': 'ID хаба',
     'pcn.object.hubOffline': 'Хаб не в сети',
+    'log.actions.more': 'Показать ещё',
     'status.armed': 'Под охраной',
     'status.disarmed': 'Снято с охраны',
     'status.night': 'Ночной режим',
@@ -124,6 +134,7 @@ const translations = {
     'pcn.empty.logs': 'No events for the selected filter',
     'pcn.object.hubId': 'Hub ID',
     'pcn.object.hubOffline': 'Hub offline',
+    'log.actions.more': 'Show more',
     'status.armed': 'Armed',
     'status.disarmed': 'Disarmed',
     'status.night': 'Night mode',
@@ -157,7 +168,10 @@ const t = (key) => translations[state.language]?.[key] ?? translations.ru[key] ?
 
 const loadProfileSettings = () => {
   const raw = localStorage.getItem('profileSettings');
-  if (!raw) return;
+  if (!raw) {
+    state.language = detectBrowserLanguage();
+    return;
+  }
   try {
     const parsed = JSON.parse(raw);
     state.language = parsed.language ?? state.language;
@@ -170,6 +184,12 @@ const loadProfileSettings = () => {
   } catch {
     // ignore
   }
+};
+
+const statusTone = {
+  armed: 'status--armed',
+  disarmed: 'status--disarmed',
+  night: 'status--night',
 };
 
 const syncProfileSettings = async () => {
@@ -238,7 +258,7 @@ const updateNicknameControls = () => {
   if (profileNicknameChange) {
     profileNicknameChange.disabled = locked;
     if (locked && lockUntil) {
-      profileNicknameChange.title = `Смена доступна после ${formatLockUntil(lockUntil)}`;
+      profileNicknameChange.title = translateMessage(`Смена доступна после ${formatLockUntil(lockUntil)}`);
     } else {
       profileNicknameChange.removeAttribute('title');
     }
@@ -272,7 +292,7 @@ const applyLockState = (button, locked, title) => {
 const updateSpaceCreateControls = () => {
   const lockUntil = getSpaceCreateLockUntil();
   const locked = Boolean(lockUntil);
-  const title = locked && lockUntil ? `Создание доступно после ${formatLockUntil(lockUntil)}` : '';
+  const title = locked && lockUntil ? translateMessage(`Создание доступно после ${formatLockUntil(lockUntil)}`) : '';
   applyLockState(addSpaceBtn, locked, title);
   if (spaceCreateUnlockTimerId) {
     clearTimeout(spaceCreateUnlockTimerId);
@@ -309,6 +329,41 @@ const setAvatar = (avatarUrl) => {
   });
 };
 
+const messageTranslations = {
+  'Подтвердите действие': 'Confirm action',
+  'Подтвердить': 'Confirm',
+  'Отмена': 'Cancel',
+  'Ошибка подключения к базе данных. Проверьте POSTGRES_PASSWORD и перезапустите Docker Compose.':
+    'Database connection error. Check POSTGRES_PASSWORD and restart Docker Compose.',
+  'Введите корректный ник.': 'Please enter a valid nickname.',
+  'Ник уже установлен.': 'Nickname already set.',
+  'Сменить ник?': 'Change nickname?',
+  'Ник нельзя сменить будет в течении следующих 7 дней.': 'Nickname can be changed again in 7 days.',
+  'Сменить': 'Change',
+  'Ник должен быть не длиннее 16 символов.': 'Nickname must be 16 characters or fewer.',
+  'Сменить ник можно раз в 7 дней.': 'You can change your nickname once every 7 days.',
+  'Такой ник уже используется.': 'That nickname is already in use.',
+  'Не удалось обновить ник.': 'Failed to update nickname.',
+};
+
+const translateMessage = (message) => {
+  if (state.language !== 'en-US') return message;
+  const raw = String(message ?? '');
+  if (raw.startsWith('Создавать объекты можно не чаще, чем раз в 15 минут. Доступно после ')) {
+    return raw.replace(
+      'Создавать объекты можно не чаще, чем раз в 15 минут. Доступно после ',
+      'You can create spaces no more than once every 15 minutes. Available after ',
+    );
+  }
+  if (raw.startsWith('Создание доступно после ')) {
+    return raw.replace('Создание доступно после ', 'Creation available after ');
+  }
+  if (raw.startsWith('Смена доступна после ')) {
+    return raw.replace('Смена доступна после ', 'Change available after ');
+  }
+  return messageTranslations[raw] ?? raw;
+};
+
 const openActionModal = ({
   title = 'Подтвердите действие',
   message = '',
@@ -320,10 +375,10 @@ const openActionModal = ({
     return;
   }
 
-  if (actionModalTitle) actionModalTitle.textContent = title;
-  if (actionModalMessage) actionModalMessage.textContent = message;
-  actionModalConfirm.textContent = confirmText;
-  actionModalCancel.textContent = cancelText;
+  if (actionModalTitle) actionModalTitle.textContent = translateMessage(title);
+  if (actionModalMessage) actionModalMessage.textContent = translateMessage(message);
+  actionModalConfirm.textContent = translateMessage(confirmText);
+  actionModalCancel.textContent = translateMessage(cancelText);
 
   if (actionModalForm) {
     actionModalForm.innerHTML = '';
@@ -374,7 +429,7 @@ const apiFetch = async (path) => {
       throw new Error('user_blocked');
     }
     if (payload?.error === 'db_auth_failed') {
-      window.alert('Ошибка подключения к базе данных. Проверьте POSTGRES_PASSWORD и перезапустите Docker Compose.');
+      window.alert(translateMessage('Ошибка подключения к базе данных. Проверьте POSTGRES_PASSWORD и перезапустите Docker Compose.'));
     }
     throw new Error(payload.error ?? `API error: ${response.status}`);
   }
@@ -460,7 +515,7 @@ const renderObjects = (spaces) => {
       <div class="object-card__title">${escapeHtml(space.name)}</div>
       <div class="object-card__meta">${t('pcn.object.hubId')} ${escapeHtml(space.hubId ?? '—')}</div>
       ${hubOfflineLabel}
-      <div class="object-card__status">${t(`status.${space.status}`) ?? space.status}</div>
+      <div class="object-card__status ${statusTone[space.status] ?? ''}">${t(`status.${space.status}`) ?? space.status}</div>
       <div class="object-card__meta">${escapeHtml(space.server ?? '—')}</div>
       <div class="object-card__meta">${escapeHtml(space.address)}</div>
     `;
@@ -533,6 +588,7 @@ const renderLogs = (logs) => {
   logTable.innerHTML = '';
   if (!filtered.length) {
     logTable.innerHTML = `<div class="empty-state">${t('pcn.empty.logs')}</div>`;
+    logMoreButton?.classList.add('hidden');
     return;
   }
 
@@ -561,9 +617,11 @@ const renderLogs = (logs) => {
     if (!shouldFlash) {
       logFlashActive.delete(flashKey);
     }
-    row.className = `log-row ${isAlarm ? 'log-row--alarm' : ''} ${shouldFlash ? 'log-row--alarm-flash' : ''} ${isRestore ? 'log-row--restore' : ''} ${isHub ? 'log-row--hub' : ''}`;
-    const rawText = isHub ? log.text : translateLogText(log.text);
-    const safeText = escapeHtml(rawText);
+    const rawText = isHub ? log.text : log.text;
+    const translatedText = isHub ? rawText : translateLogText(rawText);
+    const isHubOffline = rawText === 'Хаб не в сети' || translatedText === 'Hub offline';
+    row.className = `log-row ${isAlarm ? 'log-row--alarm' : ''} ${shouldFlash ? 'log-row--alarm-flash' : ''} ${isRestore ? 'log-row--restore' : ''} ${isHub ? 'log-row--hub' : ''} ${isHubOffline ? 'log-row--hub-offline' : ''}`;
+    const safeText = escapeHtml(translatedText);
     const text = isHub ? safeText.replace(/\n/g, '<br />') : safeText;
     const timeLabel = escapeHtml(formatLogTime(logTimestamp) ?? log.time);
     const spaceLabel = escapeHtml(log.spaceName);
@@ -574,12 +632,25 @@ const renderLogs = (logs) => {
     `;
     logTable.appendChild(row);
   });
+  if (logMoreButton) {
+    logMoreButton.classList.toggle('hidden', !state.logsHasMore);
+  }
+};
+
+const loadLogs = async (reset = false) => {
+  const offset = reset ? 0 : state.logsOffset;
+  const response = await apiFetch(`/api/logs?limit=200&offset=${offset}`);
+  const logs = response.logs ?? [];
+  state.logs = reset ? logs : [...state.logs, ...logs];
+  state.logsOffset = state.logs.length;
+  state.logsHasMore = Boolean(response.hasMore);
+  renderLogs(state.logs);
 };
 
 const refresh = async () => {
-  const [spaces, logs] = await Promise.all([apiFetch('/api/spaces'), apiFetch('/api/logs')]);
-  renderLogs(logs);
+  const spaces = await apiFetch('/api/spaces');
   renderObjects(spaces);
+  await loadLogs(true);
 };
 
 filterButtons.forEach((button) => {
@@ -606,12 +677,18 @@ if (refreshBtn) {
   });
 }
 
+if (logMoreButton) {
+  logMoreButton.addEventListener('click', () => {
+    loadLogs(false).catch(() => null);
+  });
+}
+
 if (addSpaceBtn) {
   addSpaceBtn.addEventListener('click', () => {
     const lockUntil = getSpaceCreateLockUntil();
     if (lockUntil) {
       updateSpaceCreateControls();
-      window.alert(`Создавать объекты можно не чаще, чем раз в 15 минут. Доступно после ${formatLockUntil(lockUntil)}.`);
+      window.alert(translateMessage(`Создавать объекты можно не чаще, чем раз в 15 минут. Доступно после ${formatLockUntil(lockUntil)}.`));
       return;
     }
     window.location.href = 'main.html?create=1';
@@ -666,11 +743,11 @@ const initProfileMenu = async () => {
     if (!profileNickname || profileNickname.disabled) return;
     const nextNickname = profileNickname.value.trim();
     if (!nextNickname) {
-      window.alert('Введите корректный ник.');
+    window.alert(translateMessage('Введите корректный ник.'));
       return;
     }
     if (nextNickname === confirmedNickname) {
-      window.alert('Ник уже установлен.');
+    window.alert(translateMessage('Ник уже установлен.'));
       return;
     }
     const modalResult = await openActionModal({
@@ -712,7 +789,7 @@ const initProfileMenu = async () => {
             : payload?.error === 'nickname_taken'
               ? 'Такой ник уже используется.'
               : 'Не удалось обновить ник.';
-      window.alert(errorMessage);
+      window.alert(translateMessage(errorMessage));
       profileNickname.value = confirmedNickname;
       saveProfileSettings();
     } catch {
