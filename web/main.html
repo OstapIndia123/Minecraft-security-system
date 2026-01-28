@@ -1,0 +1,401 @@
+<!doctype html>
+<html lang="ru">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Minecraft Security System — Демо интерфейс</title>
+    <link rel="stylesheet" href="styles.css" />
+    <link rel="icon" href="/favicon.png" type="image/png" />
+  </head>
+  <body>
+    <div class="app-shell">
+      <aside class="sidebar">
+        <div class="sidebar__header">
+          <div class="brand">
+            <span class="brand__logo">PRO</span>
+            <span class="brand__title">Security</span>
+          </div>
+          <button class="ghost-button" id="backToMain" aria-label="Назад">
+            <span class="icon">⟵</span>
+          </button>
+        </div>
+
+        <nav class="sidebar__nav" id="filters">
+          <button class="nav-pill nav-pill--active" data-filter="all">
+            <span data-i18n="engineer.filters.all">Все объекты</span> <span class="badge" data-count="all">0</span>
+          </button>
+          <button class="nav-pill" data-filter="offline">
+            <span data-i18n="engineer.filters.offline">С хабами не в сети</span> <span class="badge" data-count="offline">0</span>
+          </button>
+          <button class="nav-pill" data-filter="issues">
+            <span data-i18n="engineer.filters.issues">С неисправностями</span> <span class="badge badge--alert" data-count="issues">0</span>
+          </button>
+        </nav>
+
+        <div class="sidebar__list" id="objectList"></div>
+      </aside>
+
+      <main class="main">
+        <header class="topbar">
+          <div class="topbar__left">
+            <div class="topbar__title">
+              <h1 data-i18n="engineer.title">Объекты</h1>
+              <p data-i18n="engineer.subtitle">Управление пространствами и событиями</p>
+            </div>
+            <div class="search">
+              <span class="icon">🔍</span>
+              <input type="text" id="globalSearch" data-i18n-placeholder="engineer.search.global" placeholder="Поиск по объекту или ID" />
+            </div>
+          </div>
+          <div class="topbar__right">
+            <button class="button button--ghost" id="refreshBtn" data-i18n="engineer.actions.refresh">Обновить</button>
+            <button class="button button--primary" id="openCreate" data-i18n="engineer.actions.add">Добавить объект</button>
+            <div class="profile-menu" id="profileMenu">
+              <button class="avatar-button" id="avatarButton" aria-label="Профиль">
+                <img class="avatar-button__image" data-avatar alt="Discord avatar" />
+                <span class="avatar-button__circle" data-avatar-fallback>DS</span>
+              </button>
+              <div class="profile-dropdown" id="profileDropdown" aria-hidden="true">
+                <div class="profile-dropdown__header">
+                  <div class="avatar-stack">
+                    <img class="avatar-button__image avatar-button__image--large" data-avatar alt="Discord avatar" />
+                    <div class="avatar-button__circle avatar-button__circle--large" data-avatar-fallback>DS</div>
+                  </div>
+                  <div>
+                    <div class="profile-dropdown__title" data-i18n="profile.title">Профиль</div>
+                    <div class="profile-dropdown__subtitle">Discord</div>
+                  </div>
+                </div>
+                <label class="profile-field">
+                  <span data-i18n="profile.nickname">Игровой ник</span>
+                  <div class="profile-field__row">
+                    <input type="text" id="profileNickname" placeholder="PlayerName" maxlength="16" />
+                    <button class="button button--danger profile-nickname-action" id="profileNicknameChange" type="button" data-i18n="profile.nickname.change">Сменить</button>
+                  </div>
+                </label>
+                <label class="profile-field">
+                  <span data-i18n="profile.timezone">Часовой пояс</span>
+                  <select id="profileTimezone">
+                    <option value="Etc/GMT+12">UTC-12</option>
+                    <option value="Etc/GMT+11">UTC-11</option>
+                    <option value="Etc/GMT+10">UTC-10</option>
+                    <option value="Etc/GMT+9">UTC-9</option>
+                    <option value="Etc/GMT+8">UTC-8</option>
+                    <option value="Etc/GMT+7">UTC-7</option>
+                    <option value="Etc/GMT+6">UTC-6</option>
+                    <option value="Etc/GMT+5">UTC-5</option>
+                    <option value="Etc/GMT+4">UTC-4</option>
+                    <option value="Etc/GMT+3">UTC-3</option>
+                    <option value="Etc/GMT+2">UTC-2</option>
+                    <option value="Etc/GMT+1">UTC-1</option>
+                    <option value="UTC">UTC+0</option>
+                    <option value="Etc/GMT-1">UTC+1</option>
+                    <option value="Etc/GMT-2">UTC+2</option>
+                    <option value="Etc/GMT-3">UTC+3</option>
+                    <option value="Etc/GMT-4">UTC+4</option>
+                    <option value="Etc/GMT-5">UTC+5</option>
+                    <option value="Etc/GMT-6">UTC+6</option>
+                    <option value="Etc/GMT-7">UTC+7</option>
+                    <option value="Etc/GMT-8">UTC+8</option>
+                    <option value="Etc/GMT-9">UTC+9</option>
+                    <option value="Etc/GMT-10">UTC+10</option>
+                    <option value="Etc/GMT-11">UTC+11</option>
+                    <option value="Etc/GMT-12">UTC+12</option>
+                    <option value="Etc/GMT-13">UTC+13</option>
+                    <option value="Etc/GMT-14">UTC+14</option>
+                  </select>
+                </label>
+                <label class="profile-field">
+                  <span data-i18n="profile.language">Язык</span>
+                  <select id="profileLanguage">
+                    <option value="ru">Русский</option>
+                    <option value="en-US">English (US)</option>
+                  </select>
+                </label>
+                <button class="button button--ghost profile-switch" id="switchToUser" data-i18n="profile.switchUser">
+                  Перейти на обычный
+                </button>
+                <button class="button button--ghost profile-logout" id="profileLogout" data-i18n="profile.logout">Выйти</button>
+              </div>
+            </div>
+          </div>
+        </header>
+
+        <section class="status-panel">
+          <div class="status-card">
+            <div class="status-card__id" id="spaceId">—</div>
+            <div class="status-card__state" id="spaceState">—</div>
+            <div class="status-card__meta" id="spaceMeta">—</div>
+          </div>
+          <div class="status-actions">
+            <button class="chip chip--danger" data-action="arm" data-i18n="engineer.actions.arm">Под охрану</button>
+            <button class="chip chip--success" data-action="disarm" data-i18n="engineer.actions.disarm">С охраны</button>
+          </div>
+        </section>
+
+        <section class="content">
+          <div class="tabs">
+            <button class="tab tab--active" data-tab="equipment" data-i18n="engineer.tabs.equipment">Оборудование</button>
+            <button class="tab" data-tab="object" data-i18n="engineer.tabs.object">Про объект</button>
+            <button class="tab" data-tab="contacts" data-i18n="engineer.tabs.contacts">Контактные лица</button>
+            <button class="tab" data-tab="photos" data-i18n="engineer.tabs.photos">Фото</button>
+            <button class="tab" data-tab="notes" data-i18n="engineer.tabs.notes">Примечания</button>
+            <button class="tab" data-tab="users" data-i18n="engineer.tabs.users">Пользователи</button>
+            <button class="tab" data-tab="installers" data-i18n="engineer.tabs.installers">Инженеры монтажа</button>
+            <button class="tab" data-tab="log" data-i18n="engineer.tabs.log">Лог</button>
+          </div>
+
+          <div class="panel panel--active" id="equipment">
+            <div class="panel__header">
+              <h2 data-i18n="engineer.equipment.title">Оборудование</h2>
+              <span class="muted" id="hubLabel">—</span>
+            </div>
+            <div class="panel__grid">
+              <div class="device-list">
+                <input class="device-search" id="deviceSearch" data-i18n-placeholder="engineer.search.device" placeholder="Поиск по названию или ID" />
+                <div id="deviceList"></div>
+              </div>
+              <div class="device-details" id="deviceDetails"></div>
+            </div>
+            <div class="panel__footer panel__footer--action">
+              <button class="button button--primary" id="openDeviceModal" data-i18n="engineer.equipment.add">Добавить устройство</button>
+            </div>
+          </div>
+
+          <div class="panel" id="object">
+            <div class="panel__header">
+              <h2 data-i18n="engineer.object.title">Информация об объекте</h2>
+            </div>
+            <div class="object-grid" id="objectInfo"></div>
+            <div class="panel__footer">
+              <h3 data-i18n="engineer.object.edit">Редактировать объект</h3>
+              <form class="form-grid" id="editForm">
+                <input type="text" name="name" data-i18n-placeholder="engineer.object.name" placeholder="Название" maxlength="16" required />
+                <input type="text" name="address" data-i18n-placeholder="engineer.object.coords" placeholder="Координаты" maxlength="15" />
+                <input type="text" name="server" data-i18n-placeholder="engineer.object.server" placeholder="Сервер" maxlength="16" />
+                <input type="text" name="city" data-i18n-placeholder="engineer.object.city" placeholder="Город" maxlength="60" />
+                <button class="button button--primary" type="submit" data-i18n="engineer.object.save">Сохранить</button>
+              </form>
+              <div class="danger-actions">
+                <button class="button button--ghost button--danger" id="detachHub" type="button" data-i18n="engineer.object.removeHub">Удалить хаб</button>
+                <button class="button button--ghost button--danger" id="deleteSpace" type="button" data-i18n="engineer.object.delete">Удалить объект</button>
+              </div>
+              <div class="attach-hub">
+                <h4 data-i18n="engineer.object.attachHub">Привязать хаб</h4>
+                <form class="form-grid" id="attachHubForm">
+                  <input type="text" name="hubId" data-i18n-placeholder="engineer.object.hubId" placeholder="ID хаба" maxlength="40" required />
+                  <button class="button button--primary" type="submit" data-i18n="engineer.object.attach">Привязать</button>
+                </form>
+              </div>
+            </div>
+          </div>
+
+          <div class="panel" id="contacts">
+            <div class="panel__header">
+              <h2 data-i18n="engineer.contacts.title">Контактные лица</h2>
+            </div>
+            <div class="contacts" id="contactsList"></div>
+            <div class="panel__footer">
+              <h3 data-i18n="engineer.contacts.addTitle">Добавить контактное лицо</h3>
+              <form class="form-grid" id="contactForm">
+                <input type="text" name="name" data-i18n-placeholder="engineer.contacts.name" placeholder="Имя" maxlength="40" required />
+                <input type="text" name="role" data-i18n-placeholder="engineer.contacts.role" placeholder="Роль" maxlength="40" />
+                <input type="text" name="phone" data-i18n-placeholder="engineer.contacts.phone" placeholder="Телефон" maxlength="40" />
+                <button class="button button--primary" type="submit" data-i18n="engineer.contacts.add">Добавить</button>
+              </form>
+            </div>
+          </div>
+
+          <div class="panel" id="photos">
+            <div class="panel__header">
+              <h2 data-i18n="engineer.photos.title">Фото объекта</h2>
+            </div>
+            <div class="photos" id="photosList"></div>
+            <div class="panel__footer">
+              <h3 data-i18n="engineer.photos.addTitle">Добавить фото</h3>
+              <form class="form-grid" id="photoForm">
+                <input type="url" name="url" data-i18n-placeholder="engineer.photos.url" placeholder="URL изображения" maxlength="300" required />
+                <input type="text" name="label" data-i18n-placeholder="engineer.photos.label" placeholder="Подпись" maxlength="60" />
+                <button class="button button--primary" type="submit" data-i18n="engineer.photos.add">Добавить</button>
+              </form>
+            </div>
+          </div>
+
+          <div class="panel" id="notes">
+            <div class="panel__header">
+              <h2 data-i18n="engineer.notes.title">Примечания</h2>
+            </div>
+            <div class="notes" id="notesList"></div>
+            <div class="panel__footer">
+              <h3 data-i18n="engineer.notes.addTitle">Добавить примечание</h3>
+              <form class="form-grid" id="noteForm">
+                <textarea name="text" class="notes-input" data-i18n-placeholder="engineer.notes.text" placeholder="Текст примечания" maxlength="100" required></textarea>
+                <button class="button button--primary" type="submit" data-i18n="engineer.notes.add">Добавить</button>
+              </form>
+            </div>
+          </div>
+
+          <div class="panel" id="users">
+            <div class="panel__header">
+              <h2 data-i18n="engineer.users.title">Пользователи</h2>
+            </div>
+            <div class="members-panel">
+              <div class="members-list" id="usersList"></div>
+              <form class="form-grid" id="usersForm">
+                <input type="text" name="identifier" data-i18n-placeholder="engineer.users.email" placeholder="Никнейм" maxlength="16" required />
+                <button class="button button--primary" type="submit" data-i18n="engineer.users.add">Добавить пользователя</button>
+              </form>
+            </div>
+          </div>
+
+          <div class="panel" id="installers">
+            <div class="panel__header">
+              <h2 data-i18n="engineer.installers.title">Инженеры монтажа</h2>
+            </div>
+            <div class="members-panel">
+              <div class="members-list" id="installersList"></div>
+              <form class="form-grid" id="installersForm">
+                <input type="text" name="identifier" data-i18n-placeholder="engineer.installers.email" placeholder="Никнейм" maxlength="16" required />
+                <button class="button button--primary" type="submit" data-i18n="engineer.installers.add">Добавить инженера</button>
+              </form>
+              <p class="muted" data-i18n="engineer.installers.note">Покинуть объект можно только если есть хотя бы ещё один инженер монтажа.</p>
+            </div>
+          </div>
+
+          <div class="panel" id="log">
+            <div class="panel__header">
+              <h2 data-i18n="engineer.log.title">Лог событий</h2>
+              <div class="filters" id="logFilters">
+                <button class="chip chip--active" data-log="all" data-i18n="engineer.log.filters.all">Все</button>
+                <button class="chip" data-log="security" data-i18n="engineer.log.filters.security">Охранные</button>
+                <button class="chip" data-log="access" data-i18n="engineer.log.filters.access">Доступ</button>
+                <button class="chip" data-log="system" data-i18n="engineer.log.filters.system">Система</button>
+                <button class="chip" data-log="hub" data-i18n="engineer.log.filters.hub">События хаба</button>
+              </div>
+            </div>
+            <div class="log-table" id="logTable"></div>
+          </div>
+        </section>
+      </main>
+    </div>
+
+    <div class="modal" id="spaceModal" aria-hidden="true">
+      <div class="modal__content">
+        <div class="modal__header">
+          <h3>Создать пространство</h3>
+          <button class="ghost-button" id="closeModal" aria-label="Закрыть">✕</button>
+        </div>
+        <form class="form-grid" id="spaceForm">
+          <input type="text" name="hubId" placeholder="ID хаба" maxlength="40" required />
+          <input type="text" name="name" placeholder="Название" maxlength="16" required />
+          <input type="text" name="address" placeholder="Координаты" maxlength="15" />
+          <input type="text" name="server" placeholder="Сервер" maxlength="16" />
+          <input type="text" name="city" placeholder="Город" maxlength="60" />
+          <button class="button button--primary" type="submit">Создать</button>
+        </form>
+      </div>
+    </div>
+
+    <div class="modal" id="deviceModal" aria-hidden="true">
+      <div class="modal__content">
+        <div class="modal__header">
+          <h3>Добавить устройство</h3>
+          <button class="ghost-button" id="closeDeviceModal" aria-label="Закрыть">✕</button>
+        </div>
+        <form class="form-grid" id="deviceForm">
+          <input type="text" name="name" placeholder="Имя устройства" maxlength="60" required />
+          <input type="text" name="room" placeholder="Комната" maxlength="60" required />
+          <select name="type" id="deviceType" required>
+            <option value="zone">Шлейф/зона</option>
+            <option value="output-light">Постановочный светодиод</option>
+            <option value="siren">Сирена</option>
+            <option value="reader">Считыватель</option>
+            <option value="key">Ключ</option>
+          </select>
+          <input type="text" name="side" placeholder="Сторона хаба (north/south/etc)" maxlength="16" required />
+
+          <div class="form-inline" id="zoneFields">
+            <select name="zoneType">
+              <option value="instant">Нормальная</option>
+              <option value="delayed">Задержанная</option>
+              <option value="pass">Проходная</option>
+              <option value="24h">24-часовая</option>
+            </select>
+            <select name="bypass">
+              <option value="false">Обход: нет</option>
+              <option value="true">Обход: да</option>
+            </select>
+            <select name="silent">
+              <option value="false">Тихая: нет</option>
+              <option value="true">Тихая: да</option>
+            </select>
+            <input type="number" name="delaySeconds" class="hidden" placeholder="Задержка (сек)" min="1" max="120" />
+            <input type="number" name="normalLevel" placeholder="Норма уровня" min="0" max="15" />
+          </div>
+
+          <div class="form-inline hidden" id="lightFields">
+            <input type="number" name="outputLevel" placeholder="Уровень сигнала" min="0" max="15" />
+          </div>
+
+          <div class="form-inline hidden" id="sirenFields">
+            <input type="number" name="outputLevel" placeholder="Уровень сигнала" min="0" max="15" />
+            <input type="number" name="intervalMs" placeholder="Интервал (мс)" min="300" max="60000" />
+            <input type="number" name="alarmDuration" placeholder="Время тревоги (сек)" min="1" max="120" />
+          </div>
+
+          <div class="form-inline hidden" id="readerFields">
+            <input type="text" name="id" placeholder="ID считывателя" maxlength="80" />
+            <input type="number" name="outputLevel" placeholder="Выходной уровень" min="0" max="15" />
+            <input type="number" name="inputLevel" placeholder="Входной уровень" min="0" max="15" />
+          </div>
+
+          <div class="form-inline hidden" id="keyFields">
+            <input type="text" name="keyName" placeholder="Имя ключа" maxlength="60" />
+            <input type="text" name="readerId" placeholder="ID считывателя" maxlength="80" />
+            <button type="button" class="button button--ghost" id="readKey">Считать ключ</button>
+            <button type="button" class="button button--ghost" id="generateKey">Сгенерировать</button>
+          </div>
+
+          <button class="button button--primary" type="submit">Добавить</button>
+        </form>
+      </div>
+    </div>
+
+    <div class="toast" id="toast" role="status" aria-live="polite"></div>
+
+    <div class="modal modal--loading" id="loadingModal" aria-hidden="true">
+      <div class="modal__content modal__content--small">
+        <div class="spinner"></div>
+        <p>Выполняется действие...</p>
+      </div>
+    </div>
+
+    <div class="modal" id="actionModal" aria-hidden="true">
+      <div class="modal__content">
+        <div class="modal__header">
+          <h3 id="actionModalTitle">Подтвердите действие</h3>
+          <button class="ghost-button" id="closeActionModal" aria-label="Закрыть">✕</button>
+        </div>
+        <p id="actionModalMessage"></p>
+        <form class="form-grid hidden" id="actionModalForm"></form>
+        <div class="modal__actions">
+          <button class="button button--ghost" id="actionModalCancel" type="button">Отмена</button>
+          <button class="button button--primary" id="actionModalConfirm" type="button">Подтвердить</button>
+        </div>
+      </div>
+    </div>
+
+    <div class="modal modal--alert" id="guardModal" aria-hidden="true">
+      <div class="modal__content">
+        <div class="modal__header">
+          <h3>Действие недоступно</h3>
+          <button class="ghost-button" id="closeGuardModal" aria-label="Закрыть">✕</button>
+        </div>
+        <p>Невозможно выполнить действие: объект под охраной.</p>
+        <button class="button button--primary" id="guardModalOk">Понятно</button>
+      </div>
+    </div>
+
+    <script src="app.js?v=2026-01-24"></script>
+  </body>
+</html>
