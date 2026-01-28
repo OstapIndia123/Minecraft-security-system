@@ -398,6 +398,8 @@ const appendLog = async (spaceId, text, who, type) => {
   );
 };
 
+const formatUserLabel = (user) => user?.minecraft_nickname ?? user?.email ?? (user?.id ? `ID ${user.id}` : '—');
+
 const formatHubPayload = (payload) => {
   if (!payload || typeof payload !== 'object') return '';
   return JSON.stringify(payload, null, 2);
@@ -523,7 +525,11 @@ const startBlinkingLights = async (spaceId, hubId, reason) => {
     [spaceId, 'output-light'],
   );
   if (!outputs.rows.length) return;
-  let on = false;
+  let on = true;
+  outputs.rows.forEach((output) => {
+    const level = Number(output.config?.level ?? 15);
+    sendHubOutput(hubId, output.side, level).catch(() => null);
+  });
   const timer = setInterval(() => {
     on = !on;
     outputs.rows.forEach((output) => {
@@ -1469,6 +1475,12 @@ app.post('/api/spaces/:id/leave', requireAuth, async (req, res) => {
     'DELETE FROM user_spaces WHERE user_id = $1 AND space_id = $2 AND role = $3',
     [req.user.id, req.params.id, membershipRole],
   );
+  await appendLog(
+    req.params.id,
+    `Пользователь покинул пространство: ${formatUserLabel(req.user)}`,
+    formatUserLabel(req.user),
+    'system',
+  );
   res.json({ ok: true });
 });
 
@@ -1511,9 +1523,17 @@ app.delete('/api/spaces/:id/members/:userId', requireAuth, requireInstaller, asy
       return;
     }
   }
+  const userInfo = await query('SELECT minecraft_nickname, email FROM users WHERE id = $1', [userId]);
+  const targetLabel = formatUserLabel({ ...userInfo.rows[0], id: userId });
   await query(
     'DELETE FROM user_spaces WHERE user_id = $1 AND space_id = $2 AND role = $3',
     [userId, req.params.id, targetRole],
+  );
+  await appendLog(
+    req.params.id,
+    `Пользователь удалён из пространства: ${targetLabel}`,
+    targetLabel,
+    'system',
   );
   res.json({ ok: true });
 });
@@ -2142,12 +2162,25 @@ app.post('/api/hub/events', requireWebhookToken, async (req, res) => {
   );
   await trimHubLogs(hubId);
 
-  if (type === 'TEST_FAIL') {
+  const hubStatus = await query('SELECT hub_online FROM spaces WHERE id = $1', [spaceId]);
+  const currentHubOnline = hubStatus.rows[0]?.hub_online;
+  const shouldMarkOffline = type === 'TEST_FAIL' || type === 'HUB_OFFLINE';
+  const shouldMarkOnline = type === 'TEST_OK' || type === 'HUB_PING' || type === 'PORT_IN' || type === 'HUB_ONLINE';
+
+  if (shouldMarkOffline && currentHubOnline !== false) {
     await query('UPDATE spaces SET hub_online = $1 WHERE id = $2', [false, spaceId]);
+    await query(
+      'INSERT INTO logs (space_id, time, text, who, type) VALUES ($1,$2,$3,$4,$5)',
+      [spaceId, time, 'Хаб не в сети', hubId, 'system'],
+    );
   }
 
-  if (type === 'TEST_OK' || type === 'HUB_PING' || type === 'PORT_IN' || type === 'HUB_ONLINE') {
+  if (shouldMarkOnline && currentHubOnline !== true) {
     await query('UPDATE spaces SET hub_online = $1 WHERE id = $2', [true, spaceId]);
+    await query(
+      'INSERT INTO logs (space_id, time, text, who, type) VALUES ($1,$2,$3,$4,$5)',
+      [spaceId, time, 'Хаб снова в сети', hubId, 'system'],
+    );
   }
 
   if (type === 'PORT_IN' && payload?.side && payload?.level !== undefined) {

@@ -155,6 +155,13 @@ body {
   margin-bottom: 6px;
 }
 
+.object-card__hub-offline {
+  color: #ff4d4d;
+  font-size: 12px;
+  font-weight: 600;
+  margin-bottom: 6px;
+}
+
 .object-card__status {
   color: var(--accent);
   font-size: 12px;
@@ -912,6 +919,12 @@ body {
 .object-item__meta {
   color: var(--muted);
   font-size: 12px;
+}
+
+.object-item__hub-offline {
+  color: #ff4d4d;
+  font-size: 12px;
+  font-weight: 600;
 }
 
 .members-panel {

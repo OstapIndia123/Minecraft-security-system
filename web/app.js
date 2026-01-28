@@ -213,6 +213,7 @@ const translations = {
     'engineer.object.delete': 'Удалить объект',
     'engineer.object.attachHub': 'Привязать хаб',
     'engineer.object.hubId': 'ID хаба',
+    'engineer.object.hubOffline': 'Хаб не в сети',
     'engineer.object.attach': 'Привязать',
     'engineer.contacts.title': 'Контактные лица',
     'engineer.contacts.addTitle': 'Добавить контактное лицо',
@@ -316,6 +317,7 @@ const translations = {
     'engineer.object.delete': 'Delete object',
     'engineer.object.attachHub': 'Attach hub',
     'engineer.object.hubId': 'Hub ID',
+    'engineer.object.hubOffline': 'Hub offline',
     'engineer.object.attach': 'Attach',
     'engineer.contacts.title': 'Contacts',
     'engineer.contacts.addTitle': 'Add contact',
@@ -912,12 +914,16 @@ const renderObjectList = () => {
     const card = document.createElement('button');
     const isAlarm = space.issues;
     const alarmFlash = isAlarm;
+    const hubOfflineLabel = space.hubOnline === false
+      ? `<div class="object-card__hub-offline">${t('engineer.object.hubOffline')}</div>`
+      : '';
     card.className = `object-card ${space.id === state.selectedSpaceId ? 'object-card--active' : ''} ${
       isAlarm ? 'object-card--alarm' : ''
     } ${alarmFlash ? 'object-card--alarm-flash' : ''}`;
     card.innerHTML = `
       <div class="object-card__title">${escapeHtml(space.name)}</div>
       <div class="object-card__meta">${t('engineer.object.hubId')} ${escapeHtml(space.hubId ?? '—')}</div>
+      ${hubOfflineLabel}
       <div class="object-card__status ${statusTone[space.status] ?? ''}">${t(`status.${space.status}`) ?? statusMap[space.status] ?? space.status}</div>
       <div class="object-card__meta">${t('engineer.object.server')}: ${escapeHtml(space.server ?? '—')}</div>
       <div class="object-card__meta">${escapeHtml(space.address)}</div>
@@ -1538,12 +1544,16 @@ const translateLogText = (text) => {
     { pattern: /^Обновлено фото$/, replacement: 'Photo updated' },
     { pattern: /^Хаб привязан к пространству$/, replacement: 'Hub attached to space' },
     { pattern: /^Хаб удалён из пространства$/, replacement: 'Hub removed from space' },
+    { pattern: /^Хаб не в сети$/, replacement: 'Hub offline' },
+    { pattern: /^Хаб снова в сети$/, replacement: 'Hub online again' },
     { pattern: /^Добавлено устройство: (.+)$/, replacement: 'Device added: $1' },
     { pattern: /^Удалено устройство: (.+)$/, replacement: 'Device removed: $1' },
     { pattern: /^Обновлено устройство: (.+)$/, replacement: 'Device updated: $1' },
     { pattern: /^Добавлен ключ: (.+)$/, replacement: 'Key added: $1' },
     { pattern: /^Удалён ключ: (.+)$/, replacement: 'Key removed: $1' },
     { pattern: /^Обновлён ключ: (.+)$/, replacement: 'Key updated: $1' },
+    { pattern: /^Пользователь покинул пространство: (.+)$/, replacement: 'User left space: $1' },
+    { pattern: /^Пользователь удалён из пространства: (.+)$/, replacement: 'User removed from space: $1' },
   ];
   for (const entry of translations) {
     if (entry.pattern.test(text)) {

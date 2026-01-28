@@ -64,6 +64,7 @@ const translations = {
     'user.actions.disarm': 'С охраны',
     'user.empty.devices': 'Нет устройств',
     'user.empty.logs': 'Нет событий',
+    'user.object.hubOffline': 'Хаб не в сети',
     'status.armed': 'Под охраной',
     'status.disarmed': 'Снято с охраны',
     'status.night': 'Ночной режим',
@@ -90,6 +91,7 @@ const translations = {
     'user.actions.disarm': 'Disarm',
     'user.empty.devices': 'No devices',
     'user.empty.logs': 'No events',
+    'user.object.hubOffline': 'Hub offline',
     'status.armed': 'Armed',
     'status.disarmed': 'Disarmed',
     'status.night': 'Night mode',
@@ -437,10 +439,14 @@ const renderSpaces = (spaces) => {
   objectList.innerHTML = '';
   spaces.forEach((space) => {
     const item = document.createElement('button');
+    const hubOfflineLabel = space.hubOnline === false
+      ? `<div class="object-item__hub-offline">${t('user.object.hubOffline')}</div>`
+      : '';
     item.className = `object-item ${space.id === state.selectedSpaceId ? 'object-item--active' : ''}`;
     item.innerHTML = `
       <div class="object-item__title">${escapeHtml(space.name)}</div>
       <div class="object-item__meta">${escapeHtml(space.id)}</div>
+      ${hubOfflineLabel}
     `;
     item.addEventListener('click', () => {
       state.selectedSpaceId = space.id;
@@ -470,6 +476,7 @@ const renderDevices = (devices) => {
   }
 
   devices.forEach((device) => {
+    const statusText = device.type === 'zone' || device.type === 'hub' ? (device.status ?? '—') : '';
     const button = document.createElement('button');
     button.className = `device-item ${device.id === state.selectedDeviceId ? 'device-item--active' : ''}`;
     button.innerHTML = `
@@ -477,7 +484,7 @@ const renderDevices = (devices) => {
         <div class="device-item__title">${escapeHtml(device.name)}</div>
         <div class="device-item__meta">${escapeHtml(device.room ?? '—')}</div>
       </div>
-      <span class="device-item__status">${escapeHtml(device.status ?? '—')}</span>
+      <span class="device-item__status">${escapeHtml(statusText)}</span>
     `;
     button.addEventListener('click', () => {
       state.selectedDeviceId = device.id;
@@ -522,12 +529,16 @@ const translateLogText = (text) => {
     { pattern: /^Обновлено фото$/, replacement: 'Photo updated' },
     { pattern: /^Хаб привязан к пространству$/, replacement: 'Hub attached to space' },
     { pattern: /^Хаб удалён из пространства$/, replacement: 'Hub removed from space' },
+    { pattern: /^Хаб не в сети$/, replacement: 'Hub offline' },
+    { pattern: /^Хаб снова в сети$/, replacement: 'Hub online again' },
     { pattern: /^Добавлено устройство: (.+)$/, replacement: 'Device added: $1' },
     { pattern: /^Удалено устройство: (.+)$/, replacement: 'Device removed: $1' },
     { pattern: /^Обновлено устройство: (.+)$/, replacement: 'Device updated: $1' },
     { pattern: /^Добавлен ключ: (.+)$/, replacement: 'Key added: $1' },
     { pattern: /^Удалён ключ: (.+)$/, replacement: 'Key removed: $1' },
     { pattern: /^Обновлён ключ: (.+)$/, replacement: 'Key updated: $1' },
+    { pattern: /^Пользователь покинул пространство: (.+)$/, replacement: 'User left space: $1' },
+    { pattern: /^Пользователь удалён из пространства: (.+)$/, replacement: 'User removed from space: $1' },
   ];
   for (const entry of translations) {
     if (entry.pattern.test(text)) {
