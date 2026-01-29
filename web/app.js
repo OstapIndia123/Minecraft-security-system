@@ -1902,12 +1902,15 @@ const pollLogs = async () => {
   if (!space) return;
 
   try {
-    const logs = await apiFetch(`/api/spaces/${space.id}/logs`);
+    const response = await apiFetch(`/api/spaces/${space.id}/logs?limit=200&offset=0`);
+    const logs = response.logs ?? [];
     const lastLog = logs[0];
     const logKey = `${logs.length}-${lastLog?.time ?? ''}-${lastLog?.text ?? ''}-${lastLog?.createdAt ?? ''}`;
     if (logKey !== state.lastLogKey) {
       state.lastLogKey = logKey;
       space.logs = logs;
+      space.logsOffset = logs.length;
+      space.logsHasMore = Boolean(response.hasMore);
       renderLogs(space);
       notifyLogEvent(space, lastLog).catch(() => null);
       if (lastLog?.type === 'alarm' || lastLog?.type === 'restore') {

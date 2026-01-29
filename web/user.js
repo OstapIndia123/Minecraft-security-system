@@ -626,11 +626,13 @@ const renderLogs = (logs) => {
   logMoreButton?.classList.toggle('hidden', !state.logsHasMore);
 };
 
-const loadSpace = async (spaceId) => {
+const loadSpace = async (spaceId, { refreshLogs = true } = {}) => {
   const space = await apiFetch(`/api/spaces/${spaceId}`);
   renderStatus(space);
   renderDevices(space.devices ?? []);
-  await loadLogs(true);
+  if (refreshLogs) {
+    await loadLogs(true);
+  }
 };
 
 const loadLogs = async (reset = false) => {
@@ -662,7 +664,8 @@ const refreshUserData = async () => {
     localStorage.setItem('userSelectedSpace', state.selectedSpaceId);
   }
   renderSpaces(spacesCache);
-  await loadSpace(state.selectedSpaceId);
+  const shouldRefreshLogs = state.logsOffset <= 200;
+  await loadSpace(state.selectedSpaceId, { refreshLogs: shouldRefreshLogs });
 };
 
 chipActions.forEach((chip) => {
