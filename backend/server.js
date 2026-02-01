@@ -539,6 +539,8 @@ const lastExtensionTestSuccessAt = new Map();
 const EXTENSION_PULSE_DURATION_MS = MIN_INTERVAL_MS;
 const EXTENSION_PULSE_TIMEOUT_MS = Math.max(3500, EXTENSION_PULSE_DURATION_MS * 10);
 const EXTENSION_RECENT_SUCCESS_MS = Math.min(3000, EXTENSION_PULSE_TIMEOUT_MS);
+const EXTENSION_RETRY_DELAY_MS = 250;
+const EXTENSION_RETRY_TIMEOUT_MS = 600;
 
 const buildExtensionWaiterKey = (spaceId, side, level) => `${spaceId}:${side}:${level}`;
 
@@ -2384,13 +2386,19 @@ const updateExtensionStatus = async (spaceId, extensionDevice, isOnline) => {
   await appendLog(spaceId, logText, extensionDevice.config?.extensionId ?? extensionDevice.id, 'system');
 };
 
-const checkHubExtensionLink = async (spaceId, extensionDevice, { triggerPulse = false } = {}) => {
+const checkHubExtensionLink = async (
+  spaceId,
+  extensionDevice,
+  { triggerPulse = false, suppressOfflineUpdate = false } = {},
+) => {
   const config = extensionDevice.config ?? {};
   const extensionId = normalizeHubExtensionId(config.extensionId);
   const hubSide = normalizeSideValue(config.hubSide);
   const extensionSide = mapExtensionSide(normalizeSideValue(config.extensionSide));
   if (!extensionId || !hubSide || !extensionSide) {
-    await updateExtensionStatus(spaceId, extensionDevice, false);
+    if (!suppressOfflineUpdate) {
+      await updateExtensionStatus(spaceId, extensionDevice, false);
+    }
     return false;
   }
   const lastSuccessAt = lastExtensionTestSuccessAt.get(extensionId);
@@ -2402,7 +2410,9 @@ const checkHubExtensionLink = async (spaceId, extensionDevice, { triggerPulse = 
     await pulseHubOutput(extensionId, extensionSide, 15, EXTENSION_PULSE_DURATION_MS).catch(() => null);
   }
   const ok = await waitForHubPort(spaceId, hubSide, 15, EXTENSION_PULSE_TIMEOUT_MS);
-  await updateExtensionStatus(spaceId, extensionDevice, ok);
+  if (ok || !suppressOfflineUpdate) {
+    await updateExtensionStatus(spaceId, extensionDevice, ok);
+  }
   return ok;
 };
 
@@ -2501,7 +2511,18 @@ app.post('/api/hub/events', requireWebhookToken, async (req, res) => {
   );
 
   if (isExtensionEvent && !isExtensionTestSide && (type === 'PORT_IN' || type === 'SET_OUTPUT')) {
-    checkedExtensionOnline = await checkHubExtensionLink(spaceId, extensionDevice, { triggerPulse: true });
+    checkedExtensionOnline = await checkHubExtensionLink(spaceId, extensionDevice, {
+      triggerPulse: true,
+      suppressOfflineUpdate: true,
+    });
+    if (!checkedExtensionOnline) {
+      await new Promise((resolve) => setTimeout(resolve, EXTENSION_RETRY_DELAY_MS));
+      const retryHubSide = normalizeSideValue(extensionDevice?.config?.hubSide);
+      checkedExtensionOnline = retryHubSide
+        ? await waitForHubPort(spaceId, retryHubSide, 15, EXTENSION_RETRY_TIMEOUT_MS)
+        : false;
+      await updateExtensionStatus(spaceId, extensionDevice, checkedExtensionOnline);
+    }
     if (!checkedExtensionOnline) {
       return res.json({ ok: true, extensionOffline: true });
     }
