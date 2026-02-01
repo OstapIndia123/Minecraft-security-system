@@ -536,15 +536,12 @@ const keyScanWaiters = new Map();
 const extensionPortWaiters = new Map();
 const recentHubPortSignals = new Map();
 const extensionLastOkAt = new Map();
-const extensionLinkCheckAt = new Map();
 const extensionOfflineFailures = new Map();
 const EXTENSION_PULSE_DURATION_MS = MIN_INTERVAL_MS;
 const EXTENSION_PULSE_TIMEOUT_MS = Math.max(3500, EXTENSION_PULSE_DURATION_MS * 10);
 const EXTENSION_LINK_OK_TTL_MS = 3000;
-const EXTENSION_LINK_CHECK_THROTTLE_MS = 1500;
 const EXTENSION_OFFLINE_FAILURES_REQUIRED = 2;
 const EXTENSION_OFFLINE_FAILURE_WINDOW_MS = 4000;
-const EXTENSION_TEST_LEVEL = 15;
 
 const buildExtensionWaiterKey = (spaceId, side, level) => `${spaceId}:${side}:${level}`;
 
@@ -2535,7 +2532,7 @@ app.post('/api/hub/events', requireWebhookToken, async (req, res) => {
     if (payloadSide && testSideForEvent && payloadSide === testSideForEvent) {
       isExtensionTestSide = true;
       const payloadLevel = Number(payload?.level);
-      isExtensionTestPulse = Number.isFinite(payloadLevel) && payloadLevel === EXTENSION_TEST_LEVEL;
+      isExtensionTestPulse = Number.isFinite(payloadLevel) && payloadLevel === 15;
     }
   } else {
     const normalizedHubId = normalizeHubId(hubId);
@@ -2557,28 +2554,21 @@ app.post('/api/hub/events', requireWebhookToken, async (req, res) => {
     [spaceId, time, hubLogText, hubId, 'hub_raw'],
   );
 
-  if (isExtensionEvent && isExtensionTestPulse && type === 'SET_OUTPUT') {
-    const lastCheckedAt = extensionLinkCheckAt.get(normalizedExtensionId);
-    if (lastCheckedAt && Date.now() - lastCheckedAt < EXTENSION_LINK_CHECK_THROTTLE_MS) {
-      console.info('Extension link check throttled', { extensionId: normalizedExtensionId, hubId });
-    } else {
-      extensionLinkCheckAt.set(normalizedExtensionId, Date.now());
-      console.info('Extension link check triggered', { extensionId: normalizedExtensionId, hubId });
-      checkedExtensionOnline = await checkHubExtensionLink(spaceId, extensionDevice, {
-        triggerPulse: true,
-        suppressOfflineUpdate: true,
-      });
-      if (!checkedExtensionOnline) {
-        await new Promise((resolve) => setTimeout(resolve, EXTENSION_RETRY_DELAY_MS));
-        const retryHubSide = normalizeSideValue(extensionDevice?.config?.hubSide);
-        checkedExtensionOnline = retryHubSide
-          ? await waitForHubPort(spaceId, retryHubSide, 15, EXTENSION_RETRY_TIMEOUT_MS)
-          : false;
-        await updateExtensionStatus(spaceId, extensionDevice, checkedExtensionOnline);
-      }
-      if (!checkedExtensionOnline) {
-        return res.json({ ok: true, extensionOffline: true });
-      }
+  if (isExtensionEvent && !isExtensionTestSide && (type === 'PORT_IN' || type === 'SET_OUTPUT')) {
+    checkedExtensionOnline = await checkHubExtensionLink(spaceId, extensionDevice, {
+      triggerPulse: true,
+      suppressOfflineUpdate: true,
+    });
+    if (!checkedExtensionOnline) {
+      await new Promise((resolve) => setTimeout(resolve, EXTENSION_RETRY_DELAY_MS));
+      const retryHubSide = normalizeSideValue(extensionDevice?.config?.hubSide);
+      checkedExtensionOnline = retryHubSide
+        ? await waitForHubPort(spaceId, retryHubSide, 15, EXTENSION_RETRY_TIMEOUT_MS)
+        : false;
+      await updateExtensionStatus(spaceId, extensionDevice, checkedExtensionOnline);
+    }
+    if (!checkedExtensionOnline) {
+      return res.json({ ok: true, extensionOffline: true });
     }
   }
 
