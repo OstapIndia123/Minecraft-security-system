@@ -522,6 +522,7 @@ const lastKeyScans = new Map();
 const keyScanWaiters = new Map();
 const extensionPortWaiters = new Map();
 const recentHubPortSignals = new Map();
+const extensionCheckCooldowns = new Map();
 const EXTENSION_PULSE_DURATION_MS = MIN_INTERVAL_MS;
 const EXTENSION_PULSE_TIMEOUT_MS = EXTENSION_PULSE_DURATION_MS * 2;
 
@@ -2474,7 +2475,17 @@ app.post('/api/hub/events', requireWebhookToken, async (req, res) => {
   );
 
   if (isExtensionEvent && payloadSide && !isExtensionTestSide) {
-    checkedExtensionOnline = await checkHubExtensionLink(spaceId, extensionDevice, { triggerPulse: true });
+    const extensionId = normalizeHubExtensionId(extensionDevice?.config?.extensionId);
+    const lastCheckAt = extensionId ? (extensionCheckCooldowns.get(extensionId) ?? 0) : 0;
+    const now = Date.now();
+    if (extensionId && now - lastCheckAt < EXTENSION_PULSE_TIMEOUT_MS) {
+      checkedExtensionOnline = true;
+    } else {
+      checkedExtensionOnline = await checkHubExtensionLink(spaceId, extensionDevice, { triggerPulse: true });
+      if (extensionId) {
+        extensionCheckCooldowns.set(extensionId, now);
+      }
+    }
     if (!checkedExtensionOnline) {
       return res.json({ ok: true, extensionOffline: true });
     }
