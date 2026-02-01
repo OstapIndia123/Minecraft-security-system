@@ -536,9 +536,13 @@ const keyScanWaiters = new Map();
 const extensionPortWaiters = new Map();
 const recentHubPortSignals = new Map();
 const extensionLastOkAt = new Map();
+const extensionOfflineFailures = new Map();
 const EXTENSION_PULSE_DURATION_MS = MIN_INTERVAL_MS;
 const EXTENSION_PULSE_TIMEOUT_MS = Math.max(3500, EXTENSION_PULSE_DURATION_MS * 10);
 const EXTENSION_LINK_OK_TTL_MS = 3000;
+const EXTENSION_TEST_LEVEL = 10;
+const EXTENSION_OFFLINE_FAILURES_REQUIRED = 2;
+const EXTENSION_OFFLINE_FAILURE_WINDOW_MS = 4000;
 
 const buildExtensionWaiterKey = (spaceId, side, level) => `${spaceId}:${side}:${level}`;
 
@@ -595,6 +599,24 @@ const recordHubPortSignal = (spaceId, side, level) => {
 const recordExtensionTestSuccess = (extensionId) => {
   if (!extensionId) return;
   extensionLastOkAt.set(extensionId, Date.now());
+};
+
+const recordExtensionOfflineFailure = (extensionId) => {
+  if (!extensionId) return true;
+  const now = Date.now();
+  const entry = extensionOfflineFailures.get(extensionId);
+  if (!entry || now - entry.lastFailureAt > EXTENSION_OFFLINE_FAILURE_WINDOW_MS) {
+    extensionOfflineFailures.set(extensionId, { count: 1, lastFailureAt: now });
+    return EXTENSION_OFFLINE_FAILURES_REQUIRED <= 1;
+  }
+  const nextCount = entry.count + 1;
+  extensionOfflineFailures.set(extensionId, { count: nextCount, lastFailureAt: now });
+  return nextCount >= EXTENSION_OFFLINE_FAILURES_REQUIRED;
+};
+
+const resetExtensionOfflineFailures = (extensionId) => {
+  if (!extensionId) return;
+  extensionOfflineFailures.delete(extensionId);
 };
 
 const pulseHubOutput = async (hubId, side, level, durationMs = MIN_INTERVAL_MS) => {
@@ -2377,11 +2399,35 @@ const handleReaderScan = async ({ readerId, payload, ts }) => {
 };
 
 const updateExtensionStatus = async (spaceId, extensionDevice, isOnline) => {
+  const extensionId = normalizeHubExtensionId(extensionDevice.config?.extensionId) ?? extensionDevice.id;
+  if (!isOnline) {
+    const shouldMarkOffline = recordExtensionOfflineFailure(extensionId);
+    if (!shouldMarkOffline) return;
+  } else {
+    resetExtensionOfflineFailures(extensionId);
+  }
   const nextStatus = isOnline ? 'В сети' : 'Не в сети';
-  if (extensionDevice.status === nextStatus) return;
+  const currentStatusResult = await query('SELECT status FROM devices WHERE id = $1', [extensionDevice.id]);
+  const currentStatus = currentStatusResult.rows[0]?.status;
+  if (currentStatus === nextStatus || currentStatus === undefined) return;
   await query('UPDATE devices SET status = $1 WHERE id = $2', [nextStatus, extensionDevice.id]);
-  const logText = isOnline ? 'Модуль расширения снова в сети' : 'Модуль расширения не в сети';
-  await appendLog(spaceId, logText, extensionDevice.config?.extensionId ?? extensionDevice.id, 'system');
+  if (!isOnline) {
+    await appendLog(
+      spaceId,
+      'Модуль расширения не в сети',
+      extensionDevice.config?.extensionId ?? extensionDevice.id,
+      'system',
+    );
+    return;
+  }
+  if (currentStatus === 'Не в сети') {
+    await appendLog(
+      spaceId,
+      'Модуль расширения снова в сети',
+      extensionDevice.config?.extensionId ?? extensionDevice.id,
+      'system',
+    );
+  }
 };
 
 const checkHubExtensionLink = async (
@@ -2405,9 +2451,9 @@ const checkHubExtensionLink = async (
     return true;
   }
   if (triggerPulse) {
-    await pulseHubOutput(extensionId, extensionSide, 15, EXTENSION_PULSE_DURATION_MS).catch(() => null);
+    await pulseHubOutput(extensionId, extensionSide, EXTENSION_TEST_LEVEL, EXTENSION_PULSE_DURATION_MS).catch(() => null);
   }
-  const ok = await waitForHubPort(spaceId, hubSide, 15, EXTENSION_PULSE_TIMEOUT_MS);
+  const ok = await waitForHubPort(spaceId, hubSide, EXTENSION_TEST_LEVEL, EXTENSION_PULSE_TIMEOUT_MS);
   if (ok) {
     recordExtensionTestSuccess(extensionId);
   }
@@ -2487,7 +2533,7 @@ app.post('/api/hub/events', requireWebhookToken, async (req, res) => {
     if (payloadSide && testSideForEvent && payloadSide === testSideForEvent) {
       isExtensionTestSide = true;
       const payloadLevel = Number(payload?.level);
-      isExtensionTestPulse = Number.isFinite(payloadLevel) && payloadLevel === 15;
+      isExtensionTestPulse = Number.isFinite(payloadLevel) && payloadLevel === EXTENSION_TEST_LEVEL;
     }
   } else {
     const normalizedHubId = normalizeHubId(hubId);
@@ -2511,14 +2557,14 @@ app.post('/api/hub/events', requireWebhookToken, async (req, res) => {
 
   if (isExtensionEvent && !isExtensionTestSide && (type === 'PORT_IN' || type === 'SET_OUTPUT')) {
     checkedExtensionOnline = await checkHubExtensionLink(spaceId, extensionDevice, {
-      triggerPulse: true,
+      triggerPulse: type === 'PORT_IN',
       suppressOfflineUpdate: true,
     });
     if (!checkedExtensionOnline) {
       await new Promise((resolve) => setTimeout(resolve, EXTENSION_RETRY_DELAY_MS));
       const retryHubSide = normalizeSideValue(extensionDevice?.config?.hubSide);
       checkedExtensionOnline = retryHubSide
-        ? await waitForHubPort(spaceId, retryHubSide, 15, EXTENSION_RETRY_TIMEOUT_MS)
+        ? await waitForHubPort(spaceId, retryHubSide, EXTENSION_TEST_LEVEL, EXTENSION_RETRY_TIMEOUT_MS)
         : false;
       await updateExtensionStatus(spaceId, extensionDevice, checkedExtensionOnline);
     }
@@ -2574,13 +2620,13 @@ app.post('/api/hub/events', requireWebhookToken, async (req, res) => {
       extensionSides.rows.forEach((row) => {
         const hubSide = normalizeSideValue(row.hub_side);
         const extensionId = normalizeHubExtensionId(row.extension_id);
-        if (hubSide && extensionId && hubSide === normalizedSide && inputLevel === 15) {
+        if (hubSide && extensionId && hubSide === normalizedSide && inputLevel === EXTENSION_TEST_LEVEL) {
           recordExtensionTestSuccess(extensionId);
         }
       });
       const testSides = extensionSides.rows.map((row) => normalizeSideValue(row.hub_side)).filter(Boolean);
       if (testSides.includes(normalizedSide)) {
-        return res.json({ ok: true, ignored: true, testPulse: inputLevel === 15 });
+        return res.json({ ok: true, ignored: true, testPulse: inputLevel === EXTENSION_TEST_LEVEL });
       }
       const sessions = await query(
         `SELECT id, input_side, input_level, action, key_name, reader_name
