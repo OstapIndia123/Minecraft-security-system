@@ -522,7 +522,6 @@ const lastKeyScans = new Map();
 const keyScanWaiters = new Map();
 const extensionPortWaiters = new Map();
 const recentHubPortSignals = new Map();
-const extensionPulseCooldowns = new Map();
 const EXTENSION_PULSE_DURATION_MS = MIN_INTERVAL_MS;
 const EXTENSION_PULSE_TIMEOUT_MS = EXTENSION_PULSE_DURATION_MS * 2;
 
@@ -586,17 +585,6 @@ const pulseHubOutput = async (hubId, side, level, durationMs = MIN_INTERVAL_MS) 
   }, resolvedDuration);
 };
 
-const maybePulseExtension = async (extensionDevice) => {
-  const config = extensionDevice?.config ?? {};
-  const extensionId = normalizeHubExtensionId(config.extensionId);
-  const extensionSide = normalizeSideValue(config.extensionSide);
-  if (!extensionId || !extensionSide) return;
-  const lastPulseAt = extensionPulseCooldowns.get(extensionId) ?? 0;
-  const now = Date.now();
-  if (now - lastPulseAt < EXTENSION_PULSE_DURATION_MS) return;
-  extensionPulseCooldowns.set(extensionId, now);
-  await pulseHubOutput(extensionId, extensionSide, 15, EXTENSION_PULSE_DURATION_MS).catch(() => null);
-};
 const resolveDeviceTargetId = (config, hubId) => {
   if (config?.bindTarget === 'hub_extension') {
     return normalizeHubExtensionId(config.extensionId);
@@ -2440,7 +2428,9 @@ app.post('/api/hub/events', requireWebhookToken, async (req, res) => {
   let normalizedExtensionId;
   let isExtensionTestPulse = false;
   let isExtensionTestSide = false;
-  let isExtensionOutputEvent = false;
+  let extensionSide;
+  let payloadSide;
+  let checkedExtensionOnline = null;
 
   if (isExtensionEvent) {
     normalizedExtensionId = normalizeHubExtensionId(hubId);
@@ -2456,25 +2446,12 @@ app.post('/api/hub/events', requireWebhookToken, async (req, res) => {
     }
     extensionDevice = extensionResult.rows[0];
     spaceId = extensionDevice.space_id;
-    if (type === 'PORT_IN') {
-      const extensionSide = normalizeSideValue(extensionDevice.config?.extensionSide);
-      const payloadSide = normalizeSideValue(payload?.side);
+    extensionSide = normalizeSideValue(extensionDevice.config?.extensionSide);
+    payloadSide = normalizeSideValue(payload?.side);
+    if (payloadSide && extensionSide && payloadSide === extensionSide) {
+      isExtensionTestSide = true;
       const payloadLevel = Number(payload?.level);
-      isExtensionTestSide = Boolean(extensionSide && payloadSide && payloadSide === extensionSide);
-      isExtensionTestPulse = Boolean(
-        extensionSide
-        && payloadSide
-        && payloadSide === extensionSide
-        && Number.isFinite(payloadLevel)
-        && payloadLevel === 15,
-      );
-    } else if (type === 'SET_OUTPUT') {
-      const extensionSide = normalizeSideValue(extensionDevice.config?.extensionSide);
-      const payloadSide = normalizeSideValue(payload?.side);
-      isExtensionOutputEvent = Boolean(extensionSide && payloadSide && payloadSide === extensionSide);
-    }
-    if (type !== 'PORT_IN' && !isExtensionTestSide && !isExtensionTestPulse && !isExtensionOutputEvent) {
-      await maybePulseExtension(extensionDevice);
+      isExtensionTestPulse = Number.isFinite(payloadLevel) && payloadLevel === 15;
     }
   } else {
     const normalizedHubId = normalizeHubId(hubId);
@@ -2495,6 +2472,13 @@ app.post('/api/hub/events', requireWebhookToken, async (req, res) => {
     'INSERT INTO logs (space_id, time, text, who, type) VALUES ($1,$2,$3,$4,$5)',
     [spaceId, time, hubLogText, hubId, 'hub_raw'],
   );
+
+  if (isExtensionEvent && payloadSide && !isExtensionTestSide) {
+    checkedExtensionOnline = await checkHubExtensionLink(spaceId, extensionDevice, { triggerPulse: true });
+    if (!checkedExtensionOnline) {
+      return res.json({ ok: true, extensionOffline: true });
+    }
+  }
 
   if (!isExtensionEvent) {
     const hubStatus = await query('SELECT hub_online FROM spaces WHERE id = $1', [spaceId]);
@@ -2530,8 +2514,7 @@ app.post('/api/hub/events', requireWebhookToken, async (req, res) => {
       if (isExtensionTestSide) {
         return res.json({ ok: true, ignored: true, testPulse: isExtensionTestPulse });
       }
-      const isOnline = await checkHubExtensionLink(spaceId, extensionDevice);
-      if (!isOnline) {
+      if (checkedExtensionOnline === false) {
         return res.json({ ok: true, extensionOffline: true });
       }
     } else {
