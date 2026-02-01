@@ -532,6 +532,11 @@ const waitForHubPort = (spaceId, side, level, timeoutMs = 1500) => new Promise((
     return;
   }
   const key = buildExtensionWaiterKey(spaceId, side, level);
+  const recentSignalAt = recentHubPortSignals.get(key);
+  if (recentSignalAt && Date.now() - recentSignalAt <= timeoutMs) {
+    resolve(true);
+    return;
+  }
   const waiters = extensionPortWaiters.get(key) ?? [];
   const timeout = setTimeout(() => {
     const updated = (extensionPortWaiters.get(key) ?? []).filter((entry) => entry.timeout !== timeout);
@@ -2507,6 +2512,7 @@ app.post('/api/hub/events', requireWebhookToken, async (req, res) => {
         return res.json({ ok: true, extensionOffline: true });
       }
     } else {
+      recordHubPortSignal(spaceId, normalizedSide, inputLevel);
       resolveHubPortWaiter(spaceId, normalizedSide, inputLevel);
       const extensionSides = await query(
         "SELECT config->>'hubSide' AS hub_side FROM devices WHERE space_id = $1 AND type = $2",
