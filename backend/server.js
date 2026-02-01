@@ -384,6 +384,19 @@ const normalizeSideValue = (side) => {
   return shortMap[normalized] ?? normalized;
 };
 
+const mapExtensionSide = (side) => {
+  if (!side) return side;
+  const opposite = {
+    north: 'south',
+    south: 'north',
+    east: 'west',
+    west: 'east',
+    up: 'down',
+    down: 'up',
+  };
+  return opposite[side] ?? side;
+};
+
 const loadDevices = async (spaceId, hubId, hubOnline) => {
   const devices = await query('SELECT * FROM devices WHERE space_id = $1 ORDER BY id', [spaceId]);
   const keys = await query('SELECT id, name, reader_id FROM keys WHERE space_id = $1 ORDER BY id', [spaceId]);
@@ -2368,7 +2381,7 @@ const checkHubExtensionLink = async (spaceId, extensionDevice, { triggerPulse = 
   const config = extensionDevice.config ?? {};
   const extensionId = normalizeHubExtensionId(config.extensionId);
   const hubSide = normalizeSideValue(config.hubSide);
-  const extensionSide = normalizeSideValue(config.extensionSide);
+  const extensionSide = mapExtensionSide(normalizeSideValue(config.extensionSide));
   if (!extensionId || !hubSide || !extensionSide) {
     await updateExtensionStatus(spaceId, extensionDevice, false);
     return false;
@@ -2446,7 +2459,7 @@ app.post('/api/hub/events', requireWebhookToken, async (req, res) => {
     }
     extensionDevice = extensionResult.rows[0];
     spaceId = extensionDevice.space_id;
-    extensionSide = normalizeSideValue(extensionDevice.config?.extensionSide);
+    extensionSide = mapExtensionSide(normalizeSideValue(extensionDevice.config?.extensionSide));
     payloadSide = normalizeSideValue(payload?.side);
     if (payloadSide && extensionSide && payloadSide === extensionSide) {
       isExtensionTestSide = true;
