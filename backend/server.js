@@ -2420,7 +2420,6 @@ app.post('/api/hub/events', requireWebhookToken, async (req, res) => {
   let spaceId;
   let extensionDevice;
   let normalizedExtensionId;
-  let isExtensionTestPulse = false;
   let isExtensionTestSide = false;
   let extensionSide;
   let payloadSide;
@@ -2444,8 +2443,9 @@ app.post('/api/hub/events', requireWebhookToken, async (req, res) => {
     payloadSide = normalizeSideValue(payload?.side);
     if (payloadSide && extensionSide && payloadSide === extensionSide) {
       isExtensionTestSide = true;
-      const payloadLevel = Number(payload?.level);
-      isExtensionTestPulse = Number.isFinite(payloadLevel) && payloadLevel === 15;
+    }
+    if (isExtensionTestSide) {
+      return res.json({ ok: true, ignored: true });
     }
   } else {
     const normalizedHubId = normalizeHubId(hubId);
@@ -2505,9 +2505,6 @@ app.post('/api/hub/events', requireWebhookToken, async (req, res) => {
     }
 
     if (isExtensionEvent) {
-      if (isExtensionTestSide) {
-        return res.json({ ok: true, ignored: true, testPulse: isExtensionTestPulse });
-      }
       if (checkedExtensionOnline === false) {
         return res.json({ ok: true, extensionOffline: true });
       }
