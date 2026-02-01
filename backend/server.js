@@ -522,6 +522,7 @@ const lastKeyScans = new Map();
 const keyScanWaiters = new Map();
 const extensionPortWaiters = new Map();
 const recentHubPortSignals = new Map();
+const extensionPulseCooldowns = new Map();
 const EXTENSION_PULSE_DURATION_MS = MIN_INTERVAL_MS;
 const EXTENSION_PULSE_TIMEOUT_MS = EXTENSION_PULSE_DURATION_MS * 2;
 
@@ -583,6 +584,18 @@ const pulseHubOutput = async (hubId, side, level, durationMs = MIN_INTERVAL_MS) 
   setTimeout(() => {
     sendHubOutput(hubId, side, 0).catch(() => null);
   }, resolvedDuration);
+};
+
+const maybePulseExtension = async (extensionDevice) => {
+  const config = extensionDevice?.config ?? {};
+  const extensionId = normalizeHubExtensionId(config.extensionId);
+  const extensionSide = normalizeSideValue(config.extensionSide);
+  if (!extensionId || !extensionSide) return;
+  const lastPulseAt = extensionPulseCooldowns.get(extensionId) ?? 0;
+  const now = Date.now();
+  if (now - lastPulseAt < EXTENSION_PULSE_DURATION_MS) return;
+  extensionPulseCooldowns.set(extensionId, now);
+  await pulseHubOutput(extensionId, extensionSide, 15, EXTENSION_PULSE_DURATION_MS).catch(() => null);
 };
 const resolveDeviceTargetId = (config, hubId) => {
   if (config?.bindTarget === 'hub_extension') {
@@ -2440,6 +2453,7 @@ app.post('/api/hub/events', requireWebhookToken, async (req, res) => {
     }
     extensionDevice = extensionResult.rows[0];
     spaceId = extensionDevice.space_id;
+    await maybePulseExtension(extensionDevice);
   } else {
     const normalizedHubId = normalizeHubId(hubId);
     const spaceResult = await query('SELECT space_id FROM hubs WHERE id = $1', [normalizedHubId]);
