@@ -2439,6 +2439,7 @@ app.post('/api/hub/events', requireWebhookToken, async (req, res) => {
   let extensionDevice;
   let normalizedExtensionId;
   let isExtensionTestPulse = false;
+  let isExtensionOutputEvent = false;
 
   if (isExtensionEvent) {
     normalizedExtensionId = normalizeHubExtensionId(hubId);
@@ -2465,8 +2466,12 @@ app.post('/api/hub/events', requireWebhookToken, async (req, res) => {
         && Number.isFinite(payloadLevel)
         && payloadLevel === 15,
       );
+    } else if (type === 'SET_OUTPUT') {
+      const extensionSide = normalizeSideValue(extensionDevice.config?.extensionSide);
+      const payloadSide = normalizeSideValue(payload?.side);
+      isExtensionOutputEvent = Boolean(extensionSide && payloadSide && payloadSide === extensionSide);
     }
-    if (!isExtensionTestPulse) {
+    if (!isExtensionTestPulse && !isExtensionOutputEvent) {
       await maybePulseExtension(extensionDevice);
     }
   } else {
