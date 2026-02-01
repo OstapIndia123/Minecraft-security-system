@@ -521,6 +521,9 @@ const lightBlinkTimers = new Map();
 const lastKeyScans = new Map();
 const keyScanWaiters = new Map();
 const extensionPortWaiters = new Map();
+const recentHubPortSignals = new Map();
+const EXTENSION_PULSE_DURATION_MS = MIN_INTERVAL_MS;
+const EXTENSION_PULSE_TIMEOUT_MS = EXTENSION_PULSE_DURATION_MS * 2;
 
 const buildExtensionWaiterKey = (spaceId, side, level) => `${spaceId}:${side}:${level}`;
 
@@ -530,6 +533,11 @@ const waitForHubPort = (spaceId, side, level, timeoutMs = 1500) => new Promise((
     return;
   }
   const key = buildExtensionWaiterKey(spaceId, side, level);
+  const recentSignalAt = recentHubPortSignals.get(key);
+  if (recentSignalAt && Date.now() - recentSignalAt <= timeoutMs) {
+    resolve(true);
+    return;
+  }
   const waiters = extensionPortWaiters.get(key) ?? [];
   const timeout = setTimeout(() => {
     const updated = (extensionPortWaiters.get(key) ?? []).filter((entry) => entry.timeout !== timeout);
@@ -562,6 +570,19 @@ const resolveHubPortWaiter = (spaceId, side, level) => {
     extensionPortWaiters.delete(key);
   }
   return true;
+};
+
+const recordHubPortSignal = (spaceId, side, level) => {
+  const key = buildExtensionWaiterKey(spaceId, side, level);
+  recentHubPortSignals.set(key, Date.now());
+};
+
+const pulseHubOutput = async (hubId, side, level, durationMs = MIN_INTERVAL_MS) => {
+  const resolvedDuration = Math.max(durationMs, MIN_INTERVAL_MS);
+  await sendHubOutput(hubId, side, level);
+  setTimeout(() => {
+    sendHubOutput(hubId, side, 0).catch(() => null);
+  }, resolvedDuration);
 };
 const resolveDeviceTargetId = (config, hubId) => {
   if (config?.bindTarget === 'hub_extension') {
@@ -2010,7 +2031,7 @@ app.post('/api/spaces/:id/devices/:deviceId/refresh', requireAuth, requireInstal
     'hub_extension',
   ]);
   if (!existing.rows.length) return res.status(404).json({ error: 'device_not_found' });
-  const isOnline = await checkHubExtensionLink(id, existing.rows[0]);
+  const isOnline = await checkHubExtensionLink(id, existing.rows[0], { triggerPulse: true });
   res.json({ ok: true, online: isOnline });
 });
 
@@ -2342,7 +2363,7 @@ const updateExtensionStatus = async (spaceId, extensionDevice, isOnline) => {
   await appendLog(spaceId, logText, extensionDevice.config?.extensionId ?? extensionDevice.id, 'system');
 };
 
-const checkHubExtensionLink = async (spaceId, extensionDevice) => {
+const checkHubExtensionLink = async (spaceId, extensionDevice, { triggerPulse = false } = {}) => {
   const config = extensionDevice.config ?? {};
   const extensionId = normalizeHubExtensionId(config.extensionId);
   const hubSide = normalizeSideValue(config.hubSide);
@@ -2351,8 +2372,10 @@ const checkHubExtensionLink = async (spaceId, extensionDevice) => {
     await updateExtensionStatus(spaceId, extensionDevice, false);
     return false;
   }
-  await sendHubOutput(extensionId, extensionSide, 15).catch(() => null);
-  const ok = await waitForHubPort(spaceId, hubSide, 15, 1500);
+  if (triggerPulse) {
+    await pulseHubOutput(extensionId, extensionSide, 15, EXTENSION_PULSE_DURATION_MS).catch(() => null);
+  }
+  const ok = await waitForHubPort(spaceId, hubSide, 15, EXTENSION_PULSE_TIMEOUT_MS);
   await updateExtensionStatus(spaceId, extensionDevice, ok);
   return ok;
 };
@@ -2473,6 +2496,7 @@ app.post('/api/hub/events', requireWebhookToken, async (req, res) => {
         return res.json({ ok: true, extensionOffline: true });
       }
     } else {
+      recordHubPortSignal(spaceId, normalizedSide, inputLevel);
       resolveHubPortWaiter(spaceId, normalizedSide, inputLevel);
       const sessions = await query(
         `SELECT id, input_side, input_level, action, key_name, reader_name
