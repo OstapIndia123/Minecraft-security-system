@@ -535,8 +535,10 @@ const lastKeyScans = new Map();
 const keyScanWaiters = new Map();
 const extensionPortWaiters = new Map();
 const recentHubPortSignals = new Map();
+const lastExtensionTestSuccessAt = new Map();
 const EXTENSION_PULSE_DURATION_MS = MIN_INTERVAL_MS;
-const EXTENSION_PULSE_TIMEOUT_MS = Math.max(2500, EXTENSION_PULSE_DURATION_MS * 6);
+const EXTENSION_PULSE_TIMEOUT_MS = Math.max(3500, EXTENSION_PULSE_DURATION_MS * 10);
+const EXTENSION_RECENT_SUCCESS_MS = Math.min(3000, EXTENSION_PULSE_TIMEOUT_MS);
 
 const buildExtensionWaiterKey = (spaceId, side, level) => `${spaceId}:${side}:${level}`;
 
@@ -588,6 +590,11 @@ const resolveHubPortWaiter = (spaceId, side, level) => {
 const recordHubPortSignal = (spaceId, side, level) => {
   const key = buildExtensionWaiterKey(spaceId, side, level);
   recentHubPortSignals.set(key, Date.now());
+};
+
+const recordExtensionTestSuccess = (extensionId) => {
+  if (!extensionId) return;
+  lastExtensionTestSuccessAt.set(extensionId, Date.now());
 };
 
 const pulseHubOutput = async (hubId, side, level, durationMs = MIN_INTERVAL_MS) => {
@@ -2386,6 +2393,11 @@ const checkHubExtensionLink = async (spaceId, extensionDevice, { triggerPulse = 
     await updateExtensionStatus(spaceId, extensionDevice, false);
     return false;
   }
+  const lastSuccessAt = lastExtensionTestSuccessAt.get(extensionId);
+  if (lastSuccessAt && Date.now() - lastSuccessAt <= EXTENSION_RECENT_SUCCESS_MS) {
+    await updateExtensionStatus(spaceId, extensionDevice, true);
+    return true;
+  }
   if (triggerPulse) {
     await pulseHubOutput(extensionId, extensionSide, 15, EXTENSION_PULSE_DURATION_MS).catch(() => null);
   }
@@ -2536,12 +2548,17 @@ app.post('/api/hub/events', requireWebhookToken, async (req, res) => {
       recordHubPortSignal(spaceId, normalizedSide, inputLevel);
       resolveHubPortWaiter(spaceId, normalizedSide, inputLevel);
       const extensionSides = await query(
-        "SELECT config->>'hubSide' AS hub_side FROM devices WHERE space_id = $1 AND type = $2",
+        "SELECT config->>'hubSide' AS hub_side, config->>'extensionId' AS extension_id FROM devices WHERE space_id = $1 AND type = $2",
         [spaceId, 'hub_extension'],
       );
-      const testSides = extensionSides.rows
-        .map((row) => normalizeSideValue(row.hub_side))
-        .filter(Boolean);
+      extensionSides.rows.forEach((row) => {
+        const hubSide = normalizeSideValue(row.hub_side);
+        const extensionId = normalizeHubExtensionId(row.extension_id);
+        if (hubSide && extensionId && hubSide === normalizedSide && inputLevel === 15) {
+          recordExtensionTestSuccess(extensionId);
+        }
+      });
+      const testSides = extensionSides.rows.map((row) => normalizeSideValue(row.hub_side)).filter(Boolean);
       if (testSides.includes(normalizedSide)) {
         return res.json({ ok: true, ignored: true, testPulse: inputLevel === 15 });
       }
