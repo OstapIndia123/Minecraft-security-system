@@ -2473,7 +2473,7 @@ app.post('/api/hub/events', requireWebhookToken, async (req, res) => {
       const payloadSide = normalizeSideValue(payload?.side);
       isExtensionOutputEvent = Boolean(extensionSide && payloadSide && payloadSide === extensionSide);
     }
-    if (type !== 'PORT_IN' && !isExtensionTestPulse && !isExtensionOutputEvent) {
+    if (!isExtensionTestSide && !isExtensionTestPulse && !isExtensionOutputEvent) {
       await maybePulseExtension(extensionDevice);
     }
   } else {
@@ -2537,6 +2537,16 @@ app.post('/api/hub/events', requireWebhookToken, async (req, res) => {
     } else {
       recordHubPortSignal(spaceId, normalizedSide, inputLevel);
       resolveHubPortWaiter(spaceId, normalizedSide, inputLevel);
+      const extensionSides = await query(
+        "SELECT config->>'hubSide' AS hub_side FROM devices WHERE space_id = $1 AND type = $2",
+        [spaceId, 'hub_extension'],
+      );
+      const testSides = extensionSides.rows
+        .map((row) => normalizeSideValue(row.hub_side))
+        .filter(Boolean);
+      if (testSides.includes(normalizedSide)) {
+        return res.json({ ok: true, ignored: true, testPulse: inputLevel === 15 });
+      }
       const sessions = await query(
         `SELECT id, input_side, input_level, action, key_name, reader_name
          FROM reader_sessions
