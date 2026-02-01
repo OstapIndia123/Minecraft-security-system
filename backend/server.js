@@ -356,8 +356,33 @@ const mapLog = (row) => {
   };
 };
 
+const HUB_EXTENSION_PREFIX = 'HUB_EXT-';
 const normalizeHubId = (hubId) => (hubId?.startsWith('HUB-') ? hubId.replace('HUB-', '') : hubId);
-const formatHubIdForSend = (hubId) => (hubId?.startsWith('HUB-') ? hubId : `HUB-${hubId}`);
+const normalizeHubExtensionId = (hubId) => {
+  const normalized = normalizeText(hubId);
+  if (!normalized) return null;
+  if (normalized.startsWith(HUB_EXTENSION_PREFIX)) return normalized;
+  return `${HUB_EXTENSION_PREFIX}${normalized.replace(/^HUB_EXT-/, '')}`;
+};
+const formatHubIdForSend = (hubId) => {
+  if (!hubId) return hubId;
+  if (hubId.startsWith(HUB_EXTENSION_PREFIX)) return hubId;
+  return hubId.startsWith('HUB-') ? hubId : `HUB-${hubId}`;
+};
+const normalizeSideValue = (side) => {
+  if (typeof side !== 'string') return null;
+  const normalized = side.trim().toLowerCase();
+  if (!normalized) return null;
+  const shortMap = {
+    n: 'north',
+    s: 'south',
+    e: 'east',
+    w: 'west',
+    u: 'up',
+    d: 'down',
+  };
+  return shortMap[normalized] ?? normalized;
+};
 
 const loadDevices = async (spaceId, hubId, hubOnline) => {
   const devices = await query('SELECT * FROM devices WHERE space_id = $1 ORDER BY id', [spaceId]);
@@ -495,6 +520,56 @@ const zoneAlarmState = new Map();
 const lightBlinkTimers = new Map();
 const lastKeyScans = new Map();
 const keyScanWaiters = new Map();
+const extensionPortWaiters = new Map();
+
+const buildExtensionWaiterKey = (spaceId, side, level) => `${spaceId}:${side}:${level}`;
+
+const waitForHubPort = (spaceId, side, level, timeoutMs = 1500) => new Promise((resolve) => {
+  if (!spaceId || !side || level === undefined || level === null) {
+    resolve(false);
+    return;
+  }
+  const key = buildExtensionWaiterKey(spaceId, side, level);
+  const waiters = extensionPortWaiters.get(key) ?? [];
+  const timeout = setTimeout(() => {
+    const updated = (extensionPortWaiters.get(key) ?? []).filter((entry) => entry.timeout !== timeout);
+    if (updated.length) {
+      extensionPortWaiters.set(key, updated);
+    } else {
+      extensionPortWaiters.delete(key);
+    }
+    resolve(false);
+  }, timeoutMs);
+  waiters.push({
+    timeout,
+    resolve: () => {
+      clearTimeout(timeout);
+      resolve(true);
+    },
+  });
+  extensionPortWaiters.set(key, waiters);
+});
+
+const resolveHubPortWaiter = (spaceId, side, level) => {
+  const key = buildExtensionWaiterKey(spaceId, side, level);
+  const waiters = extensionPortWaiters.get(key);
+  if (!waiters?.length) return false;
+  const waiter = waiters.shift();
+  waiter.resolve();
+  if (waiters.length) {
+    extensionPortWaiters.set(key, waiters);
+  } else {
+    extensionPortWaiters.delete(key);
+  }
+  return true;
+};
+const resolveDeviceTargetId = (config, hubId) => {
+  if (config?.bindTarget === 'hub_extension') {
+    return normalizeHubExtensionId(config.extensionId);
+  }
+  return hubId;
+};
+
 const stopSirenTimers = async (spaceId, hubId) => {
   const timers = sirenTimers.get(spaceId) ?? [];
   timers.forEach((timer) => clearInterval(timer));
@@ -504,16 +579,17 @@ const stopSirenTimers = async (spaceId, hubId) => {
     clearTimeout(stopTimeout);
     sirenStopTimeouts.delete(spaceId);
   }
-  if (hubId) {
-    const sirens = await query('SELECT side FROM devices WHERE space_id = $1 AND type = $2', [spaceId, 'siren']);
-    await Promise.all(
-      sirens.rows.map((siren) => sendHubOutput(hubId, siren.side, 0).catch(() => null)),
-    );
-  }
+  const sirens = await query('SELECT side, config FROM devices WHERE space_id = $1 AND type = $2', [spaceId, 'siren']);
+  await Promise.all(
+    sirens.rows.map((siren) => {
+      const targetId = resolveDeviceTargetId(siren.config, hubId);
+      if (!targetId) return null;
+      return sendHubOutput(targetId, siren.side, 0).catch(() => null);
+    }),
+  );
 };
 
 const startBlinkingLights = async (spaceId, hubId, reason) => {
-  if (!hubId) return;
   const existing = lightBlinkTimers.get(spaceId);
   if (existing) {
     existing.reasons.add(reason);
@@ -524,16 +600,22 @@ const startBlinkingLights = async (spaceId, hubId, reason) => {
     [spaceId, 'output-light'],
   );
   if (!outputs.rows.length) return;
+  const targets = outputs.rows
+    .map((output) => ({
+      side: output.side,
+      level: Number(output.config?.level ?? 15),
+      targetId: resolveDeviceTargetId(output.config, hubId),
+    }))
+    .filter((output) => output.targetId);
+  if (!targets.length) return;
   let on = true;
-  outputs.rows.forEach((output) => {
-    const level = Number(output.config?.level ?? 15);
-    sendHubOutput(hubId, output.side, level).catch(() => null);
+  targets.forEach((output) => {
+    sendHubOutput(output.targetId, output.side, output.level).catch(() => null);
   });
   const timer = setInterval(() => {
     on = !on;
-    outputs.rows.forEach((output) => {
-      const level = Number(output.config?.level ?? 15);
-      sendHubOutput(hubId, output.side, on ? level : 0).catch(() => null);
+    targets.forEach((output) => {
+      sendHubOutput(output.targetId, output.side, on ? output.level : 0).catch(() => null);
     });
   }, 500);
   lightBlinkTimers.set(spaceId, { timer, reasons: new Set([reason]) });
@@ -553,7 +635,7 @@ const stopBlinkingLights = async (spaceId, hubId, reason) => {
 };
 
 const scheduleSirenStop = (spaceId, hubId, durationMs) => {
-  if (!hubId || !durationMs || durationMs <= 0) return;
+  if (!durationMs || durationMs <= 0) return;
   const existing = sirenStopTimeouts.get(spaceId);
   if (existing) clearTimeout(existing);
   const timer = setTimeout(() => {
@@ -593,7 +675,6 @@ const clearEntryDelay = async (spaceId, hubId) => {
 };
 
 const startSirenTimers = async (spaceId, hubId) => {
-  if (!hubId) return;
   const sirens = await query('SELECT id, side, config FROM devices WHERE space_id = $1 AND type = $2', [
     spaceId,
     'siren',
@@ -604,10 +685,12 @@ const startSirenTimers = async (spaceId, hubId) => {
     for (const siren of sirens.rows) {
       const intervalMs = clampNumber(siren.config?.intervalMs ?? 1000, MIN_INTERVAL_MS, 60_000, 1000);
       const level = Number(siren.config?.level ?? 15);
+      const targetId = resolveDeviceTargetId(siren.config, hubId);
+      if (!targetId) continue;
       let on = false;
       const timer = setInterval(() => {
         on = !on;
-        sendHubOutput(hubId, siren.side, on ? level : 0).catch(() => null);
+        sendHubOutput(targetId, siren.side, on ? level : 0).catch(() => null);
       }, Math.max(intervalMs, MIN_INTERVAL_MS));
       timers.push(timer);
     }
@@ -1604,12 +1687,28 @@ app.delete('/api/spaces/:id/hub', requireAuth, requireInstaller, async (req, res
   res.json({ ok: true });
 });
 
+const deviceBindingFromPayload = (payload) => {
+  const bindTarget = payload.bindTarget === 'hub_extension' ? 'hub_extension' : 'hub';
+  const extensionId = bindTarget === 'hub_extension'
+    ? normalizeHubExtensionId(payload.bindExtensionId ?? payload.extensionId)
+    : null;
+  return { bindTarget, extensionId };
+};
+
 const deviceConfigFromPayload = (payload) => {
+  if (payload.type === 'hub_extension') {
+    return {
+      extensionId: normalizeHubExtensionId(payload.extensionId),
+      hubSide: normalizeSideValue(payload.hubSide),
+      extensionSide: normalizeSideValue(payload.extensionSide),
+    };
+  }
   if (payload.type === 'output-light') {
-    return { level: clampNumber(payload.outputLevel ?? 15, 0, 15, 15) };
+    return { ...deviceBindingFromPayload(payload), level: clampNumber(payload.outputLevel ?? 15, 0, 15, 15) };
   }
   if (payload.type === 'siren') {
     return {
+      ...deviceBindingFromPayload(payload),
       level: clampNumber(payload.outputLevel ?? 15, 0, 15, 15),
       intervalMs: clampNumber(payload.intervalMs ?? 1000, MIN_INTERVAL_MS, 60_000, 1000),
       alarmDuration: clampSirenDuration(payload.alarmDuration),
@@ -1618,12 +1717,13 @@ const deviceConfigFromPayload = (payload) => {
   if (payload.type === 'reader') {
     return {
       outputLevel: clampNumber(payload.outputLevel ?? 6, 0, 15, 6),
-      inputSide: payload.side ?? 'up',
+      inputSide: normalizeSideValue(payload.side) ?? 'up',
       inputLevel: clampNumber(payload.inputLevel ?? 6, 0, 15, 6),
     };
   }
   if (payload.type === 'zone') {
     return {
+      ...deviceBindingFromPayload(payload),
       zoneType: payload.zoneType ?? 'instant',
       bypass: payload.bypass === 'true',
       silent: payload.silent === 'true',
@@ -1644,14 +1744,60 @@ app.post('/api/spaces/:id/devices', requireAuth, requireInstaller, async (req, r
   const { id, name, room, status, type, side } = req.body ?? {};
   const normalizedName = normalizeText(name);
   const normalizedRoom = normalizeText(room);
+  const normalizedSide = normalizeSideValue(side) ?? side;
   if (!normalizedName || !normalizedRoom || !type) {
     return res.status(400).json({ error: 'missing_fields' });
   }
   if (isOverMaxLength(normalizedName, MAX_DEVICE_NAME_LENGTH)
     || isOverMaxLength(normalizedRoom, MAX_DEVICE_ROOM_LENGTH)
-    || isOverMaxLength(side, MAX_DEVICE_ID_LENGTH)
+    || isOverMaxLength(normalizedSide, MAX_DEVICE_ID_LENGTH)
     || isOverMaxLength(id, MAX_DEVICE_ID_LENGTH)) {
     return res.status(400).json({ error: 'field_too_long' });
+  }
+
+  if (type === 'hub_extension') {
+    const extensionId = normalizeHubExtensionId(req.body?.extensionId);
+    const hubSide = normalizeSideValue(req.body?.hubSide);
+    const extensionSide = normalizeSideValue(req.body?.extensionSide);
+    if (!extensionId || !hubSide || !extensionSide) {
+      return res.status(400).json({ error: 'invalid_extension_id' });
+    }
+    if (isOverMaxLength(extensionId, MAX_DEVICE_ID_LENGTH)
+      || isOverMaxLength(hubSide, MAX_DEVICE_ID_LENGTH)
+      || isOverMaxLength(extensionSide, MAX_DEVICE_ID_LENGTH)) {
+      return res.status(400).json({ error: 'field_too_long' });
+    }
+    const existingExtension = await query(
+      "SELECT id FROM devices WHERE type = $1 AND config->>'extensionId' = $2 LIMIT 1",
+      ['hub_extension', extensionId],
+    );
+    if (existingExtension.rows.length) {
+      return res.status(409).json({ error: 'extension_id_taken' });
+    }
+    const countResult = await query(
+      'SELECT COUNT(*)::int AS count FROM devices WHERE space_id = $1 AND type = $2',
+      [req.params.id, 'hub_extension'],
+    );
+    if ((countResult.rows[0]?.count ?? 0) >= 5) {
+      return res.status(400).json({ error: 'extension_limit' });
+    }
+  }
+
+  if (type !== 'reader' && type !== 'key' && type !== 'hub_extension') {
+    const bindTarget = req.body?.bindTarget === 'hub_extension' ? 'hub_extension' : 'hub';
+    if (bindTarget === 'hub_extension') {
+      const extensionId = normalizeHubExtensionId(req.body?.bindExtensionId);
+      if (!extensionId) {
+        return res.status(400).json({ error: 'invalid_extension_id' });
+      }
+      const extensionCheck = await query(
+        "SELECT id FROM devices WHERE space_id = $1 AND type = $2 AND config->>'extensionId' = $3",
+        [req.params.id, 'hub_extension', extensionId],
+      );
+      if (!extensionCheck.rows.length) {
+        return res.status(404).json({ error: 'extension_not_found' });
+      }
+    }
   }
 
   const generatedId = id ?? `${type}-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`;
@@ -1662,9 +1808,9 @@ app.post('/api/spaces/:id/devices', requireAuth, requireInstaller, async (req, r
       req.params.id,
       normalizedName,
       normalizedRoom,
-      status ?? 'Норма',
+      type === 'hub_extension' ? 'Не в сети' : (status ?? 'Норма'),
       type,
-      side ?? null,
+      type === 'hub_extension' ? null : (normalizedSide ?? null),
       JSON.stringify(deviceConfigFromPayload(req.body)),
     ],
   );
@@ -1780,7 +1926,7 @@ app.patch('/api/spaces/:id/devices/:deviceId', requireAuth, requireInstaller, as
   const device = existing.rows[0];
   const name = req.body?.name ?? device.name;
   const room = req.body?.room ?? device.room;
-  const side = req.body?.side ?? device.side;
+  const side = normalizeSideValue(req.body?.side ?? device.side) ?? (req.body?.side ?? device.side);
   const normalizedName = normalizeText(name);
   const normalizedRoom = normalizeText(room);
   if (!normalizedName || !normalizedRoom) {
@@ -1792,14 +1938,80 @@ app.patch('/api/spaces/:id/devices/:deviceId', requireAuth, requireInstaller, as
     return res.status(400).json({ error: 'field_too_long' });
   }
   const config = deviceConfigFromPayload({ ...req.body, type: device.type });
+  const mergedConfig = { ...device.config, ...config };
+
+  if (device.type === 'hub_extension') {
+    const extensionId = normalizeHubExtensionId(mergedConfig.extensionId);
+    const hubSide = normalizeSideValue(mergedConfig.hubSide);
+    const extensionSide = normalizeSideValue(mergedConfig.extensionSide);
+    if (!extensionId || !hubSide || !extensionSide) {
+      return res.status(400).json({ error: 'invalid_extension_id' });
+    }
+    const existingExtension = await query(
+      "SELECT id FROM devices WHERE id <> $1 AND type = $2 AND config->>'extensionId' = $3 LIMIT 1",
+      [deviceId, 'hub_extension', extensionId],
+    );
+    if (existingExtension.rows.length) {
+      return res.status(409).json({ error: 'extension_id_taken' });
+    }
+    mergedConfig.extensionId = extensionId;
+    mergedConfig.hubSide = hubSide;
+    mergedConfig.extensionSide = extensionSide;
+  }
+
+  if (device.type !== 'reader' && device.type !== 'key' && device.type !== 'hub_extension') {
+    const bindTarget = mergedConfig.bindTarget === 'hub_extension' ? 'hub_extension' : 'hub';
+    if (bindTarget === 'hub_extension') {
+      const extensionId = normalizeHubExtensionId(mergedConfig.extensionId);
+      if (!extensionId) {
+        return res.status(400).json({ error: 'invalid_extension_id' });
+      }
+      const extensionCheck = await query(
+        "SELECT id FROM devices WHERE space_id = $1 AND type = $2 AND config->>'extensionId' = $3",
+        [id, 'hub_extension', extensionId],
+      );
+      if (!extensionCheck.rows.length) {
+        return res.status(404).json({ error: 'extension_not_found' });
+      }
+      mergedConfig.bindTarget = bindTarget;
+      mergedConfig.extensionId = extensionId;
+    } else {
+      mergedConfig.bindTarget = 'hub';
+      mergedConfig.extensionId = null;
+    }
+  }
 
   await query(
     'UPDATE devices SET name = $1, room = $2, side = $3, config = $4 WHERE id = $5 AND space_id = $6',
-    [normalizedName, normalizedRoom, side, JSON.stringify({ ...device.config, ...config }), deviceId, id],
+    [
+      normalizedName,
+      normalizedRoom,
+      device.type === 'hub_extension' ? null : side,
+      JSON.stringify(mergedConfig),
+      deviceId,
+      id,
+    ],
   );
 
   await appendLog(id, `Обновлено устройство: ${deviceId}`, 'UI', 'system');
   res.json({ ok: true });
+});
+
+app.post('/api/spaces/:id/devices/:deviceId/refresh', requireAuth, requireInstaller, async (req, res) => {
+  const allowed = await ensureSpaceAccess(req.user.id, req.params.id);
+  if (!allowed) {
+    res.status(403).json({ error: 'forbidden' });
+    return;
+  }
+  const { id, deviceId } = req.params;
+  const existing = await query('SELECT * FROM devices WHERE id = $1 AND space_id = $2 AND type = $3', [
+    deviceId,
+    id,
+    'hub_extension',
+  ]);
+  if (!existing.rows.length) return res.status(404).json({ error: 'device_not_found' });
+  const isOnline = await checkHubExtensionLink(id, existing.rows[0]);
+  res.json({ ok: true, online: isOnline });
 });
 
 app.patch('/api/spaces/:id/keys/:keyId', requireAuth, requireInstaller, async (req, res) => {
@@ -1987,7 +2199,6 @@ app.patch('/api/spaces/:id/photos/:index', requireAuth, requireInstaller, async 
 });
 
 async function applyLightOutputs(spaceId, hubId, status) {
-  if (!hubId) return;
   const outputs = await query(
     'SELECT side, config FROM devices WHERE space_id = $1 AND type = $2',
     [spaceId, 'output-light'],
@@ -1995,7 +2206,9 @@ async function applyLightOutputs(spaceId, hubId, status) {
   await Promise.all(
     outputs.rows.map((output) => {
       const level = Number(output.config?.level ?? 15);
-      return sendHubOutput(hubId, output.side, status === 'armed' ? level : 0).catch(() => null);
+      const targetId = resolveDeviceTargetId(output.config, hubId);
+      if (!targetId) return null;
+      return sendHubOutput(targetId, output.side, status === 'armed' ? level : 0).catch(() => null);
     }),
   );
 }
@@ -2121,6 +2334,29 @@ const handleReaderScan = async ({ readerId, payload, ts }) => {
   };
 };
 
+const updateExtensionStatus = async (spaceId, extensionDevice, isOnline) => {
+  const nextStatus = isOnline ? 'В сети' : 'Не в сети';
+  if (extensionDevice.status === nextStatus) return;
+  await query('UPDATE devices SET status = $1 WHERE id = $2', [nextStatus, extensionDevice.id]);
+  const logText = isOnline ? 'Модуль расширения снова в сети' : 'Модуль расширения не в сети';
+  await appendLog(spaceId, logText, extensionDevice.config?.extensionId ?? extensionDevice.id, 'system');
+};
+
+const checkHubExtensionLink = async (spaceId, extensionDevice) => {
+  const config = extensionDevice.config ?? {};
+  const extensionId = normalizeHubExtensionId(config.extensionId);
+  const hubSide = normalizeSideValue(config.hubSide);
+  const extensionSide = normalizeSideValue(config.extensionSide);
+  if (!extensionId || !hubSide || !extensionSide) {
+    await updateExtensionStatus(spaceId, extensionDevice, false);
+    return false;
+  }
+  await sendHubOutput(extensionId, extensionSide, 15).catch(() => null);
+  const ok = await waitForHubPort(spaceId, hubSide, 15, 1500);
+  await updateExtensionStatus(spaceId, extensionDevice, ok);
+  return ok;
+};
+
 app.post('/api/spaces/:id/arm', requireAuth, async (req, res) => {
   const appMode = req.header('x-app-mode');
   const roleFilter = appMode === 'pro' ? 'installer' : 'user';
@@ -2162,119 +2398,172 @@ app.post('/api/hub/events', requireWebhookToken, async (req, res) => {
     return res.status(202).json({ ok: true, ignored: true });
   }
 
-  const normalizedHubId = normalizeHubId(hubId);
-  const spaceResult = await query('SELECT space_id FROM hubs WHERE id = $1', [normalizedHubId]);
-  if (!spaceResult.rows.length) {
-    return res.status(202).json({ ok: true, ignored: true });
-  }
+  const isExtensionEvent = hubId.startsWith(HUB_EXTENSION_PREFIX);
+  let spaceId;
+  let extensionDevice;
+  let normalizedExtensionId;
 
-  const spaceId = spaceResult.rows[0].space_id;
+  if (isExtensionEvent) {
+    normalizedExtensionId = normalizeHubExtensionId(hubId);
+    if (!normalizedExtensionId) {
+      return res.status(202).json({ ok: true, ignored: true });
+    }
+    const extensionResult = await query(
+      "SELECT * FROM devices WHERE type = $1 AND config->>'extensionId' = $2 LIMIT 1",
+      ['hub_extension', normalizedExtensionId],
+    );
+    if (!extensionResult.rows.length) {
+      return res.status(202).json({ ok: true, ignored: true });
+    }
+    extensionDevice = extensionResult.rows[0];
+    spaceId = extensionDevice.space_id;
+  } else {
+    const normalizedHubId = normalizeHubId(hubId);
+    const spaceResult = await query('SELECT space_id FROM hubs WHERE id = $1', [normalizedHubId]);
+    if (!spaceResult.rows.length) {
+      return res.status(202).json({ ok: true, ignored: true });
+    }
+    spaceId = spaceResult.rows[0].space_id;
+  }
   const time = ts
     ? new Date(ts).toLocaleTimeString('ru-RU', { hour: '2-digit', minute: '2-digit', second: '2-digit' })
     : new Date().toLocaleTimeString('ru-RU', { hour: '2-digit', minute: '2-digit', second: '2-digit' });
 
   const payloadText = formatHubPayload(payload);
-  const hubLogText = `Событие хаба: ${type}\n${hubId}${payloadText ? `\n${payloadText}` : ''}`;
+  const hubLogLabel = isExtensionEvent ? 'Событие модуля расширения' : 'Событие хаба';
+  const hubLogText = `${hubLogLabel}: ${type}\n${hubId}${payloadText ? `\n${payloadText}` : ''}`;
   await query(
     'INSERT INTO logs (space_id, time, text, who, type) VALUES ($1,$2,$3,$4,$5)',
     [spaceId, time, hubLogText, hubId, 'hub_raw'],
   );
 
-  const hubStatus = await query('SELECT hub_online FROM spaces WHERE id = $1', [spaceId]);
-  const currentHubOnline = hubStatus.rows[0]?.hub_online;
-  const shouldMarkOffline = type === 'TEST_FAIL' || type === 'HUB_OFFLINE';
-  const shouldMarkOnline = type === 'TEST_OK' || type === 'HUB_PING' || type === 'PORT_IN' || type === 'HUB_ONLINE';
+  if (!isExtensionEvent) {
+    const hubStatus = await query('SELECT hub_online FROM spaces WHERE id = $1', [spaceId]);
+    const currentHubOnline = hubStatus.rows[0]?.hub_online;
+    const shouldMarkOffline = type === 'TEST_FAIL' || type === 'HUB_OFFLINE';
+    const shouldMarkOnline = type === 'TEST_OK' || type === 'HUB_PING' || type === 'PORT_IN' || type === 'HUB_ONLINE';
 
-  if (shouldMarkOffline && currentHubOnline !== false) {
-    await query('UPDATE spaces SET hub_online = $1 WHERE id = $2', [false, spaceId]);
-    await query(
-      'INSERT INTO logs (space_id, time, text, who, type) VALUES ($1,$2,$3,$4,$5)',
-      [spaceId, time, 'Хаб не в сети', hubId, 'system'],
-    );
-  }
+    if (shouldMarkOffline && currentHubOnline !== false) {
+      await query('UPDATE spaces SET hub_online = $1 WHERE id = $2', [false, spaceId]);
+      await query(
+        'INSERT INTO logs (space_id, time, text, who, type) VALUES ($1,$2,$3,$4,$5)',
+        [spaceId, time, 'Хаб не в сети', hubId, 'system'],
+      );
+    }
 
-  if (shouldMarkOnline && currentHubOnline !== true) {
-    await query('UPDATE spaces SET hub_online = $1 WHERE id = $2', [true, spaceId]);
-    await query(
-      'INSERT INTO logs (space_id, time, text, who, type) VALUES ($1,$2,$3,$4,$5)',
-      [spaceId, time, 'Хаб снова в сети', hubId, 'system'],
-    );
+    if (shouldMarkOnline && currentHubOnline !== true) {
+      await query('UPDATE spaces SET hub_online = $1 WHERE id = $2', [true, spaceId]);
+      await query(
+        'INSERT INTO logs (space_id, time, text, who, type) VALUES ($1,$2,$3,$4,$5)',
+        [spaceId, time, 'Хаб снова в сети', hubId, 'system'],
+      );
+    }
   }
 
   if (type === 'PORT_IN' && payload?.side && payload?.level !== undefined) {
-    const sessions = await query(
-      `SELECT id, input_side, input_level, action, key_name, reader_name
-       FROM reader_sessions
-       WHERE space_id = $1 AND expires_at >= NOW()
-       ORDER BY id DESC
-       LIMIT 1`,
-      [spaceId],
-    );
-    if (sessions.rows.length) {
-      const session = sessions.rows[0];
-      if (session.input_side === payload.side && Number(session.input_level) === Number(payload.level)) {
-        if (session.action === 'arm') {
-          const zones = await query('SELECT name, status, config FROM devices WHERE space_id = $1 AND type = $2', [
-            spaceId,
-            'zone',
-          ]);
-          const hasBypass = zones.rows.some((zone) => zone.config?.bypass);
-          const hasViolations = zones.rows.some((zone) => zone.status !== 'Норма');
-          if (hasBypass) {
-            await appendLog(
+    const normalizedSide = normalizeSideValue(payload.side);
+    const inputLevel = Number(payload.level);
+    if (!normalizedSide || Number.isNaN(inputLevel)) {
+      return res.json({ ok: true });
+    }
+
+    if (isExtensionEvent) {
+      const isOnline = await checkHubExtensionLink(spaceId, extensionDevice);
+      if (!isOnline) {
+        return res.json({ ok: true, extensionOffline: true });
+      }
+    } else {
+      resolveHubPortWaiter(spaceId, normalizedSide, inputLevel);
+      const sessions = await query(
+        `SELECT id, input_side, input_level, action, key_name, reader_name
+         FROM reader_sessions
+         WHERE space_id = $1 AND expires_at >= NOW()
+         ORDER BY id DESC
+         LIMIT 1`,
+        [spaceId],
+      );
+      if (sessions.rows.length) {
+        const session = sessions.rows[0];
+        if (session.input_side === normalizedSide && Number(session.input_level) === inputLevel) {
+          if (session.action === 'arm') {
+            const zones = await query('SELECT name, status, config FROM devices WHERE space_id = $1 AND type = $2', [
               spaceId,
-              `Неудачная постановка (обход зоны активен): ${session.key_name}`,
-              session.reader_name,
-              'security',
-            );
-          } else if (hasViolations) {
-            await appendLog(
-              spaceId,
-              `Неудачная постановка (зоны не в норме): ${session.key_name}`,
-              session.reader_name,
-              'security',
-            );
-          } else {
-            const delaySeconds = getExitDelaySeconds(zones.rows);
-            if (delaySeconds > 0) {
-              const spaceRow = await query('SELECT hub_id FROM spaces WHERE id = $1', [spaceId]);
-              await startPendingArm(
+              'zone',
+            ]);
+            const hasBypass = zones.rows.some((zone) => zone.config?.bypass);
+            const hasViolations = zones.rows.some((zone) => zone.status !== 'Норма');
+            if (hasBypass) {
+              await appendLog(
                 spaceId,
-                spaceRow.rows[0]?.hub_id,
-                delaySeconds,
+                `Неудачная постановка (обход зоны активен): ${session.key_name}`,
                 session.reader_name,
-                `Постановка на охрану ключом: ${session.key_name}`,
+                'security',
+              );
+            } else if (hasViolations) {
+              await appendLog(
+                spaceId,
+                `Неудачная постановка (зоны не в норме): ${session.key_name}`,
+                session.reader_name,
+                'security',
               );
             } else {
-              await updateStatus(
-                spaceId,
-                'armed',
-                session.reader_name,
-                `Постановка на охрану ключом: ${session.key_name}`,
-              );
+              const delaySeconds = getExitDelaySeconds(zones.rows);
+              if (delaySeconds > 0) {
+                const spaceRow = await query('SELECT hub_id FROM spaces WHERE id = $1', [spaceId]);
+                await startPendingArm(
+                  spaceId,
+                  spaceRow.rows[0]?.hub_id,
+                  delaySeconds,
+                  session.reader_name,
+                  `Постановка на охрану ключом: ${session.key_name}`,
+                );
+              } else {
+                await updateStatus(
+                  spaceId,
+                  'armed',
+                  session.reader_name,
+                  `Постановка на охрану ключом: ${session.key_name}`,
+                );
+              }
             }
+          } else {
+            await updateStatus(
+              spaceId,
+              'disarmed',
+              session.reader_name,
+              `Снятие с охраны ключом: ${session.key_name}`,
+            );
           }
-        } else {
-          await updateStatus(
-            spaceId,
-            'disarmed',
-            session.reader_name,
-            `Снятие с охраны ключом: ${session.key_name}`,
-          );
+          await query('DELETE FROM reader_sessions WHERE id = $1', [session.id]);
         }
-        await query('DELETE FROM reader_sessions WHERE id = $1', [session.id]);
       }
     }
 
-    const zones = await query(
-      'SELECT id, name, status, config FROM devices WHERE space_id = $1 AND type = $2 AND side = $3',
-      [spaceId, 'zone', payload.side],
-    );
+    const zones = isExtensionEvent
+      ? await query(
+        `SELECT id, name, status, config
+         FROM devices
+         WHERE space_id = $1
+           AND type = $2
+           AND side = $3
+           AND config->>'bindTarget' = $4
+           AND config->>'extensionId' = $5`,
+        [spaceId, 'zone', normalizedSide, 'hub_extension', normalizedExtensionId],
+      )
+      : await query(
+        `SELECT id, name, status, config
+         FROM devices
+         WHERE space_id = $1
+           AND type = $2
+           AND side = $3
+           AND (config->>'bindTarget' IS NULL OR config->>'bindTarget' = $4)`,
+        [spaceId, 'zone', normalizedSide, 'hub'],
+      );
 
     for (const zone of zones.rows) {
       const config = zone.config ?? {};
       const normalLevel = Number(config.normalLevel ?? 15);
-      const isNormal = Number(payload.level) === normalLevel;
+      const isNormal = inputLevel === normalLevel;
       const currentStatus = zone.status ?? 'Норма';
       const newStatus = isNormal ? 'Норма' : 'Нарушение';
       await query('UPDATE devices SET status = $1 WHERE id = $2', [newStatus, zone.id]);

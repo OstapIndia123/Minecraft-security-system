@@ -570,6 +570,8 @@ const translateLogText = (text) => {
     { pattern: /^Хаб удалён из пространства$/, replacement: 'Hub removed from space' },
     { pattern: /^Хаб не в сети$/, replacement: 'Hub offline' },
     { pattern: /^Хаб снова в сети$/, replacement: 'Hub online again' },
+    { pattern: /^Модуль расширения не в сети$/, replacement: 'Hub extension offline' },
+    { pattern: /^Модуль расширения снова в сети$/, replacement: 'Hub extension online again' },
     { pattern: /^Добавлено устройство: (.+)$/, replacement: 'Device added: $1' },
     { pattern: /^Удалено устройство: (.+)$/, replacement: 'Device removed: $1' },
     { pattern: /^Обновлено устройство: (.+)$/, replacement: 'Device updated: $1' },
@@ -611,7 +613,8 @@ const renderLogs = (logs) => {
     const row = document.createElement('div');
     const translated = translateLogText(log.text);
     const isHubOffline = log.text === 'Хаб не в сети' || translated === 'Hub offline';
-    row.className = `log-row ${log.type === 'alarm' ? 'log-row--alarm' : ''} ${isHubOffline ? 'log-row--hub-offline' : ''}`;
+    const isExtensionOffline = log.text === 'Модуль расширения не в сети' || translated === 'Hub extension offline';
+    row.className = `log-row ${log.type === 'alarm' ? 'log-row--alarm' : ''} ${(isHubOffline || isExtensionOffline) ? 'log-row--hub-offline' : ''}`;
     const timestamp = log.createdAtMs ?? (log.createdAt ? new Date(`${log.createdAt}Z`).getTime() : null);
     const timeLabel = escapeHtml(formatLogTime(timestamp) ?? log.time);
     const text = escapeHtml(translated);

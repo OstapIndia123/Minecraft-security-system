@@ -555,6 +555,8 @@ const translateLogText = (text) => {
     { pattern: /^Хаб удалён из пространства$/, replacement: 'Hub removed from space' },
     { pattern: /^Хаб не в сети$/, replacement: 'Hub offline' },
     { pattern: /^Хаб снова в сети$/, replacement: 'Hub online again' },
+    { pattern: /^Модуль расширения не в сети$/, replacement: 'Hub extension offline' },
+    { pattern: /^Модуль расширения снова в сети$/, replacement: 'Hub extension online again' },
     { pattern: /^Добавлено устройство: (.+)$/, replacement: 'Device added: $1' },
     { pattern: /^Удалено устройство: (.+)$/, replacement: 'Device removed: $1' },
     { pattern: /^Обновлено устройство: (.+)$/, replacement: 'Device updated: $1' },
@@ -620,7 +622,8 @@ const renderLogs = (logs) => {
     const rawText = isHub ? log.text : log.text;
     const translatedText = isHub ? rawText : translateLogText(rawText);
     const isHubOffline = rawText === 'Хаб не в сети' || translatedText === 'Hub offline';
-    row.className = `log-row ${isAlarm ? 'log-row--alarm' : ''} ${shouldFlash ? 'log-row--alarm-flash' : ''} ${isRestore ? 'log-row--restore' : ''} ${isHub ? 'log-row--hub' : ''} ${isHubOffline ? 'log-row--hub-offline' : ''}`;
+    const isExtensionOffline = rawText === 'Модуль расширения не в сети' || translatedText === 'Hub extension offline';
+    row.className = `log-row ${isAlarm ? 'log-row--alarm' : ''} ${shouldFlash ? 'log-row--alarm-flash' : ''} ${isRestore ? 'log-row--restore' : ''} ${isHub ? 'log-row--hub' : ''} ${(isHubOffline || isExtensionOffline) ? 'log-row--hub-offline' : ''}`;
     const safeText = escapeHtml(translatedText);
     const text = isHub ? safeText.replace(/\n/g, '<br />') : safeText;
     const timeLabel = escapeHtml(formatLogTime(logTimestamp) ?? log.time);

@@ -141,6 +141,10 @@ const readKeyButton = document.getElementById('readKey');
 const sideInput = deviceForm?.querySelector('input[name="side"]');
 const deviceNameInput = deviceForm?.querySelector('input[name="name"]');
 const deviceRoomInput = deviceForm?.querySelector('input[name="room"]');
+const bindTargetInput = deviceForm?.querySelector('select[name="bindTarget"]');
+const bindExtensionInput = deviceForm?.querySelector('input[name="bindExtensionId"]');
+const bindingFields = document.getElementById('bindingFields');
+const extensionFields = document.getElementById('extensionFields');
 const readerIdInput = readerFields?.querySelector('input[name="id"]');
 const attachHubForm = document.getElementById('attachHubForm');
 const guardModal = document.getElementById('guardModal');
@@ -899,6 +903,22 @@ const handleApiError = (error, fallbackMessage) => {
     showToast('Некорректный ID хаба.');
     return;
   }
+  if (error.message === 'invalid_extension_id') {
+    showToast('Некорректный ID модуля расширения.');
+    return;
+  }
+  if (error.message === 'extension_not_found') {
+    showToast('Модуль расширения не найден.');
+    return;
+  }
+  if (error.message === 'extension_id_taken') {
+    showToast('Такой ID модуля расширения уже используется.');
+    return;
+  }
+  if (error.message === 'extension_limit') {
+    showToast('В пространство можно добавить до 5 расширителей.');
+    return;
+  }
   showToast(fallbackMessage);
 };
 
@@ -1077,7 +1097,7 @@ const renderDevices = (space) => {
   }
 
   devices.forEach((device) => {
-    const statusText = device.type === 'zone' || device.type === 'hub' ? device.status : '';
+    const statusText = device.type === 'zone' || device.type === 'hub' || device.type === 'hub_extension' ? device.status : '';
     const item = document.createElement('button');
     item.className = `device-item ${device.id === state.selectedDeviceId ? 'device-item--active' : ''}`;
     item.innerHTML = `
@@ -1106,7 +1126,7 @@ const renderDeviceDetails = (device) => {
   const safeReaderId = escapeHtml(device.config?.readerId ?? '');
   const safeType = escapeHtml(device.type);
   const safeId = escapeHtml(device.id);
-  const statusBlock = device.type === 'zone' || device.type === 'hub'
+  const statusBlock = device.type === 'zone' || device.type === 'hub' || device.type === 'hub_extension'
     ? `
       <div class="stat">
         <span>Статус</span>
@@ -1118,7 +1138,9 @@ const renderDeviceDetails = (device) => {
     ? `
       <input type="text" name="name" value="${safeName}" placeholder="Имя" required />
       <input type="text" name="room" value="${safeRoom}" placeholder="Комната" required />
-      ${device.side ? `<input type="text" name="side" value="${safeSide}" placeholder="Сторона хаба" />` : ''}
+      ${device.side && device.type !== 'hub_extension'
+        ? `<input type="text" name="side" value="${safeSide}" placeholder="Сторона (N/S/E/W/U/D)" />`
+        : ''}
     `
     : `
       <input type="text" name="name" value="${escapeHtml(device.name.replace('Ключ: ', ''))}" placeholder="Имя ключа" required />
@@ -1126,8 +1148,32 @@ const renderDeviceDetails = (device) => {
     `;
 
   const configFields = (() => {
-    if (device.type === 'zone') {
+    if (device.type === 'hub_extension') {
+      const safeExtensionId = escapeHtml(device.config?.extensionId ?? '');
+      const safeHubSide = escapeHtml(device.config?.hubSide ?? '');
+      const safeExtensionSide = escapeHtml(device.config?.extensionSide ?? '');
       return `
+        <input type="text" name="extensionId" value="${safeExtensionId}" placeholder="ID модуля (HUB_EXT-...)" required />
+        <input type="text" name="hubSide" value="${safeHubSide}" placeholder="Сторона хаба (N/S/E/W/U/D)" required />
+        <input type="text" name="extensionSide" value="${safeExtensionSide}" placeholder="Сторона модуля (N/S/E/W/U/D)" required />
+      `;
+    }
+    if (device.type === 'zone') {
+      const bindTarget = device.config?.bindTarget === 'hub_extension' ? 'hub_extension' : 'hub';
+      const bindExtensionId = escapeHtml(device.config?.extensionId ?? '');
+      return `
+        <select name="bindTarget" id="bindTargetEdit">
+          <option value="hub" ${bindTarget === 'hub' ? 'selected' : ''}>К хабу</option>
+          <option value="hub_extension" ${bindTarget === 'hub_extension' ? 'selected' : ''}>К модулю расширения</option>
+        </select>
+        <input
+          type="text"
+          name="bindExtensionId"
+          id="bindExtensionIdEdit"
+          value="${bindTarget === 'hub_extension' ? bindExtensionId : ''}"
+          placeholder="ID модуля (HUB_EXT-...)"
+          class="${bindTarget === 'hub_extension' ? '' : 'hidden'}"
+        />
         <select name="zoneType">
           <option value="instant" ${device.config?.zoneType === 'instant' ? 'selected' : ''}>Нормальная</option>
           <option value="delayed" ${device.config?.zoneType === 'delayed' ? 'selected' : ''}>Задержанная</option>
@@ -1155,10 +1201,40 @@ const renderDeviceDetails = (device) => {
       `;
     }
     if (device.type === 'output-light') {
-      return `<input type="number" name="outputLevel" value="${device.config?.level ?? 15}" min="0" max="15" />`;
+      const bindTarget = device.config?.bindTarget === 'hub_extension' ? 'hub_extension' : 'hub';
+      const bindExtensionId = escapeHtml(device.config?.extensionId ?? '');
+      return `
+        <select name="bindTarget" id="bindTargetEdit">
+          <option value="hub" ${bindTarget === 'hub' ? 'selected' : ''}>К хабу</option>
+          <option value="hub_extension" ${bindTarget === 'hub_extension' ? 'selected' : ''}>К модулю расширения</option>
+        </select>
+        <input
+          type="text"
+          name="bindExtensionId"
+          id="bindExtensionIdEdit"
+          value="${bindTarget === 'hub_extension' ? bindExtensionId : ''}"
+          placeholder="ID модуля (HUB_EXT-...)"
+          class="${bindTarget === 'hub_extension' ? '' : 'hidden'}"
+        />
+        <input type="number" name="outputLevel" value="${device.config?.level ?? 15}" min="0" max="15" />
+      `;
     }
     if (device.type === 'siren') {
+      const bindTarget = device.config?.bindTarget === 'hub_extension' ? 'hub_extension' : 'hub';
+      const bindExtensionId = escapeHtml(device.config?.extensionId ?? '');
       return `
+        <select name="bindTarget" id="bindTargetEdit">
+          <option value="hub" ${bindTarget === 'hub' ? 'selected' : ''}>К хабу</option>
+          <option value="hub_extension" ${bindTarget === 'hub_extension' ? 'selected' : ''}>К модулю расширения</option>
+        </select>
+        <input
+          type="text"
+          name="bindExtensionId"
+          id="bindExtensionIdEdit"
+          value="${bindTarget === 'hub_extension' ? bindExtensionId : ''}"
+          placeholder="ID модуля (HUB_EXT-...)"
+          class="${bindTarget === 'hub_extension' ? '' : 'hidden'}"
+        />
         <input type="number" name="outputLevel" value="${device.config?.level ?? 15}" min="0" max="15" />
         <input type="number" name="intervalMs" value="${device.config?.intervalMs ?? 1000}" min="300" max="60000" />
         <input type="number" name="alarmDuration" value="${device.config?.alarmDuration ?? ''}" min="1" max="120" placeholder="Время тревоги (сек)" />
@@ -1199,6 +1275,9 @@ const renderDeviceDetails = (device) => {
         <button class="button button--primary" type="submit">Сохранить</button>
       </form>
     ` : ''}
+    ${device.type === 'hub_extension'
+      ? '<button class="button button--ghost" id="refreshExtensionStatus">Обновить статус</button>'
+      : ''}
     ${canDelete ? `<button class="button button--ghost button--danger" id="deleteDevice">${deleteLabel}</button>` : ''}
   `;
 
@@ -1237,6 +1316,21 @@ const renderDeviceDetails = (device) => {
     if (device.type === 'zone') {
       setupZoneDelayFields(editForm);
     }
+    const bindTargetSelect = editForm.querySelector('#bindTargetEdit');
+    const bindExtensionField = editForm.querySelector('#bindExtensionIdEdit');
+    const updateBindingFields = () => {
+      if (!bindTargetSelect || !bindExtensionField) return;
+      const isExtension = bindTargetSelect.value === 'hub_extension';
+      bindExtensionField.classList.toggle('hidden', !isExtension);
+      bindExtensionField.required = isExtension;
+      if (!isExtension) {
+        bindExtensionField.value = '';
+      }
+    };
+    if (bindTargetSelect) {
+      bindTargetSelect.addEventListener('change', updateBindingFields);
+      updateBindingFields();
+    }
     editForm.addEventListener('submit', async (event) => {
       event.preventDefault();
       if (!ensureEditable()) return;
@@ -1266,6 +1360,26 @@ const renderDeviceDetails = (device) => {
       } catch (error) {
         console.error(error);
         handleApiError(error, 'Не удалось обновить устройство.');
+      } finally {
+        hideLoading();
+      }
+    });
+  }
+
+  const refreshExtensionButton = document.getElementById('refreshExtensionStatus');
+  if (refreshExtensionButton) {
+    refreshExtensionButton.addEventListener('click', async () => {
+      if (!ensureEditable()) return;
+      const space = spaces.find((item) => item.id === state.selectedSpaceId);
+      if (!space) return;
+      try {
+        showLoading();
+        await apiFetch(`/api/spaces/${space.id}/devices/${device.id}/refresh`, { method: 'POST' });
+        await refreshAll();
+        showToast('Статус обновлён.');
+      } catch (error) {
+        console.error(error);
+        handleApiError(error, 'Ошибка обновления статуса.');
       } finally {
         hideLoading();
       }
@@ -1656,6 +1770,8 @@ const translateLogText = (text) => {
     { pattern: /^Хаб удалён из пространства$/, replacement: 'Hub removed from space' },
     { pattern: /^Хаб не в сети$/, replacement: 'Hub offline' },
     { pattern: /^Хаб снова в сети$/, replacement: 'Hub online again' },
+    { pattern: /^Модуль расширения не в сети$/, replacement: 'Hub extension offline' },
+    { pattern: /^Модуль расширения снова в сети$/, replacement: 'Hub extension online again' },
     { pattern: /^Добавлено устройство: (.+)$/, replacement: 'Device added: $1' },
     { pattern: /^Удалено устройство: (.+)$/, replacement: 'Device removed: $1' },
     { pattern: /^Обновлено устройство: (.+)$/, replacement: 'Device updated: $1' },
@@ -1715,7 +1831,8 @@ const renderLogs = (space) => {
     }
     const translated = isHub ? log.text : translateLogText(log.text);
     const isHubOffline = log.text === 'Хаб не в сети' || translated === 'Hub offline';
-    row.className = `log-row ${isAlarm ? 'log-row--alarm' : ''} ${shouldFlash ? 'log-row--alarm-flash' : ''} ${isRestore ? 'log-row--restore' : ''} ${isHub ? 'log-row--hub' : ''} ${isHubOffline ? 'log-row--hub-offline' : ''}`;
+    const isExtensionOffline = log.text === 'Модуль расширения не в сети' || translated === 'Hub extension offline';
+    row.className = `log-row ${isAlarm ? 'log-row--alarm' : ''} ${shouldFlash ? 'log-row--alarm-flash' : ''} ${isRestore ? 'log-row--restore' : ''} ${isHub ? 'log-row--hub' : ''} ${(isHubOffline || isExtensionOffline) ? 'log-row--hub-offline' : ''}`;
     const safeText = escapeHtml(translated);
     const text = isHub ? safeText.replace(/\n/g, '<br />') : safeText;
     const timeLabel = escapeHtml(formatLogTime(logTimestamp) ?? log.time);
@@ -1969,6 +2086,7 @@ if (deviceType) {
     const isSiren = value === 'siren';
     const isLight = value === 'output-light';
     const isZone = value === 'zone';
+    const isExtension = value === 'hub_extension';
     const isKey = value === 'key';
 
     readerFields?.classList.toggle('hidden', !isReader);
@@ -1976,6 +2094,8 @@ if (deviceType) {
     lightFields?.classList.toggle('hidden', !isLight);
     zoneFields?.classList.toggle('hidden', !isZone);
     keyFields?.classList.toggle('hidden', !isKey);
+    bindingFields?.classList.toggle('hidden', isKey || isReader || isExtension);
+    extensionFields?.classList.toggle('hidden', !isExtension);
 
     readerFields?.querySelectorAll('input').forEach((input) => {
       input.disabled = !isReader;
@@ -2003,12 +2123,28 @@ if (deviceType) {
     });
 
     if (sideInput) {
-      sideInput.disabled = isKey;
-      sideInput.required = !isKey;
-      if (isKey) {
+      sideInput.disabled = isKey || isExtension;
+      sideInput.required = !isKey && !isExtension;
+      if (isKey || isExtension) {
         sideInput.value = '';
       }
     }
+
+    bindingFields?.querySelectorAll('input, select').forEach((input) => {
+      input.disabled = isKey || isReader || isExtension;
+    });
+    if (bindTargetInput && bindExtensionInput) {
+      const isBindExtension = bindTargetInput.value === 'hub_extension';
+      bindExtensionInput.required = !isKey && !isReader && !isExtension && isBindExtension;
+      bindExtensionInput.classList.toggle('hidden', !isBindExtension);
+      if (!isBindExtension) {
+        bindExtensionInput.value = '';
+      }
+    }
+    extensionFields?.querySelectorAll('input').forEach((input) => {
+      input.disabled = !isExtension;
+      input.required = isExtension;
+    });
 
     [deviceNameInput, deviceRoomInput].forEach((input) => {
       if (!input) return;
@@ -2025,6 +2161,7 @@ if (deviceType) {
   };
 
   deviceType.addEventListener('change', updateDeviceFields);
+  bindTargetInput?.addEventListener('change', updateDeviceFields);
   updateDeviceFields();
   setupZoneDelayFields(deviceForm);
 }
