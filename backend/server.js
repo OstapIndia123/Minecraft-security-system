@@ -521,6 +521,7 @@ const lightBlinkTimers = new Map();
 const lastKeyScans = new Map();
 const keyScanWaiters = new Map();
 const extensionPortWaiters = new Map();
+const recentHubPortSignals = new Map();
 const EXTENSION_PULSE_DURATION_MS = MIN_INTERVAL_MS;
 const EXTENSION_PULSE_TIMEOUT_MS = EXTENSION_PULSE_DURATION_MS * 2;
 
@@ -569,6 +570,11 @@ const resolveHubPortWaiter = (spaceId, side, level) => {
     extensionPortWaiters.delete(key);
   }
   return true;
+};
+
+const recordHubPortSignal = (spaceId, side, level) => {
+  const key = buildExtensionWaiterKey(spaceId, side, level);
+  recentHubPortSignals.set(key, Date.now());
 };
 
 const pulseHubOutput = async (hubId, side, level, durationMs = MIN_INTERVAL_MS) => {
@@ -2467,8 +2473,8 @@ app.post('/api/hub/events', requireWebhookToken, async (req, res) => {
     [spaceId, time, hubLogText, hubId, 'hub_raw'],
   );
 
-  if (isExtensionEvent && type === 'PORT_IN' && payloadSide && !isExtensionTestSide) {
-    checkedExtensionOnline = await checkHubExtensionLink(spaceId, extensionDevice, { triggerPulse: true });
+  if (isExtensionEvent && !isExtensionTestSide) {
+    checkedExtensionOnline = await checkHubExtensionLink(spaceId, extensionDevice);
     if (!checkedExtensionOnline) {
       return res.json({ ok: true, extensionOffline: true });
     }
@@ -2512,6 +2518,7 @@ app.post('/api/hub/events', requireWebhookToken, async (req, res) => {
         return res.json({ ok: true, extensionOffline: true });
       }
     } else {
+      recordHubPortSignal(spaceId, normalizedSide, inputLevel);
       resolveHubPortWaiter(spaceId, normalizedSide, inputLevel);
       const extensionSides = await query(
         "SELECT config->>'hubSide' AS hub_side FROM devices WHERE space_id = $1 AND type = $2",
