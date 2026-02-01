@@ -532,6 +532,11 @@ const waitForHubPort = (spaceId, side, level, timeoutMs = 1500) => new Promise((
     return;
   }
   const key = buildExtensionWaiterKey(spaceId, side, level);
+  const recentSignalAt = recentHubPortSignals.get(key);
+  if (recentSignalAt && Date.now() - recentSignalAt <= timeoutMs) {
+    resolve(true);
+    return;
+  }
   const waiters = extensionPortWaiters.get(key) ?? [];
   const timeout = setTimeout(() => {
     const updated = (extensionPortWaiters.get(key) ?? []).filter((entry) => entry.timeout !== timeout);
