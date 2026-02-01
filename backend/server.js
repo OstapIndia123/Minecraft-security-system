@@ -535,10 +535,10 @@ const lastKeyScans = new Map();
 const keyScanWaiters = new Map();
 const extensionPortWaiters = new Map();
 const recentHubPortSignals = new Map();
-const lastExtensionTestSuccessAt = new Map();
+const extensionLastOkAt = new Map();
 const EXTENSION_PULSE_DURATION_MS = MIN_INTERVAL_MS;
 const EXTENSION_PULSE_TIMEOUT_MS = Math.max(3500, EXTENSION_PULSE_DURATION_MS * 10);
-const EXTENSION_RECENT_SUCCESS_MS = Math.min(3000, EXTENSION_PULSE_TIMEOUT_MS);
+const EXTENSION_LINK_OK_TTL_MS = 3000;
 
 const buildExtensionWaiterKey = (spaceId, side, level) => `${spaceId}:${side}:${level}`;
 
@@ -594,7 +594,7 @@ const recordHubPortSignal = (spaceId, side, level) => {
 
 const recordExtensionTestSuccess = (extensionId) => {
   if (!extensionId) return;
-  lastExtensionTestSuccessAt.set(extensionId, Date.now());
+  extensionLastOkAt.set(extensionId, Date.now());
 };
 
 const pulseHubOutput = async (hubId, side, level, durationMs = MIN_INTERVAL_MS) => {
@@ -2393,8 +2393,8 @@ const checkHubExtensionLink = async (spaceId, extensionDevice, { triggerPulse = 
     await updateExtensionStatus(spaceId, extensionDevice, false);
     return false;
   }
-  const lastSuccessAt = lastExtensionTestSuccessAt.get(extensionId);
-  if (lastSuccessAt && Date.now() - lastSuccessAt <= EXTENSION_RECENT_SUCCESS_MS) {
+  const lastOkAt = extensionLastOkAt.get(extensionId);
+  if (lastOkAt && Date.now() - lastOkAt <= EXTENSION_LINK_OK_TTL_MS) {
     await updateExtensionStatus(spaceId, extensionDevice, true);
     return true;
   }
@@ -2402,6 +2402,9 @@ const checkHubExtensionLink = async (spaceId, extensionDevice, { triggerPulse = 
     await pulseHubOutput(extensionId, extensionSide, 15, EXTENSION_PULSE_DURATION_MS).catch(() => null);
   }
   const ok = await waitForHubPort(spaceId, hubSide, 15, EXTENSION_PULSE_TIMEOUT_MS);
+  if (ok) {
+    recordExtensionTestSuccess(extensionId);
+  }
   await updateExtensionStatus(spaceId, extensionDevice, ok);
   return ok;
 };
