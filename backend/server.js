@@ -2459,9 +2459,11 @@ app.post('/api/hub/events', requireWebhookToken, async (req, res) => {
     }
     extensionDevice = extensionResult.rows[0];
     spaceId = extensionDevice.space_id;
-    extensionSide = mapExtensionSide(normalizeSideValue(extensionDevice.config?.extensionSide));
+    const rawExtensionSide = normalizeSideValue(extensionDevice.config?.extensionSide);
+    extensionSide = rawExtensionSide;
     payloadSide = normalizeSideValue(payload?.side);
-    if (payloadSide && extensionSide && payloadSide === extensionSide) {
+    const testSideForEvent = type === 'SET_OUTPUT' ? mapExtensionSide(rawExtensionSide) : rawExtensionSide;
+    if (payloadSide && testSideForEvent && payloadSide === testSideForEvent) {
       isExtensionTestSide = true;
       const payloadLevel = Number(payload?.level);
       isExtensionTestPulse = Number.isFinite(payloadLevel) && payloadLevel === 15;
