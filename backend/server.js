@@ -2438,6 +2438,7 @@ app.post('/api/hub/events', requireWebhookToken, async (req, res) => {
   let spaceId;
   let extensionDevice;
   let normalizedExtensionId;
+  let isExtensionTestPulse = false;
 
   if (isExtensionEvent) {
     normalizedExtensionId = normalizeHubExtensionId(hubId);
@@ -2453,7 +2454,21 @@ app.post('/api/hub/events', requireWebhookToken, async (req, res) => {
     }
     extensionDevice = extensionResult.rows[0];
     spaceId = extensionDevice.space_id;
-    await maybePulseExtension(extensionDevice);
+    if (type === 'PORT_IN') {
+      const extensionSide = normalizeSideValue(extensionDevice.config?.extensionSide);
+      const payloadSide = normalizeSideValue(payload?.side);
+      const payloadLevel = Number(payload?.level);
+      isExtensionTestPulse = Boolean(
+        extensionSide
+        && payloadSide
+        && payloadSide === extensionSide
+        && Number.isFinite(payloadLevel)
+        && payloadLevel === 15,
+      );
+    }
+    if (!isExtensionTestPulse) {
+      await maybePulseExtension(extensionDevice);
+    }
   } else {
     const normalizedHubId = normalizeHubId(hubId);
     const spaceResult = await query('SELECT space_id FROM hubs WHERE id = $1', [normalizedHubId]);
@@ -2505,6 +2520,9 @@ app.post('/api/hub/events', requireWebhookToken, async (req, res) => {
     }
 
     if (isExtensionEvent) {
+      if (isExtensionTestPulse) {
+        return res.json({ ok: true, ignored: true, testPulse: true });
+      }
       const isOnline = await checkHubExtensionLink(spaceId, extensionDevice);
       if (!isOnline) {
         return res.json({ ok: true, extensionOffline: true });
