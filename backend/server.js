@@ -2381,7 +2381,7 @@ const checkHubExtensionLink = async (spaceId, extensionDevice, { triggerPulse = 
   const config = extensionDevice.config ?? {};
   const extensionId = normalizeHubExtensionId(config.extensionId);
   const hubSide = normalizeSideValue(config.hubSide);
-  const extensionSide = normalizeSideValue(config.extensionSide);
+  const extensionSide = mapExtensionSide(normalizeSideValue(config.extensionSide));
   if (!extensionId || !hubSide || !extensionSide) {
     await updateExtensionStatus(spaceId, extensionDevice, false);
     return false;
