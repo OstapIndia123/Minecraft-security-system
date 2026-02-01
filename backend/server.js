@@ -2420,6 +2420,7 @@ app.post('/api/hub/events', requireWebhookToken, async (req, res) => {
   let spaceId;
   let extensionDevice;
   let normalizedExtensionId;
+  let isExtensionTestPulse = false;
   let isExtensionTestSide = false;
   let extensionSide;
   let payloadSide;
@@ -2443,9 +2444,8 @@ app.post('/api/hub/events', requireWebhookToken, async (req, res) => {
     payloadSide = normalizeSideValue(payload?.side);
     if (payloadSide && extensionSide && payloadSide === extensionSide) {
       isExtensionTestSide = true;
-    }
-    if (isExtensionTestSide) {
-      return res.json({ ok: true, ignored: true });
+      const payloadLevel = Number(payload?.level);
+      isExtensionTestPulse = Number.isFinite(payloadLevel) && payloadLevel === 15;
     }
   } else {
     const normalizedHubId = normalizeHubId(hubId);
@@ -2467,16 +2467,8 @@ app.post('/api/hub/events', requireWebhookToken, async (req, res) => {
     [spaceId, time, hubLogText, hubId, 'hub_raw'],
   );
 
-  if (isExtensionEvent && isExtensionTestSide) {
-    return res.json({ ok: true, ignored: true, testPulse: isExtensionTestPulse });
-  }
-
-  if (isExtensionEvent) {
-    const isRealExtensionInputEvent = type === 'PORT_IN';
-    const shouldTriggerExtensionPulse = isRealExtensionInputEvent && !isExtensionTestSide;
-    checkedExtensionOnline = await checkHubExtensionLink(spaceId, extensionDevice, {
-      triggerPulse: shouldTriggerExtensionPulse,
-    });
+  if (isExtensionEvent && type === 'PORT_IN' && payloadSide && !isExtensionTestSide) {
+    checkedExtensionOnline = await checkHubExtensionLink(spaceId, extensionDevice, { triggerPulse: true });
     if (!checkedExtensionOnline) {
       return res.json({ ok: true, extensionOffline: true });
     }
@@ -2513,6 +2505,9 @@ app.post('/api/hub/events', requireWebhookToken, async (req, res) => {
     }
 
     if (isExtensionEvent) {
+      if (isExtensionTestSide) {
+        return res.json({ ok: true, ignored: true, testPulse: isExtensionTestPulse });
+      }
       if (checkedExtensionOnline === false) {
         return res.json({ ok: true, extensionOffline: true });
       }
@@ -2528,7 +2523,6 @@ app.post('/api/hub/events', requireWebhookToken, async (req, res) => {
       if (testSides.includes(normalizedSide)) {
         return res.json({ ok: true, ignored: true, testPulse: inputLevel === 15 });
       }
-      recordHubPortSignal(spaceId, normalizedSide, inputLevel);
       const sessions = await query(
         `SELECT id, input_side, input_level, action, key_name, reader_name
          FROM reader_sessions
