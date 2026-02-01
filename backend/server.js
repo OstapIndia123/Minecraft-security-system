@@ -2488,7 +2488,7 @@ app.post('/api/hub/events', requireWebhookToken, async (req, res) => {
     [spaceId, time, hubLogText, hubId, 'hub_raw'],
   );
 
-  if (isExtensionEvent && !isExtensionTestSide && type !== 'SET_OUTPUT') {
+  if (isExtensionEvent && type === 'PORT_IN' && payloadSide && !isExtensionTestSide) {
     checkedExtensionOnline = await checkHubExtensionLink(spaceId, extensionDevice, { triggerPulse: true });
     if (!checkedExtensionOnline) {
       return res.json({ ok: true, extensionOffline: true });
