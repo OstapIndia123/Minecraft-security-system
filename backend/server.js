@@ -536,9 +536,12 @@ const keyScanWaiters = new Map();
 const extensionPortWaiters = new Map();
 const recentHubPortSignals = new Map();
 const extensionLastOkAt = new Map();
+const extensionOfflineFailures = new Map();
 const EXTENSION_PULSE_DURATION_MS = MIN_INTERVAL_MS;
 const EXTENSION_PULSE_TIMEOUT_MS = Math.max(3500, EXTENSION_PULSE_DURATION_MS * 10);
 const EXTENSION_LINK_OK_TTL_MS = 3000;
+const EXTENSION_OFFLINE_FAILURES_REQUIRED = 2;
+const EXTENSION_OFFLINE_FAILURE_WINDOW_MS = 4000;
 
 const buildExtensionWaiterKey = (spaceId, side, level) => `${spaceId}:${side}:${level}`;
 
@@ -595,6 +598,24 @@ const recordHubPortSignal = (spaceId, side, level) => {
 const recordExtensionTestSuccess = (extensionId) => {
   if (!extensionId) return;
   extensionLastOkAt.set(extensionId, Date.now());
+};
+
+const recordExtensionOfflineFailure = (extensionId) => {
+  if (!extensionId) return true;
+  const now = Date.now();
+  const entry = extensionOfflineFailures.get(extensionId);
+  if (!entry || now - entry.lastFailureAt > EXTENSION_OFFLINE_FAILURE_WINDOW_MS) {
+    extensionOfflineFailures.set(extensionId, { count: 1, lastFailureAt: now });
+    return EXTENSION_OFFLINE_FAILURES_REQUIRED <= 1;
+  }
+  const nextCount = entry.count + 1;
+  extensionOfflineFailures.set(extensionId, { count: nextCount, lastFailureAt: now });
+  return nextCount >= EXTENSION_OFFLINE_FAILURES_REQUIRED;
+};
+
+const resetExtensionOfflineFailures = (extensionId) => {
+  if (!extensionId) return;
+  extensionOfflineFailures.delete(extensionId);
 };
 
 const pulseHubOutput = async (hubId, side, level, durationMs = MIN_INTERVAL_MS) => {
@@ -2377,11 +2398,35 @@ const handleReaderScan = async ({ readerId, payload, ts }) => {
 };
 
 const updateExtensionStatus = async (spaceId, extensionDevice, isOnline) => {
+  const extensionId = normalizeHubExtensionId(extensionDevice.config?.extensionId) ?? extensionDevice.id;
+  if (!isOnline) {
+    const shouldMarkOffline = recordExtensionOfflineFailure(extensionId);
+    if (!shouldMarkOffline) return;
+  } else {
+    resetExtensionOfflineFailures(extensionId);
+  }
   const nextStatus = isOnline ? 'В сети' : 'Не в сети';
-  if (extensionDevice.status === nextStatus) return;
+  const currentStatusResult = await query('SELECT status FROM devices WHERE id = $1', [extensionDevice.id]);
+  const currentStatus = currentStatusResult.rows[0]?.status;
+  if (currentStatus === nextStatus || currentStatus === undefined) return;
   await query('UPDATE devices SET status = $1 WHERE id = $2', [nextStatus, extensionDevice.id]);
-  const logText = isOnline ? 'Модуль расширения снова в сети' : 'Модуль расширения не в сети';
-  await appendLog(spaceId, logText, extensionDevice.config?.extensionId ?? extensionDevice.id, 'system');
+  if (!isOnline) {
+    await appendLog(
+      spaceId,
+      'Модуль расширения не в сети',
+      extensionDevice.config?.extensionId ?? extensionDevice.id,
+      'system',
+    );
+    return;
+  }
+  if (currentStatus === 'Не в сети') {
+    await appendLog(
+      spaceId,
+      'Модуль расширения снова в сети',
+      extensionDevice.config?.extensionId ?? extensionDevice.id,
+      'system',
+    );
+  }
 };
 
 const checkHubExtensionLink = async (
