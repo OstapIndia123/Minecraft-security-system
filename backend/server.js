@@ -536,10 +536,12 @@ const keyScanWaiters = new Map();
 const extensionPortWaiters = new Map();
 const recentHubPortSignals = new Map();
 const extensionLastOkAt = new Map();
+const extensionLinkChecks = new Map();
 const extensionOfflineFailures = new Map();
 const EXTENSION_PULSE_DURATION_MS = MIN_INTERVAL_MS;
 const EXTENSION_PULSE_TIMEOUT_MS = Math.max(3500, EXTENSION_PULSE_DURATION_MS * 10);
 const EXTENSION_LINK_OK_TTL_MS = 3000;
+const EXTENSION_LINK_DEBOUNCE_MS = 1500;
 const EXTENSION_OFFLINE_FAILURES_REQUIRED = 2;
 const EXTENSION_OFFLINE_FAILURE_WINDOW_MS = 4000;
 
@@ -2432,21 +2434,23 @@ const updateExtensionStatus = async (spaceId, extensionDevice, isOnline) => {
 const checkHubExtensionLink = async (
   spaceId,
   extensionDevice,
-  { triggerPulse = false, suppressOfflineUpdate = false } = {},
+  { triggerPulse = false, suppressOfflineUpdate = false, suppressStatusUpdate = false } = {},
 ) => {
   const config = extensionDevice.config ?? {};
   const extensionId = normalizeHubExtensionId(config.extensionId);
   const hubSide = normalizeSideValue(config.hubSide);
   const extensionSide = mapExtensionSide(normalizeSideValue(config.extensionSide));
   if (!extensionId || !hubSide || !extensionSide) {
-    if (!suppressOfflineUpdate) {
+    if (!suppressOfflineUpdate && !suppressStatusUpdate) {
       await updateExtensionStatus(spaceId, extensionDevice, false);
     }
     return false;
   }
   const lastOkAt = extensionLastOkAt.get(extensionId);
   if (lastOkAt && Date.now() - lastOkAt <= EXTENSION_LINK_OK_TTL_MS) {
-    await updateExtensionStatus(spaceId, extensionDevice, true);
+    if (!suppressStatusUpdate) {
+      await updateExtensionStatus(spaceId, extensionDevice, true);
+    }
     return true;
   }
   if (triggerPulse) {
@@ -2456,7 +2460,9 @@ const checkHubExtensionLink = async (
   if (ok) {
     recordExtensionTestSuccess(extensionId);
   }
-  await updateExtensionStatus(spaceId, extensionDevice, ok);
+  if (!suppressStatusUpdate) {
+    await updateExtensionStatus(spaceId, extensionDevice, ok);
+  }
   return ok;
 };
 
@@ -2555,19 +2561,35 @@ app.post('/api/hub/events', requireWebhookToken, async (req, res) => {
   );
 
   if (isExtensionEvent && !isExtensionTestSide && (type === 'PORT_IN' || type === 'SET_OUTPUT')) {
-    checkedExtensionOnline = await checkHubExtensionLink(spaceId, extensionDevice, {
-      triggerPulse: true,
-      suppressOfflineUpdate: true,
-    });
-    if (!checkedExtensionOnline) {
-      await new Promise((resolve) => setTimeout(resolve, EXTENSION_RETRY_DELAY_MS));
-      const retryHubSide = normalizeSideValue(extensionDevice?.config?.hubSide);
-      checkedExtensionOnline = retryHubSide
-        ? await waitForHubPort(spaceId, retryHubSide, 15, EXTENSION_RETRY_TIMEOUT_MS)
-        : false;
-      await updateExtensionStatus(spaceId, extensionDevice, checkedExtensionOnline);
+    const extensionLinkId =
+      normalizedExtensionId
+      ?? normalizeHubExtensionId(extensionDevice.config?.extensionId)
+      ?? extensionDevice.id;
+    const shouldCheckLink = type === 'PORT_IN';
+    if (extensionLinkId && shouldCheckLink) {
+      const now = Date.now();
+      const lastCheck = extensionLinkChecks.get(extensionLinkId);
+      if (lastCheck && now - lastCheck.lastCheckedAt < EXTENSION_LINK_DEBOUNCE_MS) {
+        checkedExtensionOnline = lastCheck.lastResult ?? checkedExtensionOnline;
+      } else {
+        const shouldTriggerPulse = Number(payload?.level) === 15;
+        checkedExtensionOnline = await checkHubExtensionLink(spaceId, extensionDevice, {
+          triggerPulse: shouldTriggerPulse,
+          suppressOfflineUpdate: true,
+          suppressStatusUpdate: true,
+        });
+        if (!checkedExtensionOnline) {
+          await new Promise((resolve) => setTimeout(resolve, EXTENSION_RETRY_DELAY_MS));
+          const retryHubSide = normalizeSideValue(extensionDevice?.config?.hubSide);
+          checkedExtensionOnline = retryHubSide
+            ? await waitForHubPort(spaceId, retryHubSide, 15, EXTENSION_RETRY_TIMEOUT_MS)
+            : false;
+        }
+        await updateExtensionStatus(spaceId, extensionDevice, checkedExtensionOnline);
+        extensionLinkChecks.set(extensionLinkId, { lastCheckedAt: now, lastResult: checkedExtensionOnline });
+      }
     }
-    if (!checkedExtensionOnline) {
+    if (checkedExtensionOnline === false) {
       return res.json({ ok: true, extensionOffline: true });
     }
   }
