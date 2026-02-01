@@ -2512,7 +2512,6 @@ app.post('/api/hub/events', requireWebhookToken, async (req, res) => {
         return res.json({ ok: true, extensionOffline: true });
       }
     } else {
-      recordHubPortSignal(spaceId, normalizedSide, inputLevel);
       resolveHubPortWaiter(spaceId, normalizedSide, inputLevel);
       const extensionSides = await query(
         "SELECT config->>'hubSide' AS hub_side FROM devices WHERE space_id = $1 AND type = $2",
@@ -2524,6 +2523,7 @@ app.post('/api/hub/events', requireWebhookToken, async (req, res) => {
       if (testSides.includes(normalizedSide)) {
         return res.json({ ok: true, ignored: true, testPulse: inputLevel === 15 });
       }
+      recordHubPortSignal(spaceId, normalizedSide, inputLevel);
       const sessions = await query(
         `SELECT id, input_side, input_level, action, key_name, reader_name
          FROM reader_sessions
