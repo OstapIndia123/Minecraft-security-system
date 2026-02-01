@@ -2473,7 +2473,7 @@ app.post('/api/hub/events', requireWebhookToken, async (req, res) => {
       const payloadSide = normalizeSideValue(payload?.side);
       isExtensionOutputEvent = Boolean(extensionSide && payloadSide && payloadSide === extensionSide);
     }
-    if (!isExtensionTestPulse && !isExtensionOutputEvent) {
+    if (type !== 'PORT_IN' && !isExtensionTestPulse && !isExtensionOutputEvent) {
       await maybePulseExtension(extensionDevice);
     }
   } else {
