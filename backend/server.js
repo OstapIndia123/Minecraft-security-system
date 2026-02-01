@@ -537,7 +537,7 @@ const extensionPortWaiters = new Map();
 const recentHubPortSignals = new Map();
 const lastExtensionTestSuccessAt = new Map();
 const EXTENSION_PULSE_DURATION_MS = MIN_INTERVAL_MS;
-const EXTENSION_PULSE_TIMEOUT_MS = Math.max(3500, EXTENSION_PULSE_DURATION_MS * 10);
+const EXTENSION_PULSE_TIMEOUT_MS = Math.max(2500, EXTENSION_PULSE_DURATION_MS * 6);
 const EXTENSION_RECENT_SUCCESS_MS = Math.min(3000, EXTENSION_PULSE_TIMEOUT_MS);
 
 const buildExtensionWaiterKey = (spaceId, side, level) => `${spaceId}:${side}:${level}`;
