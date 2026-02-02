@@ -536,12 +536,10 @@ const keyScanWaiters = new Map();
 const extensionPortWaiters = new Map();
 const recentHubPortSignals = new Map();
 const extensionLastOkAt = new Map();
-const extensionOfflineFailures = new Map();
+const extensionPendingOfflineAt = new Map();
 const EXTENSION_PULSE_DURATION_MS = MIN_INTERVAL_MS;
-const EXTENSION_PULSE_TIMEOUT_MS = Math.max(3500, EXTENSION_PULSE_DURATION_MS * 10);
-const EXTENSION_LINK_OK_TTL_MS = 3000;
-const EXTENSION_OFFLINE_FAILURES_REQUIRED = 2;
-const EXTENSION_OFFLINE_FAILURE_WINDOW_MS = 4000;
+const EXTENSION_PULSE_TIMEOUT_MS = Math.max(1500, EXTENSION_PULSE_DURATION_MS * 4);
+const EXTENSION_OFFLINE_GRACE_MS = 2000;
 
 const buildExtensionWaiterKey = (spaceId, side, level) => `${spaceId}:${side}:${level}`;
 
@@ -593,29 +591,6 @@ const resolveHubPortWaiter = (spaceId, side, level) => {
 const recordHubPortSignal = (spaceId, side, level) => {
   const key = buildExtensionWaiterKey(spaceId, side, level);
   recentHubPortSignals.set(key, Date.now());
-};
-
-const recordExtensionTestSuccess = (extensionId) => {
-  if (!extensionId) return;
-  extensionLastOkAt.set(extensionId, Date.now());
-};
-
-const recordExtensionOfflineFailure = (extensionId) => {
-  if (!extensionId) return true;
-  const now = Date.now();
-  const entry = extensionOfflineFailures.get(extensionId);
-  if (!entry || now - entry.lastFailureAt > EXTENSION_OFFLINE_FAILURE_WINDOW_MS) {
-    extensionOfflineFailures.set(extensionId, { count: 1, lastFailureAt: now });
-    return EXTENSION_OFFLINE_FAILURES_REQUIRED <= 1;
-  }
-  const nextCount = entry.count + 1;
-  extensionOfflineFailures.set(extensionId, { count: nextCount, lastFailureAt: now });
-  return nextCount >= EXTENSION_OFFLINE_FAILURES_REQUIRED;
-};
-
-const resetExtensionOfflineFailures = (extensionId) => {
-  if (!extensionId) return;
-  extensionOfflineFailures.delete(extensionId);
 };
 
 const pulseHubOutput = async (hubId, side, level, durationMs = MIN_INTERVAL_MS) => {
@@ -2429,11 +2404,7 @@ const updateExtensionStatus = async (spaceId, extensionDevice, isOnline) => {
   }
 };
 
-const checkHubExtensionLink = async (
-  spaceId,
-  extensionDevice,
-  { triggerPulse = false, suppressOfflineUpdate = false } = {},
-) => {
+const checkHubExtensionLink = async (spaceId, extensionDevice, { triggerPulse = false } = {}) => {
   const config = extensionDevice.config ?? {};
   const extensionId = normalizeHubExtensionId(config.extensionId);
   const hubSide = normalizeSideValue(config.hubSide);
@@ -2444,20 +2415,30 @@ const checkHubExtensionLink = async (
     }
     return false;
   }
-  const lastOkAt = extensionLastOkAt.get(extensionId);
-  if (lastOkAt && Date.now() - lastOkAt <= EXTENSION_LINK_OK_TTL_MS) {
-    await updateExtensionStatus(spaceId, extensionDevice, true);
-    return true;
-  }
   if (triggerPulse) {
     await pulseHubOutput(extensionId, extensionSide, 15, EXTENSION_PULSE_DURATION_MS).catch(() => null);
   }
   const ok = await waitForHubPort(spaceId, hubSide, 15, EXTENSION_PULSE_TIMEOUT_MS);
   if (ok) {
-    recordExtensionTestSuccess(extensionId);
+    extensionLastOkAt.set(extensionId, Date.now());
+    extensionPendingOfflineAt.delete(extensionId);
+    await updateExtensionStatus(spaceId, extensionDevice, true);
+    return true;
   }
-  await updateExtensionStatus(spaceId, extensionDevice, ok);
-  return ok;
+  const now = Date.now();
+  const lastOk = extensionLastOkAt.get(extensionId);
+  if (lastOk && now - lastOk <= EXTENSION_OFFLINE_GRACE_MS) {
+    return true;
+  }
+  const pendingAt = extensionPendingOfflineAt.get(extensionId) ?? now;
+  if (!extensionPendingOfflineAt.has(extensionId)) {
+    extensionPendingOfflineAt.set(extensionId, pendingAt);
+  }
+  if (now - pendingAt >= EXTENSION_OFFLINE_GRACE_MS) {
+    await updateExtensionStatus(spaceId, extensionDevice, false);
+    return false;
+  }
+  return true;
 };
 
 app.post('/api/spaces/:id/arm', requireAuth, async (req, res) => {
@@ -2555,18 +2536,7 @@ app.post('/api/hub/events', requireWebhookToken, async (req, res) => {
   );
 
   if (isExtensionEvent && !isExtensionTestSide && (type === 'PORT_IN' || type === 'SET_OUTPUT')) {
-    checkedExtensionOnline = await checkHubExtensionLink(spaceId, extensionDevice, {
-      triggerPulse: true,
-      suppressOfflineUpdate: true,
-    });
-    if (!checkedExtensionOnline) {
-      await new Promise((resolve) => setTimeout(resolve, EXTENSION_RETRY_DELAY_MS));
-      const retryHubSide = normalizeSideValue(extensionDevice?.config?.hubSide);
-      checkedExtensionOnline = retryHubSide
-        ? await waitForHubPort(spaceId, retryHubSide, 15, EXTENSION_RETRY_TIMEOUT_MS)
-        : false;
-      await updateExtensionStatus(spaceId, extensionDevice, checkedExtensionOnline);
-    }
+    checkedExtensionOnline = await checkHubExtensionLink(spaceId, extensionDevice, { triggerPulse: true });
     if (!checkedExtensionOnline) {
       return res.json({ ok: true, extensionOffline: true });
     }
@@ -2613,17 +2583,12 @@ app.post('/api/hub/events', requireWebhookToken, async (req, res) => {
       recordHubPortSignal(spaceId, normalizedSide, inputLevel);
       resolveHubPortWaiter(spaceId, normalizedSide, inputLevel);
       const extensionSides = await query(
-        "SELECT config->>'hubSide' AS hub_side, config->>'extensionId' AS extension_id FROM devices WHERE space_id = $1 AND type = $2",
+        "SELECT config->>'hubSide' AS hub_side FROM devices WHERE space_id = $1 AND type = $2",
         [spaceId, 'hub_extension'],
       );
-      extensionSides.rows.forEach((row) => {
-        const hubSide = normalizeSideValue(row.hub_side);
-        const extensionId = normalizeHubExtensionId(row.extension_id);
-        if (hubSide && extensionId && hubSide === normalizedSide && inputLevel === 15) {
-          recordExtensionTestSuccess(extensionId);
-        }
-      });
-      const testSides = extensionSides.rows.map((row) => normalizeSideValue(row.hub_side)).filter(Boolean);
+      const testSides = extensionSides.rows
+        .map((row) => normalizeSideValue(row.hub_side))
+        .filter(Boolean);
       if (testSides.includes(normalizedSide)) {
         return res.json({ ok: true, ignored: true, testPulse: inputLevel === 15 });
       }
