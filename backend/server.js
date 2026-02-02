@@ -2420,9 +2420,6 @@ app.post('/api/hub/events', requireWebhookToken, async (req, res) => {
   let normalizedExtensionId;
 
   if (isExtensionEvent) {
-    if (type === 'SET_OUTPUT') {
-      return res.status(202).json({ ok: true, ignored: true });
-    }
     normalizedExtensionId = normalizeHubExtensionId(hubId);
     if (!normalizedExtensionId) {
       return res.status(202).json({ ok: true, ignored: true });
