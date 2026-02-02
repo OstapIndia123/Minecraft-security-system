@@ -2373,20 +2373,46 @@ const handleReaderScan = async ({ readerId, payload, ts }) => {
 };
 
 const updateExtensionStatus = async (spaceId, extensionDevice, isOnline) => {
+  const extensionId = normalizeHubExtensionId(extensionDevice.config?.extensionId) ?? extensionDevice.id;
+  if (!isOnline) {
+    const shouldMarkOffline = recordExtensionOfflineFailure(extensionId);
+    if (!shouldMarkOffline) return;
+  } else {
+    resetExtensionOfflineFailures(extensionId);
+  }
   const nextStatus = isOnline ? 'В сети' : 'Не в сети';
-  if (extensionDevice.status === nextStatus) return;
+  const currentStatusResult = await query('SELECT status FROM devices WHERE id = $1', [extensionDevice.id]);
+  const currentStatus = currentStatusResult.rows[0]?.status;
+  if (currentStatus === nextStatus || currentStatus === undefined) return;
   await query('UPDATE devices SET status = $1 WHERE id = $2', [nextStatus, extensionDevice.id]);
-  const logText = isOnline ? 'Модуль расширения снова в сети' : 'Модуль расширения не в сети';
-  await appendLog(spaceId, logText, extensionDevice.config?.extensionId ?? extensionDevice.id, 'system');
+  if (!isOnline) {
+    await appendLog(
+      spaceId,
+      'Модуль расширения не в сети',
+      extensionDevice.config?.extensionId ?? extensionDevice.id,
+      'system',
+    );
+    return;
+  }
+  if (currentStatus === 'Не в сети') {
+    await appendLog(
+      spaceId,
+      'Модуль расширения снова в сети',
+      extensionDevice.config?.extensionId ?? extensionDevice.id,
+      'system',
+    );
+  }
 };
 
 const checkHubExtensionLink = async (spaceId, extensionDevice, { triggerPulse = false } = {}) => {
   const config = extensionDevice.config ?? {};
   const extensionId = normalizeHubExtensionId(config.extensionId);
   const hubSide = normalizeSideValue(config.hubSide);
-  const extensionSide = normalizeSideValue(config.extensionSide);
+  const extensionSide = mapExtensionSide(normalizeSideValue(config.extensionSide));
   if (!extensionId || !hubSide || !extensionSide) {
-    await updateExtensionStatus(spaceId, extensionDevice, false);
+    if (!suppressOfflineUpdate) {
+      await updateExtensionStatus(spaceId, extensionDevice, false);
+    }
     return false;
   }
   if (triggerPulse) {
