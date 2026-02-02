@@ -482,12 +482,12 @@ const ensureSpaceDisarmed = async (spaceId, res) => {
 
 const hubOutputState = new Map();
 
-const sendHubOutput = async (hubId, side, level) => {
+const sendHubOutput = async (hubId, side, level, { force = false } = {}) => {
   if (!hubId) return;
   const formattedHubId = formatHubIdForSend(hubId);
   const outputSide = mirrorOutputSide(side);
   const stateKey = `${formattedHubId}:${outputSide}`;
-  if (hubOutputState.get(stateKey) === level) {
+  if (!force && hubOutputState.get(stateKey) === level) {
     return;
   }
   hubOutputState.set(stateKey, level);
@@ -497,6 +497,14 @@ const sendHubOutput = async (hubId, side, level) => {
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({ side: outputSide, level }),
   });
+};
+
+const pulseHubOutput = async (hubId, side, level, durationMs = MIN_INTERVAL_MS) => {
+  const resolvedDuration = Math.max(durationMs, MIN_INTERVAL_MS);
+  await sendHubOutput(hubId, side, level, { force: true });
+  setTimeout(() => {
+    sendHubOutput(hubId, side, 0, { force: true }).catch(() => null);
+  }, resolvedDuration);
 };
 
 const sendReaderOutput = async (readerId, level) => {
@@ -2359,7 +2367,7 @@ const checkHubExtensionLink = async (spaceId, extensionDevice) => {
     await updateExtensionStatus(spaceId, extensionDevice, false);
     return false;
   }
-  await sendHubOutput(extensionId, extensionSide, 15).catch(() => null);
+  await pulseHubOutput(extensionId, extensionSide, 15).catch(() => null);
   const ok = await waitForHubPort(spaceId, hubSide, 15, 1500);
   await updateExtensionStatus(spaceId, extensionDevice, ok);
   return ok;
