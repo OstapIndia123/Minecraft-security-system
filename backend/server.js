@@ -2420,6 +2420,9 @@ app.post('/api/hub/events', requireWebhookToken, async (req, res) => {
   let normalizedExtensionId;
 
   if (isExtensionEvent) {
+    if (type === 'SET_OUTPUT') {
+      return res.status(202).json({ ok: true, ignored: true });
+    }
     normalizedExtensionId = normalizeHubExtensionId(hubId);
     if (!normalizedExtensionId) {
       return res.status(202).json({ ok: true, ignored: true });
@@ -2456,7 +2459,13 @@ app.post('/api/hub/events', requireWebhookToken, async (req, res) => {
   if (isExtensionEvent) {
     const extensionSide = normalizeSideValue(extensionDevice?.config?.extensionSide);
     const eventSide = normalizeSideValue(payload?.side);
-    if (extensionSide && eventSide && extensionSide === eventSide) {
+    const mirrorExtensionSide = extensionSide ? mirrorOutputSide(extensionSide) : null;
+    const shouldIgnoreSide = Boolean(
+      extensionSide
+      && eventSide
+      && (eventSide === extensionSide || (type === 'SET_OUTPUT' && eventSide === mirrorExtensionSide)),
+    );
+    if (shouldIgnoreSide) {
       return res.json({ ok: true, ignored: true });
     }
     const isOnline = await checkHubExtensionLink(spaceId, extensionDevice);
