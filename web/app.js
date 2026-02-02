@@ -136,11 +136,17 @@ const sirenFields = document.getElementById('sirenFields');
 const lightFields = document.getElementById('lightFields');
 const zoneFields = document.getElementById('zoneFields');
 const keyFields = document.getElementById('keyFields');
+const bindingFields = document.getElementById('bindingFields');
+const hubExtensionFields = document.getElementById('hubExtensionFields');
 const generateKey = document.getElementById('generateKey');
 const readKeyButton = document.getElementById('readKey');
 const sideInput = deviceForm?.querySelector('input[name="side"]');
 const deviceNameInput = deviceForm?.querySelector('input[name="name"]');
 const deviceRoomInput = deviceForm?.querySelector('input[name="room"]');
+const bindingTypeSelect = deviceForm?.querySelector('select[name="bindingType"]');
+const hubExtensionIdInput = deviceForm?.querySelector('input[name="hubExtensionId"]');
+const extensionIdInput = deviceForm?.querySelector('input[name="extensionId"]');
+const extensionSideInput = deviceForm?.querySelector('input[name="extensionSide"]');
 const readerIdInput = readerFields?.querySelector('input[name="id"]');
 const attachHubForm = document.getElementById('attachHubForm');
 const guardModal = document.getElementById('guardModal');
@@ -1077,7 +1083,9 @@ const renderDevices = (space) => {
   }
 
   devices.forEach((device) => {
-    const statusText = device.type === 'zone' || device.type === 'hub' ? device.status : '';
+    const statusText = device.type === 'zone' || device.type === 'hub' || device.type === 'hub-extension'
+      ? device.status
+      : '';
     const item = document.createElement('button');
     item.className = `device-item ${device.id === state.selectedDeviceId ? 'device-item--active' : ''}`;
     item.innerHTML = `
@@ -1104,9 +1112,13 @@ const renderDeviceDetails = (device) => {
   const safeSide = escapeHtml(device.side ?? '');
   const safeStatus = escapeHtml(device.status ?? '');
   const safeReaderId = escapeHtml(device.config?.readerId ?? '');
+  const bindingType = device.config?.bindingType === 'hub-extension' ? 'hub-extension' : 'hub';
+  const safeHubExtensionId = escapeHtml(device.config?.hubExtensionId ?? '');
+  const safeExtensionId = escapeHtml(device.config?.extensionId ?? '');
+  const safeExtensionSide = escapeHtml(device.config?.extensionSide ?? '');
   const safeType = escapeHtml(device.type);
   const safeId = escapeHtml(device.id);
-  const statusBlock = device.type === 'zone' || device.type === 'hub'
+  const statusBlock = device.type === 'zone' || device.type === 'hub' || device.type === 'hub-extension'
     ? `
       <div class="stat">
         <span>Статус</span>
@@ -1124,6 +1136,29 @@ const renderDeviceDetails = (device) => {
       <input type="text" name="name" value="${escapeHtml(device.name.replace('Ключ: ', ''))}" placeholder="Имя ключа" required />
       <input type="text" name="readerId" value="${safeReaderId}" placeholder="ID считывателя" />
     `;
+
+  const bindingFields = device.type !== 'key' && device.type !== 'reader' && device.type !== 'hub-extension'
+    ? `
+      <select name="bindingType">
+        <option value="hub" ${bindingType === 'hub' ? 'selected' : ''}>Привязка: хаб</option>
+        <option value="hub-extension" ${bindingType === 'hub-extension' ? 'selected' : ''}>Привязка: модуль расширения</option>
+      </select>
+      <input
+        type="text"
+        name="hubExtensionId"
+        value="${safeHubExtensionId}"
+        placeholder="ID модуля расширения"
+        ${bindingType === 'hub-extension' ? 'required' : ''}
+      />
+    `
+    : '';
+
+  const extensionFields = device.type === 'hub-extension'
+    ? `
+      <input type="text" name="extensionId" value="${safeExtensionId}" placeholder="ID модуля расширения" required />
+      <input type="text" name="extensionSide" value="${safeExtensionSide}" placeholder="Сторона модуля" required />
+    `
+    : '';
 
   const configFields = (() => {
     if (device.type === 'zone') {
@@ -1173,6 +1208,10 @@ const renderDeviceDetails = (device) => {
     return '';
   })();
 
+  const refreshExtensionButton = device.type === 'hub-extension'
+    ? '<button class="button button--ghost" type="button" id="refreshHubExtension">Обновить статус</button>'
+    : '';
+
   deviceDetails.innerHTML = `
     <div class="device-details__header">
       <div class="device-avatar">${device.type.toUpperCase()}</div>
@@ -1195,10 +1234,13 @@ const renderDeviceDetails = (device) => {
     ${device.type !== 'hub' ? `
       <form class="form-grid device-edit" id="deviceEditForm">
         ${baseFields}
+        ${bindingFields}
+        ${extensionFields}
         ${configFields}
         <button class="button button--primary" type="submit">Сохранить</button>
       </form>
     ` : ''}
+    ${refreshExtensionButton}
     ${canDelete ? `<button class="button button--ghost button--danger" id="deleteDevice">${deleteLabel}</button>` : ''}
   `;
 
@@ -1237,6 +1279,20 @@ const renderDeviceDetails = (device) => {
     if (device.type === 'zone') {
       setupZoneDelayFields(editForm);
     }
+    const editBindingType = editForm.querySelector('select[name="bindingType"]');
+    const editHubExtensionId = editForm.querySelector('input[name="hubExtensionId"]');
+    if (editBindingType && editHubExtensionId) {
+      const updateEditBinding = () => {
+        const isExtensionBinding = editBindingType.value === 'hub-extension';
+        editHubExtensionId.required = isExtensionBinding;
+        editHubExtensionId.disabled = !isExtensionBinding;
+        if (!isExtensionBinding) {
+          editHubExtensionId.value = '';
+        }
+      };
+      editBindingType.addEventListener('change', updateEditBinding);
+      updateEditBinding();
+    }
     editForm.addEventListener('submit', async (event) => {
       event.preventDefault();
       if (!ensureEditable()) return;
@@ -1266,6 +1322,26 @@ const renderDeviceDetails = (device) => {
       } catch (error) {
         console.error(error);
         handleApiError(error, 'Не удалось обновить устройство.');
+      } finally {
+        hideLoading();
+      }
+    });
+  }
+
+  const refreshHubExtension = document.getElementById('refreshHubExtension');
+  if (refreshHubExtension) {
+    refreshHubExtension.addEventListener('click', async () => {
+      if (!ensureEditable()) return;
+      const space = spaces.find((item) => item.id === state.selectedSpaceId);
+      if (!space) return;
+      try {
+        showLoading();
+        await apiFetch(`/api/spaces/${space.id}/devices/${device.id}/refresh`, { method: 'POST' });
+        await refreshAll();
+        showToast('Статус обновлён.');
+      } catch (error) {
+        console.error(error);
+        handleApiError(error, 'Не удалось обновить статус.');
       } finally {
         hideLoading();
       }
@@ -1970,12 +2046,16 @@ if (deviceType) {
     const isLight = value === 'output-light';
     const isZone = value === 'zone';
     const isKey = value === 'key';
+    const isHubExtension = value === 'hub-extension';
+    const hasBinding = !isReader && !isKey && !isHubExtension;
 
     readerFields?.classList.toggle('hidden', !isReader);
     sirenFields?.classList.toggle('hidden', !isSiren);
     lightFields?.classList.toggle('hidden', !isLight);
     zoneFields?.classList.toggle('hidden', !isZone);
     keyFields?.classList.toggle('hidden', !isKey);
+    bindingFields?.classList.toggle('hidden', !hasBinding);
+    hubExtensionFields?.classList.toggle('hidden', !isHubExtension);
 
     readerFields?.querySelectorAll('input').forEach((input) => {
       input.disabled = !isReader;
@@ -2022,10 +2102,36 @@ if (deviceType) {
     if (readerIdInput && !isReader) {
       readerIdInput.value = '';
     }
+
+    if (bindingTypeSelect) {
+      bindingTypeSelect.disabled = !hasBinding;
+      if (!hasBinding) {
+        bindingTypeSelect.value = 'hub';
+      }
+    }
+    if (hubExtensionIdInput) {
+      const isExtensionBinding = bindingTypeSelect?.value === 'hub-extension';
+      hubExtensionIdInput.disabled = !hasBinding || !isExtensionBinding;
+      hubExtensionIdInput.required = hasBinding && isExtensionBinding;
+      if (!hubExtensionIdInput.required) {
+        hubExtensionIdInput.value = '';
+      }
+    }
+    [extensionIdInput, extensionSideInput].forEach((input) => {
+      if (!input) return;
+      input.disabled = !isHubExtension;
+      input.required = isHubExtension;
+      if (!isHubExtension) {
+        input.value = '';
+      }
+    });
   };
 
   deviceType.addEventListener('change', updateDeviceFields);
   updateDeviceFields();
+  if (bindingTypeSelect) {
+    bindingTypeSelect.addEventListener('change', updateDeviceFields);
+  }
   setupZoneDelayFields(deviceForm);
 }
 
