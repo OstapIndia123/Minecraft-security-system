@@ -1116,6 +1116,33 @@ const renderDevices = (space) => {
   });
 };
 
+const getExtensionOptions = (space, selectedId = '') => {
+  const extensions = space?.devices?.filter((device) => device.type === 'hub_extension') ?? [];
+  if (!extensions.length) {
+    return '<option value="">Нет модулей расширения</option>';
+  }
+  const options = extensions.map((device) => {
+    const id = device.config?.extensionId ?? device.id;
+    const safeId = escapeHtml(id);
+    const safeName = escapeHtml(device.name);
+    const isSelected = id === selectedId ? ' selected' : '';
+    return `<option value="${safeId}"${isSelected}>${safeName} (${safeId})</option>`;
+  }).join('');
+  return `<option value="">Выберите модуль</option>${options}`;
+};
+
+const updateCreateExtensionOptions = () => {
+  if (!bindExtensionInput) return;
+  const space = spaces.find((item) => item.id === state.selectedSpaceId);
+  const selectedId = bindExtensionInput.value;
+  bindExtensionInput.innerHTML = getExtensionOptions(space, selectedId);
+  const hasExtensions = (space?.devices ?? []).some((device) => device.type === 'hub_extension');
+  bindExtensionInput.disabled = !hasExtensions;
+  if (!hasExtensions) {
+    bindExtensionInput.value = '';
+  }
+};
+
 const renderDeviceDetails = (device) => {
   const canDelete = device.type !== 'hub';
   const deleteLabel = device.type === 'key' ? 'Удалить ключ' : 'Удалить устройство';
@@ -1126,6 +1153,7 @@ const renderDeviceDetails = (device) => {
   const safeReaderId = escapeHtml(device.config?.readerId ?? '');
   const safeType = escapeHtml(device.type);
   const safeId = escapeHtml(device.id);
+  const space = spaces.find((item) => item.id === state.selectedSpaceId);
   const statusBlock = device.type === 'zone' || device.type === 'hub' || device.type === 'hub_extension'
     ? `
       <div class="stat">
@@ -1160,20 +1188,19 @@ const renderDeviceDetails = (device) => {
     }
     if (device.type === 'zone') {
       const bindTarget = device.config?.bindTarget === 'hub_extension' ? 'hub_extension' : 'hub';
-      const bindExtensionId = escapeHtml(device.config?.extensionId ?? '');
+      const bindExtensionId = device.config?.extensionId ?? '';
       return `
         <select name="bindTarget" id="bindTargetEdit">
           <option value="hub" ${bindTarget === 'hub' ? 'selected' : ''}>К хабу</option>
           <option value="hub_extension" ${bindTarget === 'hub_extension' ? 'selected' : ''}>К модулю расширения</option>
         </select>
-        <input
-          type="text"
+        <select
           name="bindExtensionId"
           id="bindExtensionIdEdit"
-          value="${bindTarget === 'hub_extension' ? bindExtensionId : ''}"
-          placeholder="ID модуля (HUB_EXT-...)"
           class="${bindTarget === 'hub_extension' ? '' : 'hidden'}"
-        />
+        >
+          ${getExtensionOptions(space, bindTarget === 'hub_extension' ? bindExtensionId : '')}
+        </select>
         <select name="zoneType">
           <option value="instant" ${device.config?.zoneType === 'instant' ? 'selected' : ''}>Нормальная</option>
           <option value="delayed" ${device.config?.zoneType === 'delayed' ? 'selected' : ''}>Задержанная</option>
@@ -1202,39 +1229,37 @@ const renderDeviceDetails = (device) => {
     }
     if (device.type === 'output-light') {
       const bindTarget = device.config?.bindTarget === 'hub_extension' ? 'hub_extension' : 'hub';
-      const bindExtensionId = escapeHtml(device.config?.extensionId ?? '');
+      const bindExtensionId = device.config?.extensionId ?? '';
       return `
         <select name="bindTarget" id="bindTargetEdit">
           <option value="hub" ${bindTarget === 'hub' ? 'selected' : ''}>К хабу</option>
           <option value="hub_extension" ${bindTarget === 'hub_extension' ? 'selected' : ''}>К модулю расширения</option>
         </select>
-        <input
-          type="text"
+        <select
           name="bindExtensionId"
           id="bindExtensionIdEdit"
-          value="${bindTarget === 'hub_extension' ? bindExtensionId : ''}"
-          placeholder="ID модуля (HUB_EXT-...)"
           class="${bindTarget === 'hub_extension' ? '' : 'hidden'}"
-        />
+        >
+          ${getExtensionOptions(space, bindTarget === 'hub_extension' ? bindExtensionId : '')}
+        </select>
         <input type="number" name="outputLevel" value="${device.config?.level ?? 15}" min="0" max="15" />
       `;
     }
     if (device.type === 'siren') {
       const bindTarget = device.config?.bindTarget === 'hub_extension' ? 'hub_extension' : 'hub';
-      const bindExtensionId = escapeHtml(device.config?.extensionId ?? '');
+      const bindExtensionId = device.config?.extensionId ?? '';
       return `
         <select name="bindTarget" id="bindTargetEdit">
           <option value="hub" ${bindTarget === 'hub' ? 'selected' : ''}>К хабу</option>
           <option value="hub_extension" ${bindTarget === 'hub_extension' ? 'selected' : ''}>К модулю расширения</option>
         </select>
-        <input
-          type="text"
+        <select
           name="bindExtensionId"
           id="bindExtensionIdEdit"
-          value="${bindTarget === 'hub_extension' ? bindExtensionId : ''}"
-          placeholder="ID модуля (HUB_EXT-...)"
           class="${bindTarget === 'hub_extension' ? '' : 'hidden'}"
-        />
+        >
+          ${getExtensionOptions(space, bindTarget === 'hub_extension' ? bindExtensionId : '')}
+        </select>
         <input type="number" name="outputLevel" value="${device.config?.level ?? 15}" min="0" max="15" />
         <input type="number" name="intervalMs" value="${device.config?.intervalMs ?? 1000}" min="300" max="60000" />
         <input type="number" name="alarmDuration" value="${device.config?.alarmDuration ?? ''}" min="1" max="120" placeholder="Время тревоги (сек)" />
@@ -1859,6 +1884,7 @@ const renderAll = () => {
   if (!space) return;
   renderSpaceHeader(space);
   renderDevices(space);
+  updateCreateExtensionOptions();
   renderObjectInfo(space);
   renderContacts(space);
   renderNotes(space);
@@ -2130,11 +2156,14 @@ if (deviceType) {
       }
     }
 
+    const space = spaces.find((item) => item.id === state.selectedSpaceId);
+    const hasExtensions = (space?.devices ?? []).some((device) => device.type === 'hub_extension');
     bindingFields?.querySelectorAll('input, select').forEach((input) => {
       input.disabled = isKey || isReader || isExtension;
     });
     if (bindTargetInput && bindExtensionInput) {
       const isBindExtension = bindTargetInput.value === 'hub_extension';
+      bindExtensionInput.disabled = isKey || isReader || isExtension || !hasExtensions;
       bindExtensionInput.required = !isKey && !isReader && !isExtension && isBindExtension;
       bindExtensionInput.classList.toggle('hidden', !isBindExtension);
       if (!isBindExtension) {
@@ -2418,6 +2447,7 @@ if (backToMain) {
 
 if (openDeviceModal && deviceModal) {
   openDeviceModal.addEventListener('click', () => {
+    updateCreateExtensionOptions();
     deviceModal.classList.add('modal--open');
   });
 }
