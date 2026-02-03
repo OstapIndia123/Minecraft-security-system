@@ -142,7 +142,7 @@ const sideInput = deviceForm?.querySelector('input[name="side"]');
 const deviceNameInput = deviceForm?.querySelector('input[name="name"]');
 const deviceRoomInput = deviceForm?.querySelector('input[name="room"]');
 const bindTargetInput = deviceForm?.querySelector('select[name="bindTarget"]');
-const bindExtensionInput = deviceForm?.querySelector('input[name="bindExtensionId"]');
+const bindExtensionInput = deviceForm?.querySelector('select[name="bindExtensionId"]');
 const bindingFields = document.getElementById('bindingFields');
 const extensionFields = document.getElementById('extensionFields');
 const readerIdInput = readerFields?.querySelector('input[name="id"]');
