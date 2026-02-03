@@ -36,6 +36,18 @@ const NICKNAME_COOLDOWN_MS = 7 * 24 * 60 * 60 * 1000;
 const SPACE_CREATE_COOLDOWN_MS = 15 * 60 * 1000;
 const ALARM_SOUND_PATH = '/alarm.mp3';
 const ALARM_SOUND_COOLDOWN_MS = 5000;
+const HUB_EXTENSION_TYPES = new Set([
+  'hub_extension',
+  'hub-extension',
+  'hub extension',
+  'hubextension',
+  'extension',
+]);
+
+const isHubExtensionType = (type) => {
+  if (typeof type !== 'string') return false;
+  return HUB_EXTENSION_TYPES.has(type.trim().toLowerCase());
+};
 
 const escapeHtml = (value) => String(value ?? '')
   .replace(/&/g, '&amp;')
@@ -1097,7 +1109,9 @@ const renderDevices = (space) => {
   }
 
   devices.forEach((device) => {
-    const statusText = device.type === 'zone' || device.type === 'hub' || device.type === 'hub_extension' ? device.status : '';
+    const statusText = device.type === 'zone' || device.type === 'hub' || isHubExtensionType(device.type)
+      ? device.status
+      : '';
     const item = document.createElement('button');
     item.className = `device-item ${device.id === state.selectedDeviceId ? 'device-item--active' : ''}`;
     item.innerHTML = `
@@ -1117,7 +1131,7 @@ const renderDevices = (space) => {
 };
 
 const getExtensionOptions = (space, selectedId = '') => {
-  const extensions = space?.devices?.filter((device) => device.type === 'hub_extension') ?? [];
+  const extensions = space?.devices?.filter((device) => isHubExtensionType(device.type)) ?? [];
   if (!extensions.length) {
     return '<option value="">Нет модулей расширения</option>';
   }
@@ -1136,7 +1150,7 @@ const updateCreateExtensionOptions = () => {
   const space = spaces.find((item) => item.id === state.selectedSpaceId);
   const selectedId = bindExtensionInput.value;
   bindExtensionInput.innerHTML = getExtensionOptions(space, selectedId);
-  const hasExtensions = (space?.devices ?? []).some((device) => device.type === 'hub_extension');
+  const hasExtensions = (space?.devices ?? []).some((device) => isHubExtensionType(device.type));
   bindExtensionInput.disabled = !hasExtensions;
   if (!hasExtensions) {
     bindExtensionInput.value = '';
@@ -1154,7 +1168,7 @@ const renderDeviceDetails = (device) => {
   const safeType = escapeHtml(device.type);
   const safeId = escapeHtml(device.id);
   const space = spaces.find((item) => item.id === state.selectedSpaceId);
-  const statusBlock = device.type === 'zone' || device.type === 'hub' || device.type === 'hub_extension'
+  const statusBlock = device.type === 'zone' || device.type === 'hub' || isHubExtensionType(device.type)
     ? `
       <div class="stat">
         <span>Статус</span>
@@ -1166,7 +1180,7 @@ const renderDeviceDetails = (device) => {
     ? `
       <input type="text" name="name" value="${safeName}" placeholder="Имя" required />
       <input type="text" name="room" value="${safeRoom}" placeholder="Комната" required />
-      ${device.side && device.type !== 'hub_extension'
+      ${device.side && !isHubExtensionType(device.type)
         ? `<input type="text" name="side" value="${safeSide}" placeholder="Сторона (N/S/E/W/U/D)" />`
         : ''}
     `
@@ -1176,7 +1190,7 @@ const renderDeviceDetails = (device) => {
     `;
 
   const configFields = (() => {
-    if (device.type === 'hub_extension') {
+    if (isHubExtensionType(device.type)) {
       const safeExtensionId = escapeHtml(device.config?.extensionId ?? '');
       const safeHubSide = escapeHtml(device.config?.hubSide ?? '');
       const safeExtensionSide = escapeHtml(device.config?.extensionSide ?? '');
@@ -1300,7 +1314,7 @@ const renderDeviceDetails = (device) => {
         <button class="button button--primary" type="submit">Сохранить</button>
       </form>
     ` : ''}
-    ${device.type === 'hub_extension'
+    ${isHubExtensionType(device.type)
       ? '<button class="button button--ghost" id="refreshExtensionStatus">Обновить статус</button>'
       : ''}
     ${canDelete ? `<button class="button button--ghost button--danger" id="deleteDevice">${deleteLabel}</button>` : ''}
@@ -2157,7 +2171,7 @@ if (deviceType) {
     }
 
     const space = spaces.find((item) => item.id === state.selectedSpaceId);
-    const hasExtensions = (space?.devices ?? []).some((device) => device.type === 'hub_extension');
+    const hasExtensions = (space?.devices ?? []).some((device) => isHubExtensionType(device.type));
     bindingFields?.querySelectorAll('input, select').forEach((input) => {
       input.disabled = isKey || isReader || isExtension;
     });
