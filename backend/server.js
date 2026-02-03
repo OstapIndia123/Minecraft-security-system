@@ -2465,9 +2465,16 @@ app.post('/api/hub/events', requireWebhookToken, async (req, res) => {
   );
 
   if (isExtensionEvent) {
-    const isOnline = await checkHubExtensionLink(spaceId, extensionDevice);
-    if (!isOnline) {
-      return res.json({ ok: true, extensionOffline: true });
+    const shouldMarkExtensionOffline = type === 'TEST_FAIL' || type === 'HUB_OFFLINE';
+    const shouldMarkExtensionOnline = type === 'TEST_OK'
+      || type === 'HUB_PING'
+      || type === 'PORT_IN'
+      || type === 'HUB_ONLINE';
+
+    if (shouldMarkExtensionOffline) {
+      await updateExtensionStatus(spaceId, extensionDevice, false);
+    } else if (shouldMarkExtensionOnline) {
+      await updateExtensionStatus(spaceId, extensionDevice, true);
     }
   }
 
