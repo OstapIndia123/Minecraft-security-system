@@ -2432,6 +2432,17 @@ app.post('/api/hub/events', requireWebhookToken, async (req, res) => {
       return res.status(202).json({ ok: true, ignored: true });
     }
     extensionDevice = extensionResult.rows[0];
+    const extensionSide = normalizeSideValue(extensionDevice?.config?.extensionSide);
+    const mirrorExtensionSide = extensionSide ? mirrorOutputSide(extensionSide) : null;
+    const eventSide = normalizeSideValue(payload?.side);
+    const shouldIgnoreSide = Boolean(
+      extensionSide
+      && eventSide
+      && (eventSide === extensionSide || eventSide === mirrorExtensionSide),
+    );
+    if (shouldIgnoreSide) {
+      return res.status(202).json({ ok: true, ignored: true });
+    }
     spaceId = extensionDevice.space_id;
   } else {
     const normalizedHubId = normalizeHubId(hubId);
@@ -2454,17 +2465,6 @@ app.post('/api/hub/events', requireWebhookToken, async (req, res) => {
   );
 
   if (isExtensionEvent) {
-    const extensionSide = normalizeSideValue(extensionDevice?.config?.extensionSide);
-    const eventSide = normalizeSideValue(payload?.side);
-    const mirrorExtensionSide = extensionSide ? mirrorOutputSide(extensionSide) : null;
-    const shouldIgnoreSide = Boolean(
-      extensionSide
-      && eventSide
-      && (eventSide === extensionSide || (type === 'SET_OUTPUT' && eventSide === mirrorExtensionSide)),
-    );
-    if (shouldIgnoreSide) {
-      return res.json({ ok: true, ignored: true });
-    }
     const isOnline = await checkHubExtensionLink(spaceId, extensionDevice);
     if (!isOnline) {
       return res.json({ ok: true, extensionOffline: true });
