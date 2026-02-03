@@ -333,12 +333,27 @@ const mapSpace = (row) => ({
   photos: row.photos,
 });
 
+const HUB_EXTENSION_TYPES = [
+  'hub_extension',
+  'hub-extension',
+  'hub extension',
+  'hubextension',
+  'extension',
+];
+
+const normalizeDeviceType = (type) => {
+  if (typeof type !== 'string') return type;
+  const normalized = type.trim().toLowerCase();
+  if (HUB_EXTENSION_TYPES.includes(normalized)) return 'hub_extension';
+  return normalized;
+};
+
 const mapDevice = (row) => ({
   id: row.id,
   name: row.name,
   room: row.room,
   status: row.status,
-  type: row.type,
+  type: normalizeDeviceType(row.type),
   side: row.side,
   config: row.config,
 });
@@ -1784,15 +1799,15 @@ app.post('/api/spaces/:id/devices', requireAuth, requireInstaller, async (req, r
       return res.status(400).json({ error: 'field_too_long' });
     }
     const existingExtension = await query(
-      "SELECT id FROM devices WHERE type = $1 AND config->>'extensionId' = $2 LIMIT 1",
-      ['hub_extension', extensionId],
+      "SELECT id FROM devices WHERE LOWER(type) = ANY($1) AND config->>'extensionId' = $2 LIMIT 1",
+      [HUB_EXTENSION_TYPES, extensionId],
     );
     if (existingExtension.rows.length) {
       return res.status(409).json({ error: 'extension_id_taken' });
     }
     const countResult = await query(
-      'SELECT COUNT(*)::int AS count FROM devices WHERE space_id = $1 AND type = $2',
-      [req.params.id, 'hub_extension'],
+      'SELECT COUNT(*)::int AS count FROM devices WHERE space_id = $1 AND LOWER(type) = ANY($2)',
+      [req.params.id, HUB_EXTENSION_TYPES],
     );
     if ((countResult.rows[0]?.count ?? 0) >= 5) {
       return res.status(400).json({ error: 'extension_limit' });
@@ -1807,8 +1822,8 @@ app.post('/api/spaces/:id/devices', requireAuth, requireInstaller, async (req, r
         return res.status(400).json({ error: 'invalid_extension_id' });
       }
       const extensionCheck = await query(
-        "SELECT id FROM devices WHERE space_id = $1 AND type = $2 AND config->>'extensionId' = $3",
-        [req.params.id, 'hub_extension', extensionId],
+        "SELECT id FROM devices WHERE space_id = $1 AND LOWER(type) = ANY($2) AND config->>'extensionId' = $3",
+        [req.params.id, HUB_EXTENSION_TYPES, extensionId],
       );
       if (!extensionCheck.rows.length) {
         return res.status(404).json({ error: 'extension_not_found' });
@@ -1940,6 +1955,7 @@ app.patch('/api/spaces/:id/devices/:deviceId', requireAuth, requireInstaller, as
   if (!existing.rows.length) return res.status(404).json({ error: 'device_not_found' });
 
   const device = existing.rows[0];
+  const deviceType = normalizeDeviceType(device.type);
   const name = req.body?.name ?? device.name;
   const room = req.body?.room ?? device.room;
   const side = normalizeSideValue(req.body?.side ?? device.side) ?? (req.body?.side ?? device.side);
@@ -1953,10 +1969,10 @@ app.patch('/api/spaces/:id/devices/:deviceId', requireAuth, requireInstaller, as
     || isOverMaxLength(side, MAX_DEVICE_ID_LENGTH)) {
     return res.status(400).json({ error: 'field_too_long' });
   }
-  const config = deviceConfigFromPayload({ ...req.body, type: device.type });
+  const config = deviceConfigFromPayload({ ...req.body, type: deviceType });
   const mergedConfig = { ...device.config, ...config };
 
-  if (device.type === 'hub_extension') {
+  if (deviceType === 'hub_extension') {
     const extensionId = normalizeHubExtensionId(mergedConfig.extensionId);
     const hubSide = normalizeSideValue(mergedConfig.hubSide);
     const extensionSide = normalizeSideValue(mergedConfig.extensionSide);
@@ -1964,8 +1980,8 @@ app.patch('/api/spaces/:id/devices/:deviceId', requireAuth, requireInstaller, as
       return res.status(400).json({ error: 'invalid_extension_id' });
     }
     const existingExtension = await query(
-      "SELECT id FROM devices WHERE id <> $1 AND type = $2 AND config->>'extensionId' = $3 LIMIT 1",
-      [deviceId, 'hub_extension', extensionId],
+      "SELECT id FROM devices WHERE id <> $1 AND LOWER(type) = ANY($2) AND config->>'extensionId' = $3 LIMIT 1",
+      [deviceId, HUB_EXTENSION_TYPES, extensionId],
     );
     if (existingExtension.rows.length) {
       return res.status(409).json({ error: 'extension_id_taken' });
@@ -1975,7 +1991,7 @@ app.patch('/api/spaces/:id/devices/:deviceId', requireAuth, requireInstaller, as
     mergedConfig.extensionSide = extensionSide;
   }
 
-  if (device.type !== 'reader' && device.type !== 'key' && device.type !== 'hub_extension') {
+  if (deviceType !== 'reader' && deviceType !== 'key' && deviceType !== 'hub_extension') {
     const bindTarget = mergedConfig.bindTarget === 'hub_extension' ? 'hub_extension' : 'hub';
     if (bindTarget === 'hub_extension') {
       const extensionId = normalizeHubExtensionId(mergedConfig.extensionId);
@@ -1983,8 +1999,8 @@ app.patch('/api/spaces/:id/devices/:deviceId', requireAuth, requireInstaller, as
         return res.status(400).json({ error: 'invalid_extension_id' });
       }
       const extensionCheck = await query(
-        "SELECT id FROM devices WHERE space_id = $1 AND type = $2 AND config->>'extensionId' = $3",
-        [id, 'hub_extension', extensionId],
+        "SELECT id FROM devices WHERE space_id = $1 AND LOWER(type) = ANY($2) AND config->>'extensionId' = $3",
+        [id, HUB_EXTENSION_TYPES, extensionId],
       );
       if (!extensionCheck.rows.length) {
         return res.status(404).json({ error: 'extension_not_found' });
@@ -2002,7 +2018,7 @@ app.patch('/api/spaces/:id/devices/:deviceId', requireAuth, requireInstaller, as
     [
       normalizedName,
       normalizedRoom,
-      device.type === 'hub_extension' ? null : side,
+      deviceType === 'hub_extension' ? null : side,
       JSON.stringify(mergedConfig),
       deviceId,
       id,
@@ -2020,10 +2036,10 @@ app.post('/api/spaces/:id/devices/:deviceId/refresh', requireAuth, requireInstal
     return;
   }
   const { id, deviceId } = req.params;
-  const existing = await query('SELECT * FROM devices WHERE id = $1 AND space_id = $2 AND type = $3', [
+  const existing = await query('SELECT * FROM devices WHERE id = $1 AND space_id = $2 AND LOWER(type) = ANY($3)', [
     deviceId,
     id,
-    'hub_extension',
+    HUB_EXTENSION_TYPES,
   ]);
   if (!existing.rows.length) return res.status(404).json({ error: 'device_not_found' });
   const isOnline = await checkHubExtensionLink(id, existing.rows[0]);
@@ -2425,8 +2441,8 @@ app.post('/api/hub/events', requireWebhookToken, async (req, res) => {
       return res.status(202).json({ ok: true, ignored: true });
     }
     const extensionResult = await query(
-      "SELECT * FROM devices WHERE type = $1 AND config->>'extensionId' = $2 LIMIT 1",
-      ['hub_extension', normalizedExtensionId],
+      "SELECT * FROM devices WHERE LOWER(type) = ANY($1) AND config->>'extensionId' = $2 LIMIT 1",
+      [HUB_EXTENSION_TYPES, normalizedExtensionId],
     );
     if (!extensionResult.rows.length) {
       return res.status(202).json({ ok: true, ignored: true });
