@@ -2447,14 +2447,6 @@ const checkHubExtensionLink = async (spaceId, extensionDevice, eventTimestamp = 
   if (cached?.promise) {
     return cached.promise;
   }
-  if (cached && now - cached.lastCheckAt < EXTENSION_TEST_WINDOW_MS && cached.lastResult !== undefined) {
-    console.log('[HUB_EXT_TEST]', 'cached', {
-      extensionId: debugExtensionId,
-      result: cached.lastResult,
-      ageMs: now - cached.lastCheckAt,
-    });
-    return cached.lastResult;
-  }
 
   const promise = (async () => {
     if (!extensionId || !hubSide || !extensionSide) {
@@ -2475,7 +2467,6 @@ const checkHubExtensionLink = async (spaceId, extensionDevice, eventTimestamp = 
       15,
       EXTENSION_TEST_WINDOW_MS,
     );
-    await pulseHubOutput(extensionId, extensionSide, 15).catch(() => null);
     const highAt = await waitForHigh;
     if (!highAt) {
       await updateExtensionStatus(spaceId, extensionDevice, false);
@@ -2498,6 +2489,7 @@ const checkHubExtensionLink = async (spaceId, extensionDevice, eventTimestamp = 
       extensionSide,
       highAt,
       lowAt,
+      lastSeen,
       ok,
       durationMs: Date.now() - checkStartedAt,
     });
@@ -2567,6 +2559,8 @@ app.post('/api/spaces/:id/disarm', requireAuth, async (req, res) => {
 
 app.post('/api/hub/events', requireWebhookToken, async (req, res) => {
   const { type, hubId, ts, payload, readerId } = req.body ?? {};
+  const parsedTimestamp = Number(ts);
+  const eventTimestamp = Number.isFinite(parsedTimestamp) ? parsedTimestamp : null;
   if (!type) {
     return res.status(400).json({ error: 'invalid_payload' });
   }
@@ -2621,10 +2615,6 @@ app.post('/api/hub/events', requireWebhookToken, async (req, res) => {
       return res.status(202).json({ ok: true, ignored: true });
     }
     spaceId = extensionDevice.space_id;
-    const isOnline = await checkHubExtensionLink(spaceId, extensionDevice);
-    if (!isOnline) {
-      return res.json({ ok: true, extensionOffline: true });
-    }
   } else {
     const normalizedHubId = normalizeHubId(hubId);
     const spaceResult = await query('SELECT space_id FROM hubs WHERE id = $1', [normalizedHubId]);
@@ -2637,6 +2627,9 @@ app.post('/api/hub/events', requireWebhookToken, async (req, res) => {
     const normalizedSide = normalizeSideValue(payload?.side);
     const inputLevel = Number(payload?.level);
     if (normalizedSide && !Number.isNaN(inputLevel)) {
+      const eventTime = Date.now();
+      const key = buildExtensionPortKey(spaceId, normalizedSide, inputLevel);
+      lastHubPortIn.set(key, eventTime);
       const extensionHubSideMap = await getExtensionHubSideCache(spaceId);
       const extensionKeys = extensionHubSideMap.get(normalizedSide);
       if (extensionKeys?.size) {
