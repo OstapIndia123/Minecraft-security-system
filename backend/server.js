@@ -372,6 +372,7 @@ const mapLog = (row) => {
 };
 
 const HUB_EXTENSION_PREFIX = 'HUB_EXT-';
+const EXTENSION_TEST_WINDOW_MS = 1500;
 const normalizeHubId = (hubId) => (hubId?.startsWith('HUB-') ? hubId.replace('HUB-', '') : hubId);
 const normalizeHubExtensionId = (hubId) => {
   const normalized = normalizeText(hubId);
@@ -496,6 +497,7 @@ const ensureSpaceDisarmed = async (spaceId, res) => {
 };
 
 const hubOutputState = new Map();
+const extensionLinkChecks = new Map();
 
 const sendHubOutput = async (hubId, side, level, { force = false } = {}) => {
   if (!hubId) return;
@@ -520,6 +522,28 @@ const pulseHubOutput = async (hubId, side, level, durationMs = MIN_INTERVAL_MS) 
   setTimeout(() => {
     sendHubOutput(hubId, side, 0, { force: true }).catch(() => null);
   }, resolvedDuration);
+};
+
+const getExtensionDeviceById = async (spaceId, extensionId) => {
+  if (!spaceId || !extensionId) return null;
+  const normalizedExtensionId = normalizeHubExtensionId(extensionId);
+  if (!normalizedExtensionId) return null;
+  const result = await query(
+    "SELECT * FROM devices WHERE space_id = $1 AND LOWER(type) = ANY($2) AND config->>'extensionId' = $3 LIMIT 1",
+    [spaceId, HUB_EXTENSION_TYPES, normalizedExtensionId],
+  );
+  return result.rows[0] ?? null;
+};
+
+const sendHubOutputChecked = async (spaceId, hubId, side, level, { force = false } = {}) => {
+  if (!hubId) return;
+  if (hubId.startsWith(HUB_EXTENSION_PREFIX)) {
+    const extensionDevice = await getExtensionDeviceById(spaceId, hubId);
+    if (!extensionDevice) return;
+    const ok = await checkHubExtensionLink(spaceId, extensionDevice);
+    if (!ok) return;
+  }
+  await sendHubOutput(hubId, side, level, { force });
 };
 
 const sendReaderOutput = async (readerId, level) => {
@@ -615,7 +639,7 @@ const stopSirenTimers = async (spaceId, hubId) => {
     sirens.rows.map((siren) => {
       const targetId = resolveDeviceTargetId(siren.config, hubId);
       if (!targetId) return null;
-      return sendHubOutput(targetId, siren.side, 0).catch(() => null);
+      return sendHubOutputChecked(spaceId, targetId, siren.side, 0).catch(() => null);
     }),
   );
 };
@@ -641,12 +665,12 @@ const startBlinkingLights = async (spaceId, hubId, reason) => {
   if (!targets.length) return;
   let on = true;
   targets.forEach((output) => {
-    sendHubOutput(output.targetId, output.side, output.level).catch(() => null);
+    sendHubOutputChecked(spaceId, output.targetId, output.side, output.level).catch(() => null);
   });
   const timer = setInterval(() => {
     on = !on;
     targets.forEach((output) => {
-      sendHubOutput(output.targetId, output.side, on ? output.level : 0).catch(() => null);
+      sendHubOutputChecked(spaceId, output.targetId, output.side, on ? output.level : 0).catch(() => null);
     });
   }, 500);
   lightBlinkTimers.set(spaceId, { timer, reasons: new Set([reason]) });
@@ -721,7 +745,7 @@ const startSirenTimers = async (spaceId, hubId) => {
       let on = false;
       const timer = setInterval(() => {
         on = !on;
-        sendHubOutput(targetId, siren.side, on ? level : 0).catch(() => null);
+        sendHubOutputChecked(spaceId, targetId, siren.side, on ? level : 0).catch(() => null);
       }, Math.max(intervalMs, MIN_INTERVAL_MS));
       timers.push(timer);
     }
@@ -2263,7 +2287,7 @@ async function applyLightOutputs(spaceId, hubId, status) {
       const level = Number(output.config?.level ?? 15);
       const targetId = resolveDeviceTargetId(output.config, hubId);
       if (!targetId) return null;
-      return sendHubOutput(targetId, output.side, status === 'armed' ? level : 0).catch(() => null);
+      return sendHubOutputChecked(spaceId, targetId, output.side, status === 'armed' ? level : 0).catch(() => null);
     }),
   );
 }
@@ -2402,14 +2426,47 @@ const checkHubExtensionLink = async (spaceId, extensionDevice) => {
   const extensionId = normalizeHubExtensionId(config.extensionId);
   const hubSide = normalizeSideValue(config.hubSide);
   const extensionSide = normalizeSideValue(config.extensionSide);
-  if (!extensionId || !hubSide || !extensionSide) {
-    await updateExtensionStatus(spaceId, extensionDevice, false);
-    return false;
+  const cacheKey = extensionDevice.id ?? extensionId;
+  const now = Date.now();
+  const cached = extensionLinkChecks.get(cacheKey);
+
+  if (cached?.promise) {
+    return cached.promise;
   }
-  await pulseHubOutput(extensionId, extensionSide, 15).catch(() => null);
-  const ok = await waitForHubPort(spaceId, hubSide, 15, 1500);
-  await updateExtensionStatus(spaceId, extensionDevice, ok);
-  return ok;
+  if (cached && now - cached.lastCheckAt < EXTENSION_TEST_WINDOW_MS && cached.lastResult !== undefined) {
+    return cached.lastResult;
+  }
+
+  const promise = (async () => {
+    if (!extensionId || !hubSide || !extensionSide) {
+      await updateExtensionStatus(spaceId, extensionDevice, false);
+      extensionLinkChecks.set(cacheKey, { lastCheckAt: Date.now(), lastResult: false });
+      return false;
+    }
+    await pulseHubOutput(extensionId, extensionSide, 15).catch(() => null);
+    const ok = await waitForHubPort(spaceId, hubSide, 15, EXTENSION_TEST_WINDOW_MS);
+    await updateExtensionStatus(spaceId, extensionDevice, ok);
+    extensionLinkChecks.set(cacheKey, { lastCheckAt: Date.now(), lastResult: ok });
+    return ok;
+  })();
+
+  extensionLinkChecks.set(cacheKey, { lastCheckAt: now, promise });
+  return promise;
+};
+
+const isHubExtensionTestPortEvent = async (spaceId, payload) => {
+  const eventSide = normalizeSideValue(payload?.side);
+  const level = Number(payload?.level);
+  if (!eventSide || Number.isNaN(level)) return false;
+  if (level !== 0 && level !== 15) return false;
+  const result = await query(
+    `SELECT config->>'hubSide' AS hub_side
+     FROM devices
+     WHERE space_id = $1 AND LOWER(type) = ANY($2)`,
+    [spaceId, HUB_EXTENSION_TYPES],
+  );
+  if (!result.rows.length) return false;
+  return result.rows.some((row) => normalizeSideValue(row.hub_side) === eventSide);
 };
 
 app.post('/api/spaces/:id/arm', requireAuth, async (req, res) => {
@@ -2454,6 +2511,11 @@ app.post('/api/hub/events', requireWebhookToken, async (req, res) => {
   }
 
   const isExtensionEvent = hubId.startsWith(HUB_EXTENSION_PREFIX);
+  const shouldIgnoreExtensionEvent = isExtensionEvent
+    && (type === 'TEST_OK' || type === 'TEST_FAIL' || type === 'HUB_PING');
+  if (shouldIgnoreExtensionEvent) {
+    return res.status(202).json({ ok: true, ignored: true });
+  }
   let spaceId;
   let extensionDevice;
   let normalizedExtensionId;
@@ -2474,15 +2536,25 @@ app.post('/api/hub/events', requireWebhookToken, async (req, res) => {
     const extensionSide = normalizeSideValue(extensionDevice?.config?.extensionSide);
     const mirrorExtensionSide = extensionSide ? mirrorOutputSide(extensionSide) : null;
     const eventSide = normalizeSideValue(payload?.side);
-    const shouldIgnoreSide = Boolean(
-      extensionSide
+    const isTestSetOutput = Boolean(
+      type === 'SET_OUTPUT'
       && eventSide
+      && extensionSide
       && (eventSide === extensionSide || eventSide === mirrorExtensionSide),
     );
-    if (shouldIgnoreSide) {
+    const isTestSideEvent = Boolean(
+      eventSide
+      && extensionSide
+      && eventSide === extensionSide,
+    );
+    if (isTestSetOutput || isTestSideEvent) {
       return res.status(202).json({ ok: true, ignored: true });
     }
     spaceId = extensionDevice.space_id;
+    const isOnline = await checkHubExtensionLink(spaceId, extensionDevice);
+    if (!isOnline) {
+      return res.json({ ok: true, extensionOffline: true });
+    }
   } else {
     const normalizedHubId = normalizeHubId(hubId);
     const spaceResult = await query('SELECT space_id FROM hubs WHERE id = $1', [normalizedHubId]);
@@ -2490,6 +2562,9 @@ app.post('/api/hub/events', requireWebhookToken, async (req, res) => {
       return res.status(202).json({ ok: true, ignored: true });
     }
     spaceId = spaceResult.rows[0].space_id;
+  }
+  if (!isExtensionEvent && type === 'PORT_IN' && await isHubExtensionTestPortEvent(spaceId, payload)) {
+    return res.status(202).json({ ok: true, ignored: true });
   }
   const time = ts
     ? new Date(ts).toLocaleTimeString('ru-RU', { hour: '2-digit', minute: '2-digit', second: '2-digit' })
@@ -2502,20 +2577,6 @@ app.post('/api/hub/events', requireWebhookToken, async (req, res) => {
     'INSERT INTO logs (space_id, time, text, who, type) VALUES ($1,$2,$3,$4,$5)',
     [spaceId, time, hubLogText, hubId, 'hub_raw'],
   );
-
-  if (isExtensionEvent) {
-    const shouldMarkExtensionOffline = type === 'TEST_FAIL' || type === 'HUB_OFFLINE';
-    const shouldMarkExtensionOnline = type === 'TEST_OK'
-      || type === 'HUB_PING'
-      || type === 'PORT_IN'
-      || type === 'HUB_ONLINE';
-
-    if (shouldMarkExtensionOffline) {
-      await updateExtensionStatus(spaceId, extensionDevice, false);
-    } else if (shouldMarkExtensionOnline) {
-      await updateExtensionStatus(spaceId, extensionDevice, true);
-    }
-  }
 
   if (!isExtensionEvent) {
     const hubStatus = await query('SELECT hub_online FROM spaces WHERE id = $1', [spaceId]);
