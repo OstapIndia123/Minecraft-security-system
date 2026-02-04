@@ -2629,6 +2629,8 @@ app.post('/api/spaces/:id/disarm', requireAuth, async (req, res) => {
 
 app.post('/api/hub/events', requireWebhookToken, async (req, res) => {
   const { type, hubId, ts, payload, readerId } = req.body ?? {};
+  const parsedTimestamp = Number(ts);
+  const eventTimestamp = Number.isFinite(parsedTimestamp) ? parsedTimestamp : null;
   if (!type) {
     return res.status(400).json({ error: 'invalid_payload' });
   }
@@ -2683,7 +2685,6 @@ app.post('/api/hub/events', requireWebhookToken, async (req, res) => {
       return res.status(202).json({ ok: true, ignored: true });
     }
     spaceId = extensionDevice.space_id;
-    const eventTimestamp = typeof ts === 'number' ? ts : null;
     const isOnline = await checkHubExtensionLink(spaceId, extensionDevice, eventTimestamp);
     if (!isOnline) {
       return res.json({ ok: true, extensionOffline: true });
@@ -2703,8 +2704,12 @@ app.post('/api/hub/events', requireWebhookToken, async (req, res) => {
       const extensionHubSideMap = await getExtensionHubSideCache(spaceId);
       const extensionKeys = extensionHubSideMap.get(normalizedSide);
       if (extensionKeys?.size) {
-        const eventTimestamp = typeof ts === 'number' ? ts : Date.now();
-        const resolved = resolveHubPortWaiter(spaceId, normalizedSide, inputLevel, eventTimestamp);
+        const resolved = resolveHubPortWaiter(
+          spaceId,
+          normalizedSide,
+          inputLevel,
+          eventTimestamp ?? Date.now(),
+        );
         console.log('[HUB_EXT_TEST]', 'hub-port-in', {
           spaceId,
           hubSide: normalizedSide,
