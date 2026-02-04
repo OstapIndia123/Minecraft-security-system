@@ -2563,8 +2563,15 @@ app.post('/api/hub/events', requireWebhookToken, async (req, res) => {
     }
     spaceId = spaceResult.rows[0].space_id;
   }
-  if (!isExtensionEvent && type === 'PORT_IN' && await isHubExtensionTestPortEvent(spaceId, payload)) {
-    return res.status(202).json({ ok: true, ignored: true });
+  if (!isExtensionEvent && type === 'PORT_IN') {
+    const normalizedSide = normalizeSideValue(payload?.side);
+    const inputLevel = Number(payload?.level);
+    if (normalizedSide && !Number.isNaN(inputLevel)) {
+      resolveHubPortWaiter(spaceId, normalizedSide, inputLevel);
+    }
+    if (await isHubExtensionTestPortEvent(spaceId, payload)) {
+      return res.status(202).json({ ok: true, ignored: true });
+    }
   }
   const time = ts
     ? new Date(ts).toLocaleTimeString('ru-RU', { hour: '2-digit', minute: '2-digit', second: '2-digit' })
@@ -2609,7 +2616,6 @@ app.post('/api/hub/events', requireWebhookToken, async (req, res) => {
     }
 
     if (!isExtensionEvent) {
-      resolveHubPortWaiter(spaceId, normalizedSide, inputLevel);
       const sessions = await query(
         `SELECT id, input_side, input_level, action, key_name, reader_name
          FROM reader_sessions
