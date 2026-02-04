@@ -2506,6 +2506,7 @@ const checkHubExtensionLink = async (spaceId, extensionDevice, eventTimestamp = 
       });
       return false;
     }
+    await getExtensionHubSideCache(spaceId);
     const checkStartedAt = baseTimestamp;
     const waitForHigh = waitForHubPort(
       spaceId,
