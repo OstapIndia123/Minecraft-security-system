@@ -577,6 +577,7 @@ const lastKeyScans = new Map();
 const keyScanWaiters = new Map();
 const extensionPortWaiters = new Map();
 const extensionPortLastEvents = new Map();
+const extensionHubSideCache = new Map();
 const EXTENSION_TEST_GRACE_MS = 5000;
 
 const buildExtensionWaiterKey = (spaceId, extensionKey, side, level) => (
@@ -1920,6 +1921,9 @@ app.post('/api/spaces/:id/devices', requireAuth, requireInstaller, async (req, r
       JSON.stringify(deviceConfigFromPayload(req.body)),
     ],
   );
+  if (type === 'hub_extension') {
+    await refreshExtensionHubSideCache(req.params.id);
+  }
 
   if (type === 'output-light') {
     const spaceRow = await query('SELECT status, hub_id FROM spaces WHERE id = $1', [req.params.id]);
@@ -1975,6 +1979,7 @@ app.delete('/api/spaces/:id', requireAuth, requireInstaller, async (req, res) =>
   await stopSirenTimers(req.params.id);
   await query('DELETE FROM hubs WHERE space_id = $1', [req.params.id]);
   await query('DELETE FROM spaces WHERE id = $1', [req.params.id]);
+  extensionHubSideCache.delete(req.params.id);
   res.json({ ok: true });
 });
 
@@ -1991,6 +1996,9 @@ app.delete('/api/spaces/:id/devices/:deviceId', requireAuth, requireInstaller, a
 
   const deviceType = existing.rows[0].type;
   await query('DELETE FROM devices WHERE id = $1 AND space_id = $2', [deviceId, id]);
+  if (deviceType === 'hub_extension') {
+    await refreshExtensionHubSideCache(id);
+  }
   if (deviceType === 'zone') {
     await evaluateZoneIssues(id);
   }
@@ -2099,6 +2107,9 @@ app.patch('/api/spaces/:id/devices/:deviceId', requireAuth, requireInstaller, as
       id,
     ],
   );
+  if (deviceType === 'hub_extension') {
+    await refreshExtensionHubSideCache(id);
+  }
 
   await appendLog(id, `Обновлено устройство: ${deviceId}`, 'UI', 'system');
   res.json({ ok: true });
@@ -2537,15 +2548,35 @@ const checkHubExtensionLink = async (spaceId, extensionDevice, eventTimestamp = 
   return promise;
 };
 
-const getHubExtensionTestDevices = async (spaceId) => {
-  if (!spaceId) return [];
+const refreshExtensionHubSideCache = async (spaceId) => {
+  if (!spaceId) return new Map();
   const result = await query(
     `SELECT id, config->>'extensionId' AS extension_id, config->>'hubSide' AS hub_side
      FROM devices
      WHERE space_id = $1 AND LOWER(type) = ANY($2)`,
     [spaceId, HUB_EXTENSION_TYPES],
   );
-  return result.rows;
+  const bySide = new Map();
+  result.rows.forEach((row) => {
+    const hubSide = normalizeSideValue(row.hub_side);
+    const extensionKey = row.id ?? normalizeHubExtensionId(row.extension_id);
+    if (!hubSide || !extensionKey) return;
+    const existing = bySide.get(hubSide);
+    if (existing) {
+      existing.add(extensionKey);
+    } else {
+      bySide.set(hubSide, new Set([extensionKey]));
+    }
+  });
+  extensionHubSideCache.set(spaceId, bySide);
+  return bySide;
+};
+
+const getExtensionHubSideCache = async (spaceId) => {
+  if (!spaceId) return new Map();
+  const cached = extensionHubSideCache.get(spaceId);
+  if (cached) return cached;
+  return refreshExtensionHubSideCache(spaceId);
 };
 
 app.post('/api/spaces/:id/arm', requireAuth, async (req, res) => {
@@ -2646,38 +2677,28 @@ app.post('/api/hub/events', requireWebhookToken, async (req, res) => {
     const normalizedSide = normalizeSideValue(payload?.side);
     const inputLevel = Number(payload?.level);
     if (normalizedSide && !Number.isNaN(inputLevel)) {
-      const extensionTestDevices = await getHubExtensionTestDevices(spaceId);
-      if (extensionTestDevices.length) {
-        extensionTestDevices.forEach((device) => {
-          const hubSide = normalizeSideValue(device.hub_side);
-          if (hubSide && hubSide === normalizedSide) {
-            const extensionKey = device.id ?? normalizeHubExtensionId(device.extension_id);
-            if (extensionKey) {
-              const eventTimestamp = Date.now();
-              const resolved = resolveHubPortWaiter(
-                spaceId,
-                extensionKey,
-                normalizedSide,
-                inputLevel,
-                eventTimestamp,
-              );
-              console.log('[HUB_EXT_TEST]', 'hub-port-in', {
-                spaceId,
-                extensionKey,
-                hubSide,
-                level: inputLevel,
-                resolved,
-              });
-            }
-          }
+      const extensionHubSideMap = await getExtensionHubSideCache(spaceId);
+      const extensionKeys = extensionHubSideMap.get(normalizedSide);
+      if (extensionKeys?.size) {
+        extensionKeys.forEach((extensionKey) => {
+          const eventTimestamp = Date.now();
+          const resolved = resolveHubPortWaiter(
+            spaceId,
+            extensionKey,
+            normalizedSide,
+            inputLevel,
+            eventTimestamp,
+          );
+          console.log('[HUB_EXT_TEST]', 'hub-port-in', {
+            spaceId,
+            extensionKey,
+            hubSide: normalizedSide,
+            level: inputLevel,
+            resolved,
+          });
         });
         if (inputLevel === 0 || inputLevel === 15) {
-          const isTestPortEvent = extensionTestDevices.some(
-            (device) => normalizeSideValue(device.hub_side) === normalizedSide,
-          );
-          if (isTestPortEvent) {
-            return res.status(202).json({ ok: true, ignored: true });
-          }
+          return res.status(202).json({ ok: true, ignored: true });
         }
       }
     }
