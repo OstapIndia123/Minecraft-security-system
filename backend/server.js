@@ -625,6 +625,21 @@ const waitForHubPort = (
     },
   });
   extensionPortWaiters.set(key, waiters);
+  const latestEventTime = extensionPortLastEvents.get(key);
+  if (
+    latestEventTime
+    && (windowStartMs === null || latestEventTime >= windowStartMs)
+    && (windowEndMs === null || latestEventTime <= windowEndMs)
+  ) {
+    const updated = (extensionPortWaiters.get(key) ?? []).filter((entry) => entry.timeout !== timeout);
+    if (updated.length) {
+      extensionPortWaiters.set(key, updated);
+    } else {
+      extensionPortWaiters.delete(key);
+    }
+    clearTimeout(timeout);
+    resolve(latestEventTime);
+  }
 });
 
 const resolveHubPortWaiter = (spaceId, side, level, eventTime = Date.now()) => {
