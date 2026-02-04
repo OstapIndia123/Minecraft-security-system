@@ -2583,9 +2583,6 @@ app.post('/api/hub/events', requireWebhookToken, async (req, res) => {
   if (!type) {
     return res.status(400).json({ error: 'invalid_payload' });
   }
-  if (typeof ts === 'number') {
-    lastHubEventSkewMs = Date.now() - ts;
-  }
 
   if (type === 'READER_SCAN') {
     const result = await handleReaderScan({ readerId, payload, ts });
@@ -2597,6 +2594,9 @@ app.post('/api/hub/events', requireWebhookToken, async (req, res) => {
   }
 
   const isExtensionEvent = hubId.startsWith(HUB_EXTENSION_PREFIX);
+  if (!isExtensionEvent && typeof ts === 'number') {
+    lastHubEventSkewMs = Date.now() - ts;
+  }
   const shouldIgnoreExtensionEvent = isExtensionEvent
     && (type === 'TEST_OK' || type === 'TEST_FAIL' || type === 'HUB_PING');
   if (shouldIgnoreExtensionEvent) {
@@ -2637,7 +2637,7 @@ app.post('/api/hub/events', requireWebhookToken, async (req, res) => {
       return res.status(202).json({ ok: true, ignored: true });
     }
     spaceId = extensionDevice.space_id;
-    const isOnline = await checkHubExtensionLink(spaceId, extensionDevice, ts);
+    const isOnline = await checkHubExtensionLink(spaceId, extensionDevice);
     if (!isOnline) {
       return res.json({ ok: true, extensionOffline: true });
     }
