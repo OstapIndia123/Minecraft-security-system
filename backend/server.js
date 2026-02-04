@@ -575,92 +575,39 @@ const zoneAlarmState = new Map();
 const lightBlinkTimers = new Map();
 const lastKeyScans = new Map();
 const keyScanWaiters = new Map();
+const extensionLastHubPortIn = new Map();
 const extensionHubSideCache = new Map();
-const EXTENSION_TEST_GRACE_MS = 5000;
-const EXTENSION_LAST_SEEN_WINDOW_MS = EXTENSION_TEST_WINDOW_MS + EXTENSION_TEST_GRACE_MS;
-const lastHubPortIn = new Map();
+const EXTENSION_TEST_POLL_INTERVAL_MS = 50;
 
-const buildExtensionPortKey = (spaceId, side, level) => (
-  `${spaceId}:${side}:${level}`
-);
+const buildExtensionPortKey = (spaceId, side, level) => `${spaceId}:${side}:${level}`;
 
-const waitForHubPort = (
+const waitForHubPortSeen = (
   spaceId,
   side,
   level,
   timeoutMs = 1500,
-  windowStartOverride,
 ) => new Promise((resolve) => {
   if (!spaceId || !side || level === undefined || level === null) {
     resolve(false);
     return;
   }
-  const windowStartMs = typeof windowStartOverride === 'number'
-    ? windowStartOverride
-    : Date.now();
-  const key = buildExtensionWaiterKey(spaceId, side, level);
-  const lastEventTime = extensionPortLastEvents.get(key);
-  const windowEndMs = windowStartMs + timeoutMs;
-  if (
-    lastEventTime
-    && lastEventTime >= windowStartMs
-    && lastEventTime <= windowEndMs
-  ) {
-    resolve(lastEventTime);
-    return;
-  }
-  const waiters = extensionPortWaiters.get(key) ?? [];
-  const timeout = setTimeout(() => {
-    const updated = (extensionPortWaiters.get(key) ?? []).filter((entry) => entry.timeout !== timeout);
-    if (updated.length) {
-      extensionPortWaiters.set(key, updated);
-    } else {
-      extensionPortWaiters.delete(key);
+  const startTime = Date.now();
+  const deadlineMs = startTime + timeoutMs;
+  const key = buildExtensionPortKey(spaceId, side, level);
+  const check = () => {
+    const lastSeen = extensionLastHubPortIn.get(key);
+    if (lastSeen && lastSeen >= startTime) {
+      resolve(lastSeen);
+      return;
     }
-    resolve(false);
-  }, timeoutMs + EXTENSION_TEST_GRACE_MS);
-  waiters.push({
-    timeout,
-    deadlineMs: windowEndMs,
-    resolve: (resolvedAt) => {
-      clearTimeout(timeout);
-      resolve(resolvedAt);
-    },
-  });
-  extensionPortWaiters.set(key, waiters);
-  const latestEventTime = extensionPortLastEvents.get(key);
-  if (
-    latestEventTime
-    && latestEventTime >= windowStartMs
-    && latestEventTime <= windowEndMs
-  ) {
-    const updated = (extensionPortWaiters.get(key) ?? []).filter((entry) => entry.timeout !== timeout);
-    if (updated.length) {
-      extensionPortWaiters.set(key, updated);
-    } else {
-      extensionPortWaiters.delete(key);
+    if (Date.now() >= deadlineMs) {
+      resolve(false);
+      return;
     }
-    clearTimeout(timeout);
-    resolve(latestEventTime);
-  }
+    setTimeout(check, EXTENSION_TEST_POLL_INTERVAL_MS);
+  };
+  check();
 });
-
-const resolveHubPortWaiter = (spaceId, side, level, eventTime = Date.now()) => {
-  const key = buildExtensionWaiterKey(spaceId, side, level);
-  extensionPortLastEvents.set(key, eventTime);
-  const waiters = extensionPortWaiters.get(key);
-  if (!waiters?.length) return false;
-  const nextIndex = waiters.findIndex((waiter) => eventTime <= waiter.deadlineMs);
-  if (nextIndex === -1) return false;
-  const [waiter] = waiters.splice(nextIndex, 1);
-  waiter.resolve(eventTime);
-  if (waiters.length) {
-    extensionPortWaiters.set(key, waiters);
-  } else {
-    extensionPortWaiters.delete(key);
-  }
-  return true;
-};
 const resolveDeviceTargetId = (config, hubId) => {
   if (config?.bindTarget === 'hub_extension') {
     return normalizeHubExtensionId(config.extensionId);
@@ -2514,13 +2461,11 @@ const checkHubExtensionLink = async (spaceId, extensionDevice, eventTimestamp = 
     }
     await getExtensionHubSideCache(spaceId);
     const checkStartedAt = baseTimestamp;
-    await pulseHubOutput(extensionId, extensionSide, 15).catch(() => null);
-    const waitForHigh = waitForHubPort(
+    const waitForHigh = waitForHubPortSeen(
       spaceId,
       hubSide,
       15,
       EXTENSION_TEST_WINDOW_MS,
-      checkStartedAt,
     );
     const highAt = await waitForHigh;
     if (!highAt) {
@@ -2533,8 +2478,8 @@ const checkHubExtensionLink = async (spaceId, extensionDevice, eventTimestamp = 
       });
       return false;
     }
-    const remainingMs = Math.max(0, (checkStartedAt + EXTENSION_TEST_WINDOW_MS) - highAt);
-    const lowAt = await waitForHubPort(spaceId, hubSide, 0, remainingMs);
+    const remainingMs = Math.max(0, EXTENSION_TEST_WINDOW_MS - (Date.now() - checkStartedAt));
+    const lowAt = await waitForHubPortSeen(spaceId, hubSide, 0, remainingMs);
     const ok = Boolean(lowAt);
     await updateExtensionStatus(spaceId, extensionDevice, ok);
     extensionLinkChecks.set(cacheKey, { lastCheckAt: Date.now(), lastResult: ok });
@@ -2688,11 +2633,14 @@ app.post('/api/hub/events', requireWebhookToken, async (req, res) => {
       const extensionHubSideMap = await getExtensionHubSideCache(spaceId);
       const extensionKeys = extensionHubSideMap.get(normalizedSide);
       if (extensionKeys?.size) {
+        const key = buildExtensionPortKey(spaceId, normalizedSide, inputLevel);
+        const lastSeen = Date.now();
+        extensionLastHubPortIn.set(key, lastSeen);
         console.log('[HUB_EXT_TEST]', 'hub-port-in', {
           spaceId,
           hubSide: normalizedSide,
           level: inputLevel,
-          lastSeen: eventTime,
+          lastSeen,
           extensionCount: extensionKeys.size,
         });
         if (inputLevel === 0 || inputLevel === 15) {
