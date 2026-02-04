@@ -2443,8 +2443,9 @@ const checkHubExtensionLink = async (spaceId, extensionDevice) => {
       extensionLinkChecks.set(cacheKey, { lastCheckAt: Date.now(), lastResult: false });
       return false;
     }
+    const waitForTest = waitForHubPort(spaceId, hubSide, 15, EXTENSION_TEST_WINDOW_MS);
     await pulseHubOutput(extensionId, extensionSide, 15).catch(() => null);
-    const ok = await waitForHubPort(spaceId, hubSide, 15, EXTENSION_TEST_WINDOW_MS);
+    const ok = await waitForTest;
     await updateExtensionStatus(spaceId, extensionDevice, ok);
     extensionLinkChecks.set(cacheKey, { lastCheckAt: Date.now(), lastResult: ok });
     return ok;
