@@ -2670,10 +2670,6 @@ app.post('/api/hub/events', requireWebhookToken, async (req, res) => {
       return res.status(202).json({ ok: true, ignored: true });
     }
     spaceId = extensionDevice.space_id;
-    const isOnline = await checkHubExtensionLink(spaceId, extensionDevice, eventTimestamp);
-    if (!isOnline) {
-      return res.json({ ok: true, extensionOffline: true });
-    }
   } else {
     const normalizedHubId = normalizeHubId(hubId);
     const spaceResult = await query('SELECT space_id FROM hubs WHERE id = $1', [normalizedHubId]);
