@@ -1172,6 +1172,29 @@ app.get('/api/spaces/:id', requireAuth, async (req, res) => {
   res.json(space);
 });
 
+app.get('/api/spaces/:id/extensions', requireAuth, async (req, res) => {
+  const appMode = req.header('x-app-mode');
+  const roleFilter = appMode === 'pro' ? 'installer' : 'user';
+  const allowed = await ensureSpaceRole(req.user.id, req.params.id, roleFilter);
+  if (!allowed) {
+    res.status(403).json({ error: 'forbidden' });
+    return;
+  }
+  const result = await query(
+    `SELECT id, name, config
+     FROM devices
+     WHERE space_id = $1 AND LOWER(type) = ANY($2)
+     ORDER BY name`,
+    [req.params.id, HUB_EXTENSION_TYPES],
+  );
+  const extensions = result.rows.map((row) => ({
+    id: row.id,
+    name: row.name,
+    extensionId: row.config?.extensionId ?? row.id,
+  }));
+  res.json({ extensions });
+});
+
 app.get('/api/spaces/:id/last-key-scan', requireAuth, requireInstaller, async (req, res) => {
   const allowed = await ensureSpaceAccess(req.user.id, req.params.id);
   if (!allowed) {

@@ -1130,13 +1130,12 @@ const renderDevices = (space) => {
   });
 };
 
-const getExtensionOptions = (space, selectedId = '') => {
-  const extensions = space?.devices?.filter((device) => isHubExtensionType(device.type)) ?? [];
+const getExtensionOptions = (extensions, selectedId = '') => {
   if (!extensions.length) {
     return '<option value="">Нет модулей расширения</option>';
   }
   const options = extensions.map((device) => {
-    const id = device.config?.extensionId ?? device.id;
+    const id = device.extensionId ?? device.id;
     const safeId = escapeHtml(id);
     const safeName = escapeHtml(device.name);
     const isSelected = id === selectedId ? ' selected' : '';
@@ -1145,14 +1144,23 @@ const getExtensionOptions = (space, selectedId = '') => {
   return `<option value="">Выберите модуль</option>${options}`;
 };
 
-const updateCreateExtensionOptions = () => {
+const updateCreateExtensionOptions = async () => {
   if (!bindExtensionInput) return;
-  const space = spaces.find((item) => item.id === state.selectedSpaceId);
   const selectedId = bindExtensionInput.value;
-  bindExtensionInput.innerHTML = getExtensionOptions(space, selectedId);
-  const hasExtensions = (space?.devices ?? []).some((device) => isHubExtensionType(device.type));
-  bindExtensionInput.disabled = !hasExtensions;
-  if (!hasExtensions) {
+  const spaceId = state.selectedSpaceId;
+  if (!spaceId) return;
+  try {
+    const response = await apiFetch(`/api/spaces/${spaceId}/extensions`);
+    const extensions = response.extensions ?? [];
+    bindExtensionInput.innerHTML = getExtensionOptions(extensions, selectedId);
+    bindExtensionInput.disabled = !extensions.length;
+    if (!extensions.length) {
+      bindExtensionInput.value = '';
+    }
+  } catch (error) {
+    console.error(error);
+    bindExtensionInput.innerHTML = getExtensionOptions([], selectedId);
+    bindExtensionInput.disabled = true;
     bindExtensionInput.value = '';
   }
 };
@@ -1898,7 +1906,7 @@ const renderAll = () => {
   if (!space) return;
   renderSpaceHeader(space);
   renderDevices(space);
-  updateCreateExtensionOptions();
+  updateCreateExtensionOptions().catch(() => null);
   renderObjectInfo(space);
   renderContacts(space);
   renderNotes(space);
@@ -2460,8 +2468,8 @@ if (backToMain) {
 }
 
 if (openDeviceModal && deviceModal) {
-  openDeviceModal.addEventListener('click', () => {
-    updateCreateExtensionOptions();
+  openDeviceModal.addEventListener('click', async () => {
+    await updateCreateExtensionOptions();
     deviceModal.classList.add('modal--open');
   });
 }
