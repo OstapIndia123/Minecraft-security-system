@@ -2451,7 +2451,7 @@ const updateExtensionStatus = async (spaceId, extensionDevice, isOnline) => {
   await appendLog(spaceId, logText, extensionDevice.config?.extensionId ?? extensionDevice.id, 'system');
 };
 
-const checkHubExtensionLink = async (spaceId, extensionDevice) => {
+const checkHubExtensionLink = async (spaceId, extensionDevice, eventTimestamp = null) => {
   const config = extensionDevice.config ?? {};
   const extensionId = normalizeHubExtensionId(config.extensionId);
   const hubSide = normalizeSideValue(config.hubSide);
@@ -2460,6 +2460,7 @@ const checkHubExtensionLink = async (spaceId, extensionDevice) => {
   const cacheKey = extensionDevice.id ?? extensionId;
   const now = Date.now();
   const cached = extensionLinkChecks.get(cacheKey);
+  const baseTimestamp = typeof eventTimestamp === 'number' ? eventTimestamp : now;
 
   console.log('[HUB_EXT_TEST]', 'start', {
     spaceId,
@@ -2467,6 +2468,7 @@ const checkHubExtensionLink = async (spaceId, extensionDevice) => {
     hubSide,
     extensionSide,
     cacheKey,
+    baseTimestamp,
     cached: cached ? { lastCheckAt: cached.lastCheckAt, lastResult: cached.lastResult, hasPromise: Boolean(cached.promise) } : null,
   });
 
@@ -2493,7 +2495,7 @@ const checkHubExtensionLink = async (spaceId, extensionDevice) => {
       });
       return false;
     }
-    const checkStartedAt = Date.now();
+    const checkStartedAt = baseTimestamp;
     const waitForHigh = waitForHubPort(
       spaceId,
       cacheKey,
@@ -2514,7 +2516,7 @@ const checkHubExtensionLink = async (spaceId, extensionDevice) => {
       });
       return false;
     }
-    const remainingMs = Math.max(0, EXTENSION_TEST_WINDOW_MS - (Date.now() - checkStartedAt));
+    const remainingMs = Math.max(0, (checkStartedAt + EXTENSION_TEST_WINDOW_MS) - highAt);
     const lowAt = await waitForHubPort(spaceId, cacheKey, hubSide, 0, remainingMs, highAt);
     const ok = Boolean(lowAt);
     await updateExtensionStatus(spaceId, extensionDevice, ok);
@@ -2628,7 +2630,7 @@ app.post('/api/hub/events', requireWebhookToken, async (req, res) => {
       return res.status(202).json({ ok: true, ignored: true });
     }
     spaceId = extensionDevice.space_id;
-    const isOnline = await checkHubExtensionLink(spaceId, extensionDevice);
+    const isOnline = await checkHubExtensionLink(spaceId, extensionDevice, ts);
     if (!isOnline) {
       return res.json({ ok: true, extensionOffline: true });
     }
