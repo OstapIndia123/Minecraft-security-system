@@ -576,6 +576,7 @@ const lightBlinkTimers = new Map();
 const lastKeyScans = new Map();
 const keyScanWaiters = new Map();
 const extensionPortWaiters = new Map();
+const extensionPortLastEvents = new Map();
 
 const buildExtensionWaiterKey = (spaceId, extensionKey, side, level) => (
   `${spaceId}:${extensionKey}:${side}:${level}`
@@ -594,6 +595,11 @@ const waitForHubPort = (
     return;
   }
   const key = buildExtensionWaiterKey(spaceId, extensionKey, side, level);
+  const lastEventTime = extensionPortLastEvents.get(key);
+  if (lastEventTime && (afterTimestamp === null || lastEventTime >= afterTimestamp)) {
+    resolve(lastEventTime);
+    return;
+  }
   const waiters = extensionPortWaiters.get(key) ?? [];
   const timeout = setTimeout(() => {
     const updated = (extensionPortWaiters.get(key) ?? []).filter((entry) => entry.timeout !== timeout);
@@ -617,6 +623,7 @@ const waitForHubPort = (
 
 const resolveHubPortWaiter = (spaceId, extensionKey, side, level, eventTime = Date.now()) => {
   const key = buildExtensionWaiterKey(spaceId, extensionKey, side, level);
+  extensionPortLastEvents.set(key, eventTime);
   const waiters = extensionPortWaiters.get(key);
   if (!waiters?.length) return false;
   const nextIndex = waiters.findIndex((waiter) => (
