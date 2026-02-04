@@ -498,7 +498,6 @@ const ensureSpaceDisarmed = async (spaceId, res) => {
 
 const hubOutputState = new Map();
 const extensionLinkChecks = new Map();
-let lastHubEventSkewMs = 0;
 
 const sendHubOutput = async (hubId, side, level, { force = false } = {}) => {
   if (!hubId) return;
@@ -601,7 +600,6 @@ const waitForHubPort = (
   if (
     lastEventTime
     && (windowStartMs === null || lastEventTime >= windowStartMs)
-    && (windowStartMs === null || lastEventTime <= windowStartMs + timeoutMs)
   ) {
     resolve(lastEventTime);
     return;
@@ -636,7 +634,6 @@ const resolveHubPortWaiter = (spaceId, extensionKey, side, level, eventTime = Da
   if (!waiters?.length) return false;
   const nextIndex = waiters.findIndex((waiter) => {
     if (waiter.windowStartMs !== null && eventTime < waiter.windowStartMs) return false;
-    if (waiter.windowEndMs !== null && eventTime > waiter.windowEndMs) return false;
     return true;
   });
   if (nextIndex === -1) return false;
@@ -2472,7 +2469,6 @@ const checkHubExtensionLink = async (spaceId, extensionDevice, eventTimestamp = 
     extensionSide,
     cacheKey,
     baseTimestamp,
-    hubClockSkewMs: lastHubEventSkewMs,
     cached: cached ? { lastCheckAt: cached.lastCheckAt, lastResult: cached.lastResult, hasPromise: Boolean(cached.promise) } : null,
   });
 
@@ -2594,9 +2590,6 @@ app.post('/api/hub/events', requireWebhookToken, async (req, res) => {
   }
 
   const isExtensionEvent = hubId.startsWith(HUB_EXTENSION_PREFIX);
-  if (!isExtensionEvent && typeof ts === 'number') {
-    lastHubEventSkewMs = Date.now() - ts;
-  }
   const shouldIgnoreExtensionEvent = isExtensionEvent
     && (type === 'TEST_OK' || type === 'TEST_FAIL' || type === 'HUB_PING');
   if (shouldIgnoreExtensionEvent) {
@@ -2660,7 +2653,7 @@ app.post('/api/hub/events', requireWebhookToken, async (req, res) => {
           if (hubSide && hubSide === normalizedSide) {
             const extensionKey = device.id ?? normalizeHubExtensionId(device.extension_id);
             if (extensionKey) {
-              const eventTimestamp = typeof ts === 'number' ? ts + lastHubEventSkewMs : Date.now();
+              const eventTimestamp = Date.now();
               const resolved = resolveHubPortWaiter(
                 spaceId,
                 extensionKey,
