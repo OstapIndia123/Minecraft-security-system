@@ -498,6 +498,7 @@ const ensureSpaceDisarmed = async (spaceId, res) => {
 
 const hubOutputState = new Map();
 const extensionLinkChecks = new Map();
+let lastHubEventSkewMs = 0;
 
 const sendHubOutput = async (hubId, side, level, { force = false } = {}) => {
   if (!hubId) return;
@@ -2460,7 +2461,9 @@ const checkHubExtensionLink = async (spaceId, extensionDevice, eventTimestamp = 
   const cacheKey = extensionDevice.id ?? extensionId;
   const now = Date.now();
   const cached = extensionLinkChecks.get(cacheKey);
-  const baseTimestamp = typeof eventTimestamp === 'number' ? eventTimestamp : now;
+  const baseTimestamp = typeof eventTimestamp === 'number'
+    ? eventTimestamp + lastHubEventSkewMs
+    : now;
 
   console.log('[HUB_EXT_TEST]', 'start', {
     spaceId,
@@ -2469,6 +2472,7 @@ const checkHubExtensionLink = async (spaceId, extensionDevice, eventTimestamp = 
     extensionSide,
     cacheKey,
     baseTimestamp,
+    hubClockSkewMs: lastHubEventSkewMs,
     cached: cached ? { lastCheckAt: cached.lastCheckAt, lastResult: cached.lastResult, hasPromise: Boolean(cached.promise) } : null,
   });
 
@@ -2579,6 +2583,9 @@ app.post('/api/hub/events', requireWebhookToken, async (req, res) => {
   if (!type) {
     return res.status(400).json({ error: 'invalid_payload' });
   }
+  if (typeof ts === 'number') {
+    lastHubEventSkewMs = Date.now() - ts;
+  }
 
   if (type === 'READER_SCAN') {
     const result = await handleReaderScan({ readerId, payload, ts });
@@ -2653,7 +2660,7 @@ app.post('/api/hub/events', requireWebhookToken, async (req, res) => {
           if (hubSide && hubSide === normalizedSide) {
             const extensionKey = device.id ?? normalizeHubExtensionId(device.extension_id);
             if (extensionKey) {
-              const eventTimestamp = typeof ts === 'number' ? ts : Date.now();
+              const eventTimestamp = typeof ts === 'number' ? ts + lastHubEventSkewMs : Date.now();
               const resolved = resolveHubPortWaiter(
                 spaceId,
                 extensionKey,
