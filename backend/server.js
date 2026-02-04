@@ -575,12 +575,12 @@ const zoneAlarmState = new Map();
 const lightBlinkTimers = new Map();
 const lastKeyScans = new Map();
 const keyScanWaiters = new Map();
-const extensionPortWaiters = new Map();
-const extensionPortLastEvents = new Map();
 const extensionHubSideCache = new Map();
 const EXTENSION_TEST_GRACE_MS = 5000;
+const EXTENSION_LAST_SEEN_WINDOW_MS = EXTENSION_TEST_WINDOW_MS + EXTENSION_TEST_GRACE_MS;
+const lastHubPortIn = new Map();
 
-const buildExtensionWaiterKey = (spaceId, side, level) => (
+const buildExtensionPortKey = (spaceId, side, level) => (
   `${spaceId}:${side}:${level}`
 );
 
@@ -2544,6 +2544,7 @@ const checkHubExtensionLink = async (spaceId, extensionDevice, eventTimestamp = 
       extensionSide,
       highAt,
       lowAt,
+      lastSeen,
       ok,
       durationMs: Date.now() - checkStartedAt,
     });
@@ -2685,15 +2686,17 @@ app.post('/api/hub/events', requireWebhookToken, async (req, res) => {
     const normalizedSide = normalizeSideValue(payload?.side);
     const inputLevel = Number(payload?.level);
     if (normalizedSide && !Number.isNaN(inputLevel)) {
+      const eventTime = Date.now();
+      const key = buildExtensionPortKey(spaceId, normalizedSide, inputLevel);
+      lastHubPortIn.set(key, eventTime);
       const extensionHubSideMap = await getExtensionHubSideCache(spaceId);
       const extensionKeys = extensionHubSideMap.get(normalizedSide);
       if (extensionKeys?.size) {
-        const resolved = resolveHubPortWaiter(spaceId, normalizedSide, inputLevel, Date.now());
         console.log('[HUB_EXT_TEST]', 'hub-port-in', {
           spaceId,
           hubSide: normalizedSide,
           level: inputLevel,
-          resolved,
+          lastSeen: eventTime,
           extensionCount: extensionKeys.size,
         });
         if (inputLevel === 0 || inputLevel === 15) {
