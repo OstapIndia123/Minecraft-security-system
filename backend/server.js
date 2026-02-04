@@ -577,14 +577,16 @@ const lastKeyScans = new Map();
 const keyScanWaiters = new Map();
 const extensionPortWaiters = new Map();
 
-const buildExtensionWaiterKey = (spaceId, side, level) => `${spaceId}:${side}:${level}`;
+const buildExtensionWaiterKey = (spaceId, extensionKey, side, level) => (
+  `${spaceId}:${extensionKey}:${side}:${level}`
+);
 
-const waitForHubPort = (spaceId, side, level, timeoutMs = 1500) => new Promise((resolve) => {
-  if (!spaceId || !side || level === undefined || level === null) {
+const waitForHubPort = (spaceId, extensionKey, side, level, timeoutMs = 1500) => new Promise((resolve) => {
+  if (!spaceId || !extensionKey || !side || level === undefined || level === null) {
     resolve(false);
     return;
   }
-  const key = buildExtensionWaiterKey(spaceId, side, level);
+  const key = buildExtensionWaiterKey(spaceId, extensionKey, side, level);
   const waiters = extensionPortWaiters.get(key) ?? [];
   const timeout = setTimeout(() => {
     const updated = (extensionPortWaiters.get(key) ?? []).filter((entry) => entry.timeout !== timeout);
@@ -605,8 +607,8 @@ const waitForHubPort = (spaceId, side, level, timeoutMs = 1500) => new Promise((
   extensionPortWaiters.set(key, waiters);
 });
 
-const resolveHubPortWaiter = (spaceId, side, level) => {
-  const key = buildExtensionWaiterKey(spaceId, side, level);
+const resolveHubPortWaiter = (spaceId, extensionKey, side, level) => {
+  const key = buildExtensionWaiterKey(spaceId, extensionKey, side, level);
   const waiters = extensionPortWaiters.get(key);
   if (!waiters?.length) return false;
   const waiter = waiters.shift();
@@ -2443,9 +2445,18 @@ const checkHubExtensionLink = async (spaceId, extensionDevice) => {
       extensionLinkChecks.set(cacheKey, { lastCheckAt: Date.now(), lastResult: false });
       return false;
     }
-    const waitForTest = waitForHubPort(spaceId, hubSide, 15, EXTENSION_TEST_WINDOW_MS);
+    const checkStartedAt = Date.now();
+    const waitForHigh = waitForHubPort(spaceId, cacheKey, hubSide, 15, EXTENSION_TEST_WINDOW_MS);
     await pulseHubOutput(extensionId, extensionSide, 15).catch(() => null);
-    const ok = await waitForTest;
+    const gotHigh = await waitForHigh;
+    if (!gotHigh) {
+      await updateExtensionStatus(spaceId, extensionDevice, false);
+      extensionLinkChecks.set(cacheKey, { lastCheckAt: Date.now(), lastResult: false });
+      return false;
+    }
+    const remainingMs = Math.max(0, EXTENSION_TEST_WINDOW_MS - (Date.now() - checkStartedAt));
+    const gotLow = await waitForHubPort(spaceId, cacheKey, hubSide, 0, remainingMs);
+    const ok = gotLow;
     await updateExtensionStatus(spaceId, extensionDevice, ok);
     extensionLinkChecks.set(cacheKey, { lastCheckAt: Date.now(), lastResult: ok });
     return ok;
@@ -2455,19 +2466,15 @@ const checkHubExtensionLink = async (spaceId, extensionDevice) => {
   return promise;
 };
 
-const isHubExtensionTestPortEvent = async (spaceId, payload) => {
-  const eventSide = normalizeSideValue(payload?.side);
-  const level = Number(payload?.level);
-  if (!eventSide || Number.isNaN(level)) return false;
-  if (level !== 0 && level !== 15) return false;
+const getHubExtensionTestDevices = async (spaceId) => {
+  if (!spaceId) return [];
   const result = await query(
-    `SELECT config->>'hubSide' AS hub_side
+    `SELECT id, config->>'extensionId' AS extension_id, config->>'hubSide' AS hub_side
      FROM devices
      WHERE space_id = $1 AND LOWER(type) = ANY($2)`,
     [spaceId, HUB_EXTENSION_TYPES],
   );
-  if (!result.rows.length) return false;
-  return result.rows.some((row) => normalizeSideValue(row.hub_side) === eventSide);
+  return result.rows;
 };
 
 app.post('/api/spaces/:id/arm', requireAuth, async (req, res) => {
@@ -2568,10 +2575,26 @@ app.post('/api/hub/events', requireWebhookToken, async (req, res) => {
     const normalizedSide = normalizeSideValue(payload?.side);
     const inputLevel = Number(payload?.level);
     if (normalizedSide && !Number.isNaN(inputLevel)) {
-      resolveHubPortWaiter(spaceId, normalizedSide, inputLevel);
-    }
-    if (await isHubExtensionTestPortEvent(spaceId, payload)) {
-      return res.status(202).json({ ok: true, ignored: true });
+      const extensionTestDevices = await getHubExtensionTestDevices(spaceId);
+      if (extensionTestDevices.length) {
+        extensionTestDevices.forEach((device) => {
+          const hubSide = normalizeSideValue(device.hub_side);
+          if (hubSide && hubSide === normalizedSide) {
+            const extensionKey = device.id ?? normalizeHubExtensionId(device.extension_id);
+            if (extensionKey) {
+              resolveHubPortWaiter(spaceId, extensionKey, normalizedSide, inputLevel);
+            }
+          }
+        });
+        if (inputLevel === 0 || inputLevel === 15) {
+          const isTestPortEvent = extensionTestDevices.some(
+            (device) => normalizeSideValue(device.hub_side) === normalizedSide,
+          );
+          if (isTestPortEvent) {
+            return res.status(202).json({ ok: true, ignored: true });
+          }
+        }
+      }
     }
   }
   const time = ts
