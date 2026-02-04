@@ -2692,12 +2692,7 @@ app.post('/api/hub/events', requireWebhookToken, async (req, res) => {
       const extensionHubSideMap = await getExtensionHubSideCache(spaceId);
       const extensionKeys = extensionHubSideMap.get(normalizedSide);
       if (extensionKeys?.size) {
-        const resolved = resolveHubPortWaiter(
-          spaceId,
-          normalizedSide,
-          inputLevel,
-          Date.now(),
-        );
+        const resolved = resolveHubPortWaiter(spaceId, normalizedSide, inputLevel, Date.now());
         console.log('[HUB_EXT_TEST]', 'hub-port-in', {
           spaceId,
           hubSide: normalizedSide,
