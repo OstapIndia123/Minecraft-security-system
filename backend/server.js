@@ -589,12 +589,15 @@ const waitForHubPort = (
   side,
   level,
   timeoutMs = 1500,
+  windowStartOverride,
 ) => new Promise((resolve) => {
   if (!spaceId || !side || level === undefined || level === null) {
     resolve(false);
     return;
   }
-  const windowStartMs = Date.now();
+  const windowStartMs = typeof windowStartOverride === 'number'
+    ? windowStartOverride
+    : Date.now();
   const key = buildExtensionWaiterKey(spaceId, side, level);
   const lastEventTime = extensionPortLastEvents.get(key);
   const windowEndMs = windowStartMs + timeoutMs;
@@ -2497,14 +2500,6 @@ const checkHubExtensionLink = async (spaceId, extensionDevice, eventTimestamp = 
   if (cached?.promise) {
     return cached.promise;
   }
-  if (cached && now - cached.lastCheckAt < EXTENSION_TEST_WINDOW_MS && cached.lastResult !== undefined) {
-    console.log('[HUB_EXT_TEST]', 'cached', {
-      extensionId: debugExtensionId,
-      result: cached.lastResult,
-      ageMs: now - cached.lastCheckAt,
-    });
-    return cached.lastResult;
-  }
 
   const promise = (async () => {
     if (!extensionId || !hubSide || !extensionSide) {
@@ -2519,13 +2514,14 @@ const checkHubExtensionLink = async (spaceId, extensionDevice, eventTimestamp = 
     }
     await getExtensionHubSideCache(spaceId);
     const checkStartedAt = baseTimestamp;
+    await pulseHubOutput(extensionId, extensionSide, 15).catch(() => null);
     const waitForHigh = waitForHubPort(
       spaceId,
       hubSide,
       15,
       EXTENSION_TEST_WINDOW_MS,
+      checkStartedAt,
     );
-    await pulseHubOutput(extensionId, extensionSide, 15).catch(() => null);
     const highAt = await waitForHigh;
     if (!highAt) {
       await updateExtensionStatus(spaceId, extensionDevice, false);
