@@ -589,19 +589,19 @@ const waitForHubPort = (
   side,
   level,
   timeoutMs = 1500,
-  windowStartMs = null,
 ) => new Promise((resolve) => {
   if (!spaceId || !side || level === undefined || level === null) {
     resolve(false);
     return;
   }
+  const windowStartMs = Date.now();
   const key = buildExtensionWaiterKey(spaceId, side, level);
   const lastEventTime = extensionPortLastEvents.get(key);
-  const windowEndMs = windowStartMs === null ? null : windowStartMs + timeoutMs;
+  const windowEndMs = windowStartMs + timeoutMs;
   if (
     lastEventTime
-    && (windowStartMs === null || lastEventTime >= windowStartMs)
-    && (windowEndMs === null || lastEventTime <= windowEndMs)
+    && lastEventTime >= windowStartMs
+    && lastEventTime <= windowEndMs
   ) {
     resolve(lastEventTime);
     return;
@@ -618,8 +618,7 @@ const waitForHubPort = (
   }, timeoutMs + EXTENSION_TEST_GRACE_MS);
   waiters.push({
     timeout,
-    windowStartMs,
-    windowEndMs,
+    deadlineMs: windowEndMs,
     resolve: (resolvedAt) => {
       clearTimeout(timeout);
       resolve(resolvedAt);
@@ -629,8 +628,8 @@ const waitForHubPort = (
   const latestEventTime = extensionPortLastEvents.get(key);
   if (
     latestEventTime
-    && (windowStartMs === null || latestEventTime >= windowStartMs)
-    && (windowEndMs === null || latestEventTime <= windowEndMs)
+    && latestEventTime >= windowStartMs
+    && latestEventTime <= windowEndMs
   ) {
     const updated = (extensionPortWaiters.get(key) ?? []).filter((entry) => entry.timeout !== timeout);
     if (updated.length) {
@@ -648,17 +647,7 @@ const resolveHubPortWaiter = (spaceId, side, level, eventTime = Date.now()) => {
   extensionPortLastEvents.set(key, eventTime);
   const waiters = extensionPortWaiters.get(key);
   if (!waiters?.length) return false;
-  let nextIndex = -1;
-  let bestStart = -Infinity;
-  waiters.forEach((waiter, index) => {
-    if (waiter.windowStartMs !== null && eventTime < waiter.windowStartMs) return;
-    if (waiter.windowEndMs !== null && eventTime > waiter.windowEndMs) return;
-    const startValue = waiter.windowStartMs ?? -Infinity;
-    if (startValue >= bestStart) {
-      bestStart = startValue;
-      nextIndex = index;
-    }
-  });
+  const nextIndex = waiters.findIndex((waiter) => eventTime <= waiter.deadlineMs);
   if (nextIndex === -1) return false;
   const [waiter] = waiters.splice(nextIndex, 1);
   waiter.resolve(eventTime);
@@ -2535,7 +2524,6 @@ const checkHubExtensionLink = async (spaceId, extensionDevice, eventTimestamp = 
       hubSide,
       15,
       EXTENSION_TEST_WINDOW_MS,
-      checkStartedAt,
     );
     await pulseHubOutput(extensionId, extensionSide, 15).catch(() => null);
     const highAt = await waitForHigh;
@@ -2550,7 +2538,7 @@ const checkHubExtensionLink = async (spaceId, extensionDevice, eventTimestamp = 
       return false;
     }
     const remainingMs = Math.max(0, (checkStartedAt + EXTENSION_TEST_WINDOW_MS) - highAt);
-    const lowAt = await waitForHubPort(spaceId, hubSide, 0, remainingMs, highAt);
+    const lowAt = await waitForHubPort(spaceId, hubSide, 0, remainingMs);
     const ok = Boolean(lowAt);
     await updateExtensionStatus(spaceId, extensionDevice, ok);
     extensionLinkChecks.set(cacheKey, { lastCheckAt: Date.now(), lastResult: ok });
@@ -2708,7 +2696,7 @@ app.post('/api/hub/events', requireWebhookToken, async (req, res) => {
           spaceId,
           normalizedSide,
           inputLevel,
-          eventTimestamp ?? Date.now(),
+          Date.now(),
         );
         console.log('[HUB_EXT_TEST]', 'hub-port-in', {
           spaceId,
