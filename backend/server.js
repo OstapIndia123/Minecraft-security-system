@@ -581,6 +581,26 @@ const logExtensionDebug = (...args) => {
   console.log('[EXT_DEBUG]', ...args);
 };
 
+const storeExtensionPortEvent = (key, eventTime) => {
+  if (!eventTime) return;
+  const existing = extensionPortEvents.get(key);
+  if (existing && existing.eventTime >= eventTime) return;
+  extensionPortEvents.set(key, {
+    eventTime,
+    expiresAt: eventTime + EXTENSION_TEST_WINDOW_MS,
+  });
+};
+
+const consumeBufferedPortEvent = (key, afterTimestamp, timeoutMs) => {
+  const buffered = extensionPortEvents.get(key);
+  if (!buffered) return null;
+  const windowEnd = afterTimestamp === null ? null : afterTimestamp + timeoutMs;
+  if (afterTimestamp !== null && buffered.eventTime < afterTimestamp) return null;
+  if (windowEnd !== null && buffered.eventTime > windowEnd) return null;
+  extensionPortEvents.delete(key);
+  return buffered.eventTime;
+};
+
 const buildExtensionWaiterKey = (spaceId, extensionKey, side, level) => (
   `${spaceId}:${extensionKey}:${side}:${level}`
 );
@@ -606,8 +626,8 @@ const waitForHubPort = (
     return;
   }
   const key = buildExtensionWaiterKey(spaceId, extensionKey, side, level);
-  const bufferedEventAt = extensionPortEvents.get(key);
-  if (bufferedEventAt && (afterTimestamp === null || bufferedEventAt >= afterTimestamp)) {
+  const bufferedEventAt = consumeBufferedPortEvent(key, afterTimestamp, timeoutMs);
+  if (bufferedEventAt) {
     logExtensionDebug('waitForHubPort: buffered event hit', {
       key,
       spaceId,
@@ -617,7 +637,6 @@ const waitForHubPort = (
       afterTimestamp,
       bufferedEventAt,
     });
-    extensionPortEvents.delete(key);
     resolve(bufferedEventAt);
     return;
   }
@@ -673,7 +692,7 @@ const resolveHubPortWaiter = (spaceId, extensionKey, side, level, eventTime = Da
   const key = buildExtensionWaiterKey(spaceId, extensionKey, side, level);
   const waiters = extensionPortWaiters.get(key);
   if (!waiters?.length) {
-    extensionPortEvents.set(key, eventTime);
+    storeExtensionPortEvent(key, eventTime);
     logExtensionDebug('resolveHubPortWaiter: no waiters', {
       key,
       spaceId,
@@ -2602,20 +2621,50 @@ const checkHubExtensionLink = async (spaceId, extensionDevice) => {
       highAt,
       elapsedMs: Date.now() - checkStartedAt,
     });
-    if (!highAt) {
+    const bufferedHighAt = highAt ? null : consumeBufferedPortEvent(
+      buildExtensionWaiterKey(spaceId, cacheKey, hubSide, 15),
+      checkStartedAt,
+      EXTENSION_TEST_WINDOW_MS,
+    );
+    if (!highAt && bufferedHighAt) {
+      logExtensionDebug('checkHubExtensionLink: buffered high used', {
+        spaceId,
+        cacheKey,
+        extensionId,
+        hubSide,
+        bufferedHighAt,
+      });
+    }
+    const resolvedHighAt = highAt || bufferedHighAt;
+    if (!resolvedHighAt) {
       await updateExtensionStatus(spaceId, extensionDevice, false);
       extensionLinkChecks.set(cacheKey, { lastCheckAt: Date.now(), lastResult: false });
       return false;
     }
     const remainingMs = Math.max(0, EXTENSION_TEST_WINDOW_MS - (Date.now() - checkStartedAt));
-    const lowAt = await waitForHubPort(spaceId, cacheKey, hubSide, 0, remainingMs, highAt);
-    const ok = Boolean(lowAt);
+    const lowAt = await waitForHubPort(spaceId, cacheKey, hubSide, 0, remainingMs, resolvedHighAt);
+    const bufferedLowAt = lowAt ? null : consumeBufferedPortEvent(
+      buildExtensionWaiterKey(spaceId, cacheKey, hubSide, 0),
+      resolvedHighAt,
+      remainingMs,
+    );
+    if (!lowAt && bufferedLowAt) {
+      logExtensionDebug('checkHubExtensionLink: buffered low used', {
+        spaceId,
+        cacheKey,
+        extensionId,
+        hubSide,
+        bufferedLowAt,
+        remainingMs,
+      });
+    }
+    const ok = Boolean(lowAt || bufferedLowAt);
     logExtensionDebug('checkHubExtensionLink: low result', {
       spaceId,
       cacheKey,
       extensionId,
       hubSide,
-      lowAt,
+      lowAt: lowAt || bufferedLowAt,
       ok,
       remainingMs,
     });
