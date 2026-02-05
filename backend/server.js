@@ -641,7 +641,7 @@ const waitForHubPort = (
     timeout,
     afterTimestamp,
     expiresAt,
-    resolve: () => {
+    resolve: (resolvedAt = Date.now()) => {
       clearTimeout(timeout);
       logExtensionTest('wait_for_hub_port_resolve', {
         key,
@@ -651,8 +651,9 @@ const waitForHubPort = (
         level,
         afterTimestamp,
         expiresAt,
+        resolvedAt,
       });
-      resolve(Date.now());
+      resolve(resolvedAt);
     },
   });
   extensionPortWaiters.set(key, waiters);
@@ -693,7 +694,7 @@ const resolveHubPortWaiter = (spaceId, extensionKey, side, level, eventTime = Da
     return false;
   }
   const [waiter] = waiters.splice(nextIndex, 1);
-  waiter.resolve();
+  waiter.resolve(eventTime);
   if (waiters.length) {
     extensionPortWaiters.set(key, waiters);
   } else {
