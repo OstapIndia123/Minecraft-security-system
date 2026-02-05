@@ -2571,13 +2571,7 @@ app.post('/api/hub/events', requireWebhookToken, async (req, res) => {
       && (eventSide === extensionSide || eventSide === mirrorExtensionSide)
       && (eventLevel === 0 || eventLevel === 15),
     );
-    const isTestPortIn = Boolean(
-      type === 'PORT_IN'
-      && eventSide
-      && extensionSide
-      && eventSide === extensionSide,
-    );
-    if (isTestSetOutput || isTestPortIn) {
+    if (isTestSetOutput) {
       return res.status(202).json({ ok: true, ignored: true });
     }
     spaceId = extensionDevice.space_id;
