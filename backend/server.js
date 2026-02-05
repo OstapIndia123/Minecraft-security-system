@@ -2488,12 +2488,18 @@ const checkHubExtensionLink = async (spaceId, extensionDevice) => {
 const getHubExtensionTestDevices = async (spaceId) => {
   if (!spaceId) return [];
   const result = await query(
-    `SELECT id, config->>'extensionId' AS extension_id, config->>'hubSide' AS hub_side
+    `SELECT id,
+            status,
+            config->>'extensionId' AS extension_id,
+            config->>'hubSide' AS hub_side,
+            config->>'extensionSide' AS extension_side
      FROM devices
      WHERE space_id = $1 AND LOWER(type) = ANY($2)`,
     [spaceId, HUB_EXTENSION_TYPES],
   );
-  return result.rows;
+  return result.rows.filter(
+    (row) => row.status === 'В сети' && row.extension_id && row.hub_side && row.extension_side,
+  );
 };
 
 app.post('/api/spaces/:id/arm', requireAuth, async (req, res) => {
