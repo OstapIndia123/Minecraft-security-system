@@ -2605,14 +2605,6 @@ app.post('/api/hub/events', requireWebhookToken, async (req, res) => {
             }
           }
         });
-        if (inputLevel === 0 || inputLevel === 15) {
-          const isTestPortEvent = extensionTestDevices.some(
-            (device) => normalizeSideValue(device.hub_side) === normalizedSide,
-          );
-          if (isTestPortEvent) {
-            return res.status(202).json({ ok: true, ignored: true });
-          }
-        }
       }
     }
   }
