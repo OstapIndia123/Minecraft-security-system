@@ -535,6 +535,17 @@ const getExtensionDeviceById = async (spaceId, extensionId) => {
   return result.rows[0] ?? null;
 };
 
+const getExtensionDeviceByHubSide = async (spaceId, hubSide) => {
+  if (!spaceId || !hubSide) return null;
+  const normalizedSide = normalizeSideValue(hubSide);
+  if (!normalizedSide) return null;
+  const result = await query(
+    "SELECT * FROM devices WHERE space_id = $1 AND LOWER(type) = ANY($2) AND config->>'hubSide' = $3 LIMIT 1",
+    [spaceId, HUB_EXTENSION_TYPES, normalizedSide],
+  );
+  return result.rows[0] ?? null;
+};
+
 const sendHubOutputChecked = async (spaceId, hubId, side, level, { force = false } = {}) => {
   if (!hubId) return;
   if (hubId.startsWith(HUB_EXTENSION_PREFIX)) {
@@ -633,48 +644,6 @@ const resolveHubPortWaiter = (spaceId, extensionKey, side, level, eventTime = Da
   return true;
 };
 
-const isExtensionTestLevel = (level) => level === 0 || level === 15;
-
-const resolveExtensionPortTest = async ({
-  spaceId,
-  normalizedSide,
-  inputLevel,
-  eventTime = Date.now(),
-}) => {
-  if (!spaceId || !normalizedSide || Number.isNaN(inputLevel)) {
-    return { isTestPortEvent: false, matchedExtensions: [] };
-  }
-  const extensionTestDevices = await getHubExtensionTestDevices(spaceId);
-  if (!extensionTestDevices.length) {
-    return { isTestPortEvent: false, matchedExtensions: [] };
-  }
-  const matchedExtensions = extensionTestDevices.filter(
-    (device) => normalizeSideValue(device.hub_side) === normalizedSide,
-  );
-  if (!matchedExtensions.length) {
-    return { isTestPortEvent: false, matchedExtensions: [] };
-  }
-  matchedExtensions.forEach((device) => {
-    const extensionKey = device.id ?? normalizeHubExtensionId(device.extension_id);
-    if (!extensionKey) return;
-    const resolved = resolveHubPortWaiter(spaceId, extensionKey, normalizedSide, inputLevel, eventTime);
-    if (resolved) {
-      console.log(
-        '[HubExt] Resolved test PORT_IN waiter',
-        JSON.stringify({
-          spaceId,
-          extensionKey,
-          side: normalizedSide,
-          level: inputLevel,
-        }),
-      );
-    }
-  });
-  return {
-    isTestPortEvent: isExtensionTestLevel(inputLevel),
-    matchedExtensions,
-  };
-};
 const resolveDeviceTargetId = (config, hubId) => {
   if (config?.bindTarget === 'hub_extension') {
     return normalizeHubExtensionId(config.extensionId);
@@ -2558,17 +2527,6 @@ const checkHubExtensionLink = async (spaceId, extensionDevice) => {
   return promise;
 };
 
-const getHubExtensionTestDevices = async (spaceId) => {
-  if (!spaceId) return [];
-  const result = await query(
-    `SELECT id, config->>'extensionId' AS extension_id, config->>'hubSide' AS hub_side
-     FROM devices
-     WHERE space_id = $1 AND LOWER(type) = ANY($2)`,
-    [spaceId, HUB_EXTENSION_TYPES],
-  );
-  return result.rows;
-};
-
 app.post('/api/spaces/:id/arm', requireAuth, async (req, res) => {
   const appMode = req.header('x-app-mode');
   const roleFilter = appMode === 'pro' ? 'installer' : 'user';
@@ -2666,25 +2624,43 @@ app.post('/api/hub/events', requireWebhookToken, async (req, res) => {
   if (!isExtensionEvent && type === 'PORT_IN') {
     const normalizedSide = normalizeSideValue(payload?.side);
     const inputLevel = Number(payload?.level);
-    if (normalizedSide && !Number.isNaN(inputLevel)) {
-      const { isTestPortEvent, matchedExtensions } = await resolveExtensionPortTest({
-        spaceId,
-        normalizedSide,
-        inputLevel,
-      });
-      if (isTestPortEvent) {
-        console.log(
-          '[HubExt] Ignored test PORT_IN from hub',
-          JSON.stringify({
-            spaceId,
-            side: normalizedSide,
-            level: inputLevel,
-            matchedExtensions: matchedExtensions.map((device) => (
-              device.id ?? normalizeHubExtensionId(device.extension_id)
-            )),
-          }),
-        );
-        return res.status(202).json({ ok: true, ignored: true });
+    if (normalizedSide) {
+      const portExtensionDevice = await getExtensionDeviceByHubSide(spaceId, normalizedSide);
+      if (portExtensionDevice) {
+        const hubSide = normalizeSideValue(portExtensionDevice?.config?.hubSide);
+        const isTestPortEvent = Boolean(hubSide && normalizedSide === hubSide);
+        if (isTestPortEvent) {
+          const extensionKey = portExtensionDevice.id ?? normalizeHubExtensionId(portExtensionDevice.config?.extensionId);
+          const eventTime = Number.isFinite(Number(ts)) ? Number(ts) : Date.now();
+          if (extensionKey && !Number.isNaN(inputLevel)) {
+            const resolved = resolveHubPortWaiter(spaceId, extensionKey, normalizedSide, inputLevel, eventTime);
+            if (resolved) {
+              console.log(
+                '[HubExt] Resolved test PORT_IN waiter',
+                JSON.stringify({
+                  spaceId,
+                  extensionKey,
+                  side: normalizedSide,
+                  level: inputLevel,
+                }),
+              );
+            }
+          }
+          console.log(
+            '[HubExt] Ignored test PORT_IN from hub',
+            JSON.stringify({
+              spaceId,
+              extensionKey,
+              side: normalizedSide,
+              level: inputLevel,
+            }),
+          );
+          return res.status(202).json({ ok: true, ignored: true });
+        }
+        const isOnline = await checkHubExtensionLink(spaceId, portExtensionDevice);
+        if (!isOnline) {
+          return res.json({ ok: true, extensionOffline: true });
+        }
       }
     }
   }
