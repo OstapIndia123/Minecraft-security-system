@@ -588,7 +588,7 @@ const storeExtensionPortEvent = (key, eventTime) => {
   if (existing && existing.eventTime >= eventTime) return;
   extensionPortEvents.set(key, {
     eventTime,
-    expiresAt: eventTime + EXTENSION_TEST_WINDOW_MS,
+    expiresAt: Date.now() + EXTENSION_PROCESSING_GRACE_MS,
   });
 };
 
