@@ -374,6 +374,7 @@ const mapLog = (row) => {
 const HUB_EXTENSION_PREFIX = 'HUB_EXT-';
 const EXTENSION_TEST_WINDOW_MS = 5000;
 const EXTENSION_TEST_GRACE_MS = 2000;
+const EXTENSION_TEST_SKEW_MS = 500;
 const normalizeHubId = (hubId) => (hubId?.startsWith('HUB-') ? hubId.replace('HUB-', '') : hubId);
 const normalizeHubExtensionId = (hubId) => {
   const normalized = normalizeText(hubId);
@@ -674,7 +675,8 @@ const resolveHubPortWaiter = (spaceId, extensionKey, side, level, eventTime = Da
     return false;
   }
   const nextIndex = waiters.findIndex((waiter) => {
-    const isAfterStart = waiter.afterTimestamp === null || eventTime >= waiter.afterTimestamp;
+    const isAfterStart = waiter.afterTimestamp === null
+      || (eventTime + EXTENSION_TEST_SKEW_MS) >= waiter.afterTimestamp;
     const isBeforeExpiry = waiter.expiresAt === null || waiter.expiresAt === undefined || eventTime <= waiter.expiresAt;
     return isAfterStart && isBeforeExpiry;
   });
@@ -2586,7 +2588,7 @@ const checkHubExtensionLink = async (spaceId, extensionDevice) => {
       return false;
     }
     const remainingMs = Math.max(0, EXTENSION_TEST_WINDOW_MS - (Date.now() - checkStartedAt));
-    const lowAt = await waitForHubPort(spaceId, cacheKey, hubSide, 0, remainingMs, highAt);
+    const lowAt = await waitForHubPort(spaceId, cacheKey, hubSide, 0, remainingMs, checkStartedAt);
     const ok = Boolean(lowAt);
     logExtensionTest('link_check_low_result', {
       cacheKey,
