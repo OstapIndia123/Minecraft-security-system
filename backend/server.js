@@ -2443,12 +2443,17 @@ const checkHubExtensionLink = async (spaceId, extensionDevice) => {
   const cacheKey = extensionDevice.id ?? extensionId;
   const now = Date.now();
   const cached = extensionLinkChecks.get(cacheKey);
+  const lastKnownResult = cached?.lastResult
+    ?? (extensionDevice.status === 'В сети' ? true : (extensionDevice.status === 'Не в сети' ? false : undefined));
 
+  if (cached && now - cached.lastCheckAt < EXTENSION_TEST_WINDOW_MS) {
+    if (lastKnownResult !== undefined) {
+      return lastKnownResult;
+    }
+    return false;
+  }
   if (cached?.promise) {
     return cached.promise;
-  }
-  if (cached && now - cached.lastCheckAt < EXTENSION_TEST_WINDOW_MS && cached.lastResult !== undefined) {
-    return cached.lastResult;
   }
 
   const promise = (async () => {
@@ -2481,7 +2486,7 @@ const checkHubExtensionLink = async (spaceId, extensionDevice) => {
     return ok;
   })();
 
-  extensionLinkChecks.set(cacheKey, { lastCheckAt: now, promise });
+  extensionLinkChecks.set(cacheKey, { lastCheckAt: now, promise, lastResult: lastKnownResult });
   return promise;
 };
 
