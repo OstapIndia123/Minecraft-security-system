@@ -372,7 +372,8 @@ const mapLog = (row) => {
 };
 
 const HUB_EXTENSION_PREFIX = 'HUB_EXT-';
-const EXTENSION_TEST_WINDOW_MS = 1500;
+const EXTENSION_TEST_WINDOW_MS = 5000;
+const EXTENSION_TEST_GRACE_MS = 2000;
 const normalizeHubId = (hubId) => (hubId?.startsWith('HUB-') ? hubId.replace('HUB-', '') : hubId);
 const normalizeHubExtensionId = (hubId) => {
   const normalized = normalizeText(hubId);
@@ -605,6 +606,7 @@ const waitForHubPort = (
     return;
   }
   const key = buildExtensionWaiterKey(spaceId, extensionKey, side, level);
+  const expiresAt = afterTimestamp ? afterTimestamp + timeoutMs : null;
   logExtensionTest('wait_for_hub_port_start', {
     key,
     spaceId,
@@ -613,6 +615,7 @@ const waitForHubPort = (
     level,
     timeoutMs,
     afterTimestamp,
+    expiresAt,
   });
   const waiters = extensionPortWaiters.get(key) ?? [];
   const timeout = setTimeout(() => {
@@ -630,12 +633,14 @@ const waitForHubPort = (
       level,
       timeoutMs,
       afterTimestamp,
+      expiresAt,
     });
     resolve(false);
-  }, timeoutMs);
+  }, timeoutMs + EXTENSION_TEST_GRACE_MS);
   waiters.push({
     timeout,
     afterTimestamp,
+    expiresAt,
     resolve: () => {
       clearTimeout(timeout);
       logExtensionTest('wait_for_hub_port_resolve', {
@@ -645,6 +650,7 @@ const waitForHubPort = (
         side,
         level,
         afterTimestamp,
+        expiresAt,
       });
       resolve(Date.now());
     },
@@ -666,9 +672,11 @@ const resolveHubPortWaiter = (spaceId, extensionKey, side, level, eventTime = Da
     });
     return false;
   }
-  const nextIndex = waiters.findIndex((waiter) => (
-    waiter.afterTimestamp === null || eventTime >= waiter.afterTimestamp
-  ));
+  const nextIndex = waiters.findIndex((waiter) => {
+    const isAfterStart = waiter.afterTimestamp === null || eventTime >= waiter.afterTimestamp;
+    const isBeforeExpiry = waiter.expiresAt === null || waiter.expiresAt === undefined || eventTime <= waiter.expiresAt;
+    return isAfterStart && isBeforeExpiry;
+  });
   if (nextIndex === -1) {
     logExtensionTest('resolve_hub_port_no_match', {
       key,
@@ -677,7 +685,10 @@ const resolveHubPortWaiter = (spaceId, extensionKey, side, level, eventTime = Da
       side,
       level,
       eventTime,
-      waiters: waiters.map((waiter) => waiter.afterTimestamp),
+      waiters: waiters.map((waiter) => ({
+        afterTimestamp: waiter.afterTimestamp,
+        expiresAt: waiter.expiresAt,
+      })),
     });
     return false;
   }
@@ -2758,7 +2769,8 @@ app.post('/api/hub/events', requireWebhookToken, async (req, res) => {
                 extensionKey,
                 deviceStatus: device.status,
               });
-              resolveHubPortWaiter(spaceId, extensionKey, normalizedSide, inputLevel, Date.now());
+              const eventTime = Number.isFinite(ts) ? ts : Date.now();
+              resolveHubPortWaiter(spaceId, extensionKey, normalizedSide, inputLevel, eventTime);
             }
           }
         });
