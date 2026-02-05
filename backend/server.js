@@ -2638,6 +2638,12 @@ app.post('/api/hub/events', requireWebhookToken, async (req, res) => {
   if (!type) {
     return res.status(400).json({ error: 'invalid_payload' });
   }
+  logExtensionTest('hub_event_received', {
+    type,
+    hubId,
+    payload,
+    hasPayload: Boolean(payload),
+  });
 
   if (type === 'READER_SCAN') {
     const result = await handleReaderScan({ readerId, payload, ts });
@@ -2649,6 +2655,11 @@ app.post('/api/hub/events', requireWebhookToken, async (req, res) => {
   }
 
   const isExtensionEvent = hubId.startsWith(HUB_EXTENSION_PREFIX);
+  logExtensionTest('hub_event_flags', {
+    type,
+    hubId,
+    isExtensionEvent,
+  });
   const shouldIgnoreExtensionEvent = isExtensionEvent
     && (type === 'TEST_OK' || type === 'TEST_FAIL' || type === 'HUB_PING');
   if (shouldIgnoreExtensionEvent) {
@@ -2723,6 +2734,15 @@ app.post('/api/hub/events', requireWebhookToken, async (req, res) => {
   if (!isExtensionEvent && type === 'PORT_IN') {
     const normalizedSide = normalizeSideValue(payload?.side);
     const inputLevel = Number(payload?.level);
+    logExtensionTest('hub_port_in_check', {
+      hubId,
+      type,
+      rawSide: payload?.side,
+      normalizedSide,
+      rawLevel: payload?.level,
+      inputLevel,
+      isInputLevelNaN: Number.isNaN(inputLevel),
+    });
     if (normalizedSide && !Number.isNaN(inputLevel)) {
       const extensionTestDevices = await getHubExtensionTestDevices(spaceId);
       if (extensionTestDevices.length) {
@@ -2749,6 +2769,12 @@ app.post('/api/hub/events', requireWebhookToken, async (req, res) => {
           inputLevel,
         });
       }
+    } else {
+      logExtensionTest('hub_port_in_skipped', {
+        hubId,
+        normalizedSide,
+        inputLevel,
+      });
     }
   }
   const time = ts
