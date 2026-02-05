@@ -576,6 +576,7 @@ const lightBlinkTimers = new Map();
 const lastKeyScans = new Map();
 const keyScanWaiters = new Map();
 const extensionPortWaiters = new Map();
+const extensionPortEvents = new Map();
 const logExtensionDebug = (...args) => {
   console.log('[EXT_DEBUG]', ...args);
 };
@@ -605,6 +606,21 @@ const waitForHubPort = (
     return;
   }
   const key = buildExtensionWaiterKey(spaceId, extensionKey, side, level);
+  const bufferedEventAt = extensionPortEvents.get(key);
+  if (bufferedEventAt && (afterTimestamp === null || bufferedEventAt >= afterTimestamp)) {
+    logExtensionDebug('waitForHubPort: buffered event hit', {
+      key,
+      spaceId,
+      extensionKey,
+      side,
+      level,
+      afterTimestamp,
+      bufferedEventAt,
+    });
+    extensionPortEvents.delete(key);
+    resolve(bufferedEventAt);
+    return;
+  }
   const waiters = extensionPortWaiters.get(key) ?? [];
   logExtensionDebug('waitForHubPort: add waiter', {
     key,
@@ -657,6 +673,7 @@ const resolveHubPortWaiter = (spaceId, extensionKey, side, level, eventTime = Da
   const key = buildExtensionWaiterKey(spaceId, extensionKey, side, level);
   const waiters = extensionPortWaiters.get(key);
   if (!waiters?.length) {
+    extensionPortEvents.set(key, eventTime);
     logExtensionDebug('resolveHubPortWaiter: no waiters', {
       key,
       spaceId,
@@ -2745,12 +2762,16 @@ app.post('/api/hub/events', requireWebhookToken, async (req, res) => {
     const normalizedSide = normalizeSideValue(payload?.side);
     const inputLevel = Number(payload?.level);
     if (normalizedSide && !Number.isNaN(inputLevel)) {
+      const eventTimestamp = Number(ts);
+      const eventTime = Number.isNaN(eventTimestamp) ? Date.now() : eventTimestamp;
       const extensionTestDevices = await getHubExtensionTestDevices(spaceId);
       logExtensionDebug('hub event: hub PORT_IN check for extension test', {
         hubId,
         type,
         normalizedSide,
         inputLevel,
+        eventTime,
+        payloadTs: ts,
         extensionTestDevicesCount: extensionTestDevices.length,
       });
       if (extensionTestDevices.length) {
@@ -2759,12 +2780,13 @@ app.post('/api/hub/events', requireWebhookToken, async (req, res) => {
           if (hubSide && hubSide === normalizedSide) {
             const extensionKey = device.id ?? normalizeHubExtensionId(device.extension_id);
             if (extensionKey) {
-              const resolved = resolveHubPortWaiter(spaceId, extensionKey, normalizedSide, inputLevel, Date.now());
+              const resolved = resolveHubPortWaiter(spaceId, extensionKey, normalizedSide, inputLevel, eventTime);
               logExtensionDebug('hub event: resolve waiter', {
                 hubId,
                 extensionKey,
                 normalizedSide,
                 inputLevel,
+                eventTime,
                 resolved,
               });
             }
