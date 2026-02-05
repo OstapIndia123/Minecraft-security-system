@@ -2603,7 +2603,7 @@ const getHubExtensionTestDevices = async (spaceId) => {
     [spaceId, HUB_EXTENSION_TYPES],
   );
   return result.rows.filter(
-    (row) => row.status === 'В сети' && row.extension_id && row.hub_side && row.extension_side,
+    (row) => row.extension_id && row.hub_side && row.extension_side,
   );
 };
 
