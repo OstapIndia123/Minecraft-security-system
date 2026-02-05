@@ -726,9 +726,9 @@ const waitForHubPort = (
 
 const resolveHubPortWaiter = (spaceId, extensionKey, side, level, eventTime = Date.now()) => {
   const key = buildExtensionWaiterKey(spaceId, extensionKey, side, level);
+  storeExtensionPortEvent(key, eventTime);
   const waiters = extensionPortWaiters.get(key);
   if (!waiters?.length) {
-    storeExtensionPortEvent(key, eventTime);
     logExtensionDebug('resolveHubPortWaiter: no waiters', {
       key,
       spaceId,
@@ -2631,14 +2631,6 @@ const checkHubExtensionLink = async (spaceId, extensionDevice) => {
       checkStartedAt,
       windowMs: EXTENSION_TEST_WINDOW_MS,
     });
-    const waitForHigh = waitForHubPort(
-      spaceId,
-      cacheKey,
-      hubSide,
-      15,
-      EXTENSION_TEST_WINDOW_MS,
-      checkStartedAt,
-    );
     await pulseHubOutput(extensionId, extensionSide, 15).catch(() => null);
     logExtensionDebug('checkHubExtensionLink: pulse sent', {
       spaceId,
@@ -2648,7 +2640,13 @@ const checkHubExtensionLink = async (spaceId, extensionDevice) => {
       level: 15,
       checkStartedAt,
     });
-    const highAt = await waitForHigh;
+    const testWindowEnd = checkStartedAt + EXTENSION_TEST_WINDOW_MS;
+    const highAt = await waitForBufferedPortEvent(
+      buildExtensionWaiterKey(spaceId, cacheKey, hubSide, 15),
+      checkStartedAt,
+      testWindowEnd,
+      EXTENSION_PROCESSING_GRACE_MS,
+    );
     logExtensionDebug('checkHubExtensionLink: high result', {
       spaceId,
       cacheKey,
@@ -2657,53 +2655,25 @@ const checkHubExtensionLink = async (spaceId, extensionDevice) => {
       highAt,
       elapsedMs: Date.now() - checkStartedAt,
     });
-    const testWindowEnd = checkStartedAt + EXTENSION_TEST_WINDOW_MS;
-    const bufferedHighAt = highAt ? null : await waitForBufferedPortEvent(
-      buildExtensionWaiterKey(spaceId, cacheKey, hubSide, 15),
-      checkStartedAt,
-      testWindowEnd,
-      EXTENSION_PROCESSING_GRACE_MS,
-    );
-    if (!highAt && bufferedHighAt) {
-      logExtensionDebug('checkHubExtensionLink: buffered high used', {
-        spaceId,
-        cacheKey,
-        extensionId,
-        hubSide,
-        bufferedHighAt,
-      });
-    }
-    const resolvedHighAt = highAt || bufferedHighAt;
-    if (!resolvedHighAt) {
+    if (!highAt) {
       await updateExtensionStatus(spaceId, extensionDevice, false);
       extensionLinkChecks.set(cacheKey, { lastCheckAt: Date.now(), lastResult: false });
       return false;
     }
     const remainingMs = Math.max(0, EXTENSION_TEST_WINDOW_MS - (Date.now() - checkStartedAt));
-    const lowAt = await waitForHubPort(spaceId, cacheKey, hubSide, 0, remainingMs, resolvedHighAt);
-    const bufferedLowAt = lowAt ? null : await waitForBufferedPortEvent(
+    const lowAt = await waitForBufferedPortEvent(
       buildExtensionWaiterKey(spaceId, cacheKey, hubSide, 0),
-      resolvedHighAt,
+      highAt,
       testWindowEnd,
       EXTENSION_PROCESSING_GRACE_MS,
     );
-    if (!lowAt && bufferedLowAt) {
-      logExtensionDebug('checkHubExtensionLink: buffered low used', {
-        spaceId,
-        cacheKey,
-        extensionId,
-        hubSide,
-        bufferedLowAt,
-        remainingMs,
-      });
-    }
-    const ok = Boolean(lowAt || bufferedLowAt);
+    const ok = Boolean(lowAt);
     logExtensionDebug('checkHubExtensionLink: low result', {
       spaceId,
       cacheKey,
       extensionId,
       hubSide,
-      lowAt: lowAt || bufferedLowAt,
+      lowAt,
       ok,
       remainingMs,
     });
