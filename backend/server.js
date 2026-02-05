@@ -2563,18 +2563,21 @@ app.post('/api/hub/events', requireWebhookToken, async (req, res) => {
     const extensionSide = normalizeSideValue(extensionDevice?.config?.extensionSide);
     const mirrorExtensionSide = extensionSide ? mirrorOutputSide(extensionSide) : null;
     const eventSide = normalizeSideValue(payload?.side);
+    const eventLevel = Number(payload?.level);
     const isTestSetOutput = Boolean(
       type === 'SET_OUTPUT'
       && eventSide
       && extensionSide
-      && (eventSide === extensionSide || eventSide === mirrorExtensionSide),
+      && (eventSide === extensionSide || eventSide === mirrorExtensionSide)
+      && (eventLevel === 0 || eventLevel === 15),
     );
-    const isTestSideEvent = Boolean(
-      eventSide
+    const isTestPortIn = Boolean(
+      type === 'PORT_IN'
+      && eventSide
       && extensionSide
       && eventSide === extensionSide,
     );
-    if (isTestSetOutput || isTestSideEvent) {
+    if (isTestSetOutput || isTestPortIn) {
       return res.status(202).json({ ok: true, ignored: true });
     }
     spaceId = extensionDevice.space_id;
