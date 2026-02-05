@@ -373,6 +373,7 @@ const mapLog = (row) => {
 
 const HUB_EXTENSION_PREFIX = 'HUB_EXT-';
 const EXTENSION_TEST_WINDOW_MS = 1500;
+const EXTENSION_PROCESSING_GRACE_MS = 5000;
 const normalizeHubId = (hubId) => (hubId?.startsWith('HUB-') ? hubId.replace('HUB-', '') : hubId);
 const normalizeHubExtensionId = (hubId) => {
   const normalized = normalizeText(hubId);
@@ -590,6 +591,41 @@ const storeExtensionPortEvent = (key, eventTime) => {
     expiresAt: eventTime + EXTENSION_TEST_WINDOW_MS,
   });
 };
+
+const findBufferedPortEventInWindow = (key, windowStart, windowEnd) => {
+  const buffered = extensionPortEvents.get(key);
+  if (!buffered) return null;
+  if (buffered.expiresAt && buffered.expiresAt < Date.now()) {
+    extensionPortEvents.delete(key);
+    return null;
+  }
+  if (buffered.eventTime < windowStart || buffered.eventTime > windowEnd) {
+    return null;
+  }
+  return buffered.eventTime;
+};
+
+const waitForBufferedPortEvent = (key, windowStart, windowEnd, timeoutMs) => new Promise((resolve) => {
+  const found = findBufferedPortEventInWindow(key, windowStart, windowEnd);
+  if (found) {
+    extensionPortEvents.delete(key);
+    resolve(found);
+    return;
+  }
+  const interval = setInterval(() => {
+    const hit = findBufferedPortEventInWindow(key, windowStart, windowEnd);
+    if (hit) {
+      clearInterval(interval);
+      clearTimeout(timeout);
+      extensionPortEvents.delete(key);
+      resolve(hit);
+    }
+  }, 50);
+  const timeout = setTimeout(() => {
+    clearInterval(interval);
+    resolve(false);
+  }, timeoutMs);
+});
 
 const consumeBufferedPortEvent = (key, afterTimestamp, timeoutMs) => {
   const buffered = extensionPortEvents.get(key);
@@ -2621,10 +2657,12 @@ const checkHubExtensionLink = async (spaceId, extensionDevice) => {
       highAt,
       elapsedMs: Date.now() - checkStartedAt,
     });
-    const bufferedHighAt = highAt ? null : consumeBufferedPortEvent(
+    const testWindowEnd = checkStartedAt + EXTENSION_TEST_WINDOW_MS;
+    const bufferedHighAt = highAt ? null : await waitForBufferedPortEvent(
       buildExtensionWaiterKey(spaceId, cacheKey, hubSide, 15),
       checkStartedAt,
-      EXTENSION_TEST_WINDOW_MS,
+      testWindowEnd,
+      EXTENSION_PROCESSING_GRACE_MS,
     );
     if (!highAt && bufferedHighAt) {
       logExtensionDebug('checkHubExtensionLink: buffered high used', {
@@ -2643,10 +2681,11 @@ const checkHubExtensionLink = async (spaceId, extensionDevice) => {
     }
     const remainingMs = Math.max(0, EXTENSION_TEST_WINDOW_MS - (Date.now() - checkStartedAt));
     const lowAt = await waitForHubPort(spaceId, cacheKey, hubSide, 0, remainingMs, resolvedHighAt);
-    const bufferedLowAt = lowAt ? null : consumeBufferedPortEvent(
+    const bufferedLowAt = lowAt ? null : await waitForBufferedPortEvent(
       buildExtensionWaiterKey(spaceId, cacheKey, hubSide, 0),
       resolvedHighAt,
-      remainingMs,
+      testWindowEnd,
+      EXTENSION_PROCESSING_GRACE_MS,
     );
     if (!lowAt && bufferedLowAt) {
       logExtensionDebug('checkHubExtensionLink: buffered low used', {
