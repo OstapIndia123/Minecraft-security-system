@@ -2563,18 +2563,19 @@ app.post('/api/hub/events', requireWebhookToken, async (req, res) => {
     const extensionSide = normalizeSideValue(extensionDevice?.config?.extensionSide);
     const mirrorExtensionSide = extensionSide ? mirrorOutputSide(extensionSide) : null;
     const eventSide = normalizeSideValue(payload?.side);
+    
+    // Определяем тестовые SET_OUTPUT (импульсы на тестовой стороне модуля для проверки связи)
     const isTestSetOutput = Boolean(
       type === 'SET_OUTPUT'
       && eventSide
       && extensionSide
       && (eventSide === extensionSide || eventSide === mirrorExtensionSide),
     );
-    const isTestSideEvent = Boolean(
-      eventSide
-      && extensionSide
-      && eventSide === extensionSide,
-    );
-    if (isTestSetOutput || isTestSideEvent) {
+    
+    // Игнорируем ТОЛЬКО тестовые SET_OUTPUT
+    // ИСПРАВЛЕНИЕ: Удалена проверка isTestSideEvent, которая блокировала PORT_IN события
+    // Теперь checkHubExtensionLink() вызывается для ВСЕХ нетестовых событий, включая PORT_IN
+    if (isTestSetOutput) {
       return res.status(202).json({ ok: true, ignored: true });
     }
     spaceId = extensionDevice.space_id;
