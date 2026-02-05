@@ -587,6 +587,7 @@ const lightBlinkTimers = new Map();
 const lastKeyScans = new Map();
 const keyScanWaiters = new Map();
 const extensionPortWaiters = new Map();
+const extensionPortEvents = new Map();
 
 const buildExtensionWaiterKey = (spaceId, extensionKey, side, level) => (
   `${spaceId}:${extensionKey}:${side}:${level}`
@@ -605,6 +606,15 @@ const waitForHubPort = (
     return;
   }
   const key = buildExtensionWaiterKey(spaceId, extensionKey, side, level);
+  const existingEventAt = extensionPortEvents.get(key);
+  if (existingEventAt && (afterTimestamp === null || existingEventAt >= afterTimestamp)) {
+    extensionPortEvents.delete(key);
+    resolve(existingEventAt);
+    return;
+  }
+  if (existingEventAt && afterTimestamp !== null && existingEventAt < afterTimestamp) {
+    extensionPortEvents.delete(key);
+  }
   const waiters = extensionPortWaiters.get(key) ?? [];
   const timeout = setTimeout(() => {
     const updated = (extensionPortWaiters.get(key) ?? []).filter((entry) => entry.timeout !== timeout);
@@ -642,6 +652,15 @@ const resolveHubPortWaiter = (spaceId, extensionKey, side, level, eventTime = Da
     extensionPortWaiters.delete(key);
   }
   return true;
+};
+
+const recordHubPortEvent = (spaceId, extensionKey, side, level, eventTime = Date.now()) => {
+  if (!spaceId || !extensionKey || !side || level === undefined || level === null) {
+    return false;
+  }
+  const key = buildExtensionWaiterKey(spaceId, extensionKey, side, level);
+  extensionPortEvents.set(key, eventTime);
+  return resolveHubPortWaiter(spaceId, extensionKey, side, level, eventTime);
 };
 
 const resolveDeviceTargetId = (config, hubId) => {
@@ -2631,9 +2650,9 @@ app.post('/api/hub/events', requireWebhookToken, async (req, res) => {
         const isTestPortEvent = Boolean(hubSide && normalizedSide === hubSide);
         if (isTestPortEvent) {
           const extensionKey = portExtensionDevice.id ?? normalizeHubExtensionId(portExtensionDevice.config?.extensionId);
-          const eventTime = Number.isFinite(Number(ts)) ? Number(ts) : Date.now();
+          const eventTime = Date.now();
           if (extensionKey && !Number.isNaN(inputLevel)) {
-            const resolved = resolveHubPortWaiter(spaceId, extensionKey, normalizedSide, inputLevel, eventTime);
+            const resolved = recordHubPortEvent(spaceId, extensionKey, normalizedSide, inputLevel, eventTime);
             if (resolved) {
               console.log(
                 '[HubExt] Resolved test PORT_IN waiter',
