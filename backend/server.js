@@ -372,7 +372,7 @@ const mapLog = (row) => {
 };
 
 const HUB_EXTENSION_PREFIX = 'HUB_EXT-';
-const EXTENSION_TEST_WINDOW_MS = 1500;
+const EXTENSION_TEST_WINDOW_MS = 2000;
 const normalizeHubId = (hubId) => (hubId?.startsWith('HUB-') ? hubId.replace('HUB-', '') : hubId);
 const normalizeHubExtensionId = (hubId) => {
   const normalized = normalizeText(hubId);
@@ -2473,12 +2473,9 @@ const checkHubExtensionLink = async (spaceId, extensionDevice) => {
       extensionLinkChecks.set(cacheKey, { lastCheckAt: Date.now(), lastResult: false });
       return false;
     }
-    const remainingMs = Math.max(0, EXTENSION_TEST_WINDOW_MS - (Date.now() - checkStartedAt));
-    const lowAt = await waitForHubPort(spaceId, cacheKey, hubSide, 0, remainingMs, highAt);
-    const ok = Boolean(lowAt);
-    await updateExtensionStatus(spaceId, extensionDevice, ok);
-    extensionLinkChecks.set(cacheKey, { lastCheckAt: Date.now(), lastResult: ok });
-    return ok;
+    await updateExtensionStatus(spaceId, extensionDevice, true);
+    extensionLinkChecks.set(cacheKey, { lastCheckAt: Date.now(), lastResult: true });
+    return true;
   })();
 
   extensionLinkChecks.set(cacheKey, { lastCheckAt: now, promise });
@@ -2602,14 +2599,7 @@ app.post('/api/hub/events', requireWebhookToken, async (req, res) => {
             }
           }
         });
-        if (inputLevel === 0 || inputLevel === 15) {
-          const isTestPortEvent = extensionTestDevices.some(
-            (device) => normalizeSideValue(device.hub_side) === normalizedSide,
-          );
-          if (isTestPortEvent) {
-            return res.status(202).json({ ok: true, ignored: true });
-          }
-        }
+        // Test-side PORT_IN events are still processed/logged for the hub.
       }
     }
   }
