@@ -11,6 +11,7 @@ const state = {
   role: 'user',
   logs: [],
   logsOffset: 0,
+  logsLimit: 200,
   logsHasMore: true,
 };
 
@@ -640,13 +641,35 @@ const renderLogs = (logs) => {
   }
 };
 
+const fetchLogsChunked = async (baseUrl, totalLimit) => {
+  let all = [];
+  let offset = 0;
+  let hasMore = true;
+  while (all.length < totalLimit && hasMore) {
+    const batch = Math.min(200, totalLimit - all.length);
+    const resp = await apiFetch(`${baseUrl}${baseUrl.includes('?') ? '&' : '?'}limit=${batch}&offset=${offset}`);
+    const logs = resp.logs ?? [];
+    all = [...all, ...logs];
+    hasMore = Boolean(resp.hasMore);
+    offset += logs.length;
+    if (!logs.length) break;
+  }
+  return { logs: all, hasMore };
+};
+
 const loadLogs = async (reset = false) => {
-  const offset = reset ? 0 : state.logsOffset;
-  const response = await apiFetch(`/api/logs?limit=200&offset=${offset}`);
-  const logs = response.logs ?? [];
-  state.logs = reset ? logs : [...state.logs, ...logs];
-  state.logsOffset = state.logs.length;
-  state.logsHasMore = Boolean(response.hasMore);
+  if (reset) {
+    const { logs, hasMore } = await fetchLogsChunked('/api/logs', state.logsLimit);
+    state.logs = logs;
+    state.logsOffset = logs.length;
+    state.logsHasMore = hasMore;
+  } else {
+    state.logsLimit += 200;
+    const { logs, hasMore } = await fetchLogsChunked('/api/logs', state.logsLimit);
+    state.logs = logs;
+    state.logsOffset = logs.length;
+    state.logsHasMore = hasMore;
+  }
   renderLogs(state.logs);
 };
 

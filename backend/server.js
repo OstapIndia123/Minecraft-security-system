@@ -501,10 +501,10 @@ const ensureSpaceDisarmed = async (spaceId, res) => {
 const hubOutputState = new Map();
 const extensionLinkChecks = new Map();
 
-const sendHubOutput = async (hubId, side, level, { force = false } = {}) => {
+const sendHubOutput = async (hubId, side, level, { force = false, mirror = true } = {}) => {
   if (!hubId) return;
   const formattedHubId = formatHubIdForSend(hubId);
-  const outputSide = mirrorOutputSide(side);
+  const outputSide = mirror ? mirrorOutputSide(side) : normalizeSideValue(side);
   const stateKey = `${formattedHubId}:${outputSide}`;
   if (!force && hubOutputState.get(stateKey) === level) {
     return;
@@ -518,11 +518,11 @@ const sendHubOutput = async (hubId, side, level, { force = false } = {}) => {
   });
 };
 
-const pulseHubOutput = async (hubId, side, level, durationMs = MIN_INTERVAL_MS) => {
+const pulseHubOutput = async (hubId, side, level, durationMs = MIN_INTERVAL_MS, { mirror = true } = {}) => {
   const resolvedDuration = Math.max(durationMs, MIN_INTERVAL_MS);
-  await sendHubOutput(hubId, side, level, { force: true });
+  await sendHubOutput(hubId, side, level, { force: true, mirror });
   setTimeout(() => {
-    sendHubOutput(hubId, side, 0, { force: true }).catch(() => null);
+    sendHubOutput(hubId, side, 0, { force: true, mirror }).catch(() => null);
   }, resolvedDuration);
 };
 
@@ -2573,7 +2573,7 @@ const checkHubExtensionLink = async (spaceId, extensionDevice) => {
       extensionSide,
       hubSide,
     });
-    await pulseHubOutput(extensionId, extensionSide, 15).catch(() => null);
+    await pulseHubOutput(extensionId, extensionSide, 15, MIN_INTERVAL_MS, { mirror: false }).catch(() => null);
     const highAt = await waitForHigh;
     logExtensionTest('link_check_high_result', {
       cacheKey,
