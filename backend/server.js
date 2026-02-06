@@ -578,9 +578,7 @@ const lightBlinkTimers = new Map();
 const lastKeyScans = new Map();
 const keyScanWaiters = new Map();
 const extensionPortWaiters = new Map();
-const logExtensionTest = (...args) => {
-  console.log('[EXT_TEST]', ...args);
-};
+const logExtensionTest = () => {};
 
 const buildExtensionWaiterKey = (spaceId, extensionKey, side, level) => (
   `${spaceId}:${extensionKey}:${side}:${level}`
