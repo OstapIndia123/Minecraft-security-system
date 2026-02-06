@@ -372,7 +372,7 @@ const mapLog = (row) => {
 };
 
 const HUB_EXTENSION_PREFIX = 'HUB_EXT-';
-const EXTENSION_TEST_WINDOW_MS = 5000;
+const EXTENSION_TEST_WINDOW_MS = 2000;
 const EXTENSION_TEST_GRACE_MS = 2000;
 const EXTENSION_TEST_SKEW_MS = 500;
 const normalizeHubId = (hubId) => (hubId?.startsWith('HUB-') ? hubId.replace('HUB-', '') : hubId);
