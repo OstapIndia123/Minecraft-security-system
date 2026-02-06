@@ -657,14 +657,22 @@ const fetchLogsChunked = async (baseUrl, totalLimit) => {
 
 const loadLogs = async (reset = false) => {
   if (!state.selectedSpaceId) return;
-  if (!reset) state.logsLimit += 200;
-  const { logs, hasMore } = await fetchLogsChunked(
-    `/api/spaces/${state.selectedSpaceId}/logs`,
-    state.logsLimit,
-  );
-  state.logs = logs;
-  state.logsOffset = logs.length;
-  state.logsHasMore = hasMore;
+  if (reset) {
+    const { logs, hasMore } = await fetchLogsChunked(
+      `/api/spaces/${state.selectedSpaceId}/logs`,
+      state.logsLimit,
+    );
+    state.logs = logs;
+    state.logsOffset = logs.length;
+    state.logsHasMore = hasMore;
+  } else {
+    const resp = await apiFetch(`/api/spaces/${state.selectedSpaceId}/logs?limit=200&offset=${state.logsOffset}`);
+    const logs = resp.logs ?? [];
+    state.logs = [...state.logs, ...logs];
+    state.logsOffset += logs.length;
+    state.logsLimit = state.logsOffset;
+    state.logsHasMore = Boolean(resp.hasMore);
+  }
   renderLogs(state.logs);
 };
 

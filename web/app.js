@@ -972,7 +972,19 @@ const apiFetch = async (path, options = {}) => {
 
 const loadSpaces = async () => {
   try {
-    spaces = await apiFetch('/api/spaces');
+    const previousSpaces = new Map(spaces.map((space) => [space.id, space]));
+    const nextSpaces = await apiFetch('/api/spaces');
+    spaces = nextSpaces.map((space) => {
+      const previous = previousSpaces.get(space.id);
+      if (!previous) return space;
+      return {
+        ...space,
+        logs: previous.logs,
+        logsLimit: previous.logsLimit,
+        logsOffset: previous.logsOffset,
+        logsHasMore: previous.logsHasMore,
+      };
+    });
     const params = new URLSearchParams(window.location.search);
     const requestedSpaceId = params.get('spaceId');
     if (requestedSpaceId && spaces.some((space) => space.id === requestedSpaceId)) {
@@ -1016,15 +1028,23 @@ const fetchLogsChunked = async (baseUrl, totalLimit) => {
 const loadLogs = async (spaceId, reset = true) => {
   try {
     const space = spaces.find((item) => item.id === spaceId);
-    const limit = space?.logsLimit ?? 200;
-    const { logs, hasMore } = await fetchLogsChunked(`/api/spaces/${spaceId}/logs`, limit);
-    if (space) {
+    if (!space) return;
+    if (reset) {
+      const limit = space.logsLimit ?? 200;
+      const { logs, hasMore } = await fetchLogsChunked(`/api/spaces/${spaceId}/logs`, limit);
       space.logs = logs;
       space.logsOffset = logs.length;
       space.logsHasMore = hasMore;
       const lastLog = space.logs[0];
       state.lastLogKey = `${space.logs.length}-${lastLog?.time ?? ''}-${lastLog?.text ?? ''}-${lastLog?.createdAt ?? ''}`;
+      return;
     }
+    const resp = await apiFetch(`/api/spaces/${spaceId}/logs?limit=200&offset=${space.logsOffset ?? 0}`);
+    const logs = resp.logs ?? [];
+    space.logs = [...(space.logs ?? []), ...logs];
+    space.logsOffset = (space.logsOffset ?? 0) + logs.length;
+    space.logsLimit = space.logsOffset;
+    space.logsHasMore = Boolean(resp.hasMore);
   } catch (error) {
     console.error(error);
     showToast('Не удалось загрузить журнал.');
@@ -1983,7 +2003,7 @@ logMoreButton?.addEventListener('click', () => {
   if (!state.selectedSpaceId) return;
   const space = spaces.find((item) => item.id === state.selectedSpaceId);
   if (space) space.logsLimit = (space.logsLimit ?? 200) + 200;
-  loadLogs(state.selectedSpaceId, true).then(() => {
+  loadLogs(state.selectedSpaceId, false).then(() => {
     if (space) renderLogs(space);
   }).catch(() => null);
 });
