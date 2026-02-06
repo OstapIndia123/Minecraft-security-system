@@ -1179,6 +1179,9 @@ const getExtensionOptions = (extensions, selectedId = '') => {
   return `<option value="">Выберите модуль</option>${options}`;
 };
 
+const getSpaceExtensionDevices = (space) => (space?.devices ?? [])
+  .filter((device) => isHubExtensionType(device.type));
+
 const updateCreateExtensionOptions = async () => {
   if (!bindExtensionInput) return;
   const selectedId = bindExtensionInput.value;
@@ -1211,6 +1214,7 @@ const renderDeviceDetails = (device) => {
   const safeType = escapeHtml(device.type);
   const safeId = escapeHtml(device.id);
   const space = spaces.find((item) => item.id === state.selectedSpaceId);
+  const extensionDevices = getSpaceExtensionDevices(space);
   const statusBlock = device.type === 'zone' || device.type === 'hub' || isHubExtensionType(device.type)
     ? `
       <div class="stat">
@@ -1256,7 +1260,7 @@ const renderDeviceDetails = (device) => {
           id="bindExtensionIdEdit"
           class="${bindTarget === 'hub_extension' ? '' : 'hidden'}"
         >
-          ${getExtensionOptions(space, bindTarget === 'hub_extension' ? bindExtensionId : '')}
+          ${getExtensionOptions(extensionDevices, bindTarget === 'hub_extension' ? bindExtensionId : '')}
         </select>
         <select name="zoneType">
           <option value="instant" ${device.config?.zoneType === 'instant' ? 'selected' : ''}>Нормальная</option>
@@ -1297,7 +1301,7 @@ const renderDeviceDetails = (device) => {
           id="bindExtensionIdEdit"
           class="${bindTarget === 'hub_extension' ? '' : 'hidden'}"
         >
-          ${getExtensionOptions(space, bindTarget === 'hub_extension' ? bindExtensionId : '')}
+          ${getExtensionOptions(extensionDevices, bindTarget === 'hub_extension' ? bindExtensionId : '')}
         </select>
         <input type="number" name="outputLevel" value="${device.config?.level ?? 15}" min="0" max="15" />
       `;
@@ -1315,7 +1319,7 @@ const renderDeviceDetails = (device) => {
           id="bindExtensionIdEdit"
           class="${bindTarget === 'hub_extension' ? '' : 'hidden'}"
         >
-          ${getExtensionOptions(space, bindTarget === 'hub_extension' ? bindExtensionId : '')}
+          ${getExtensionOptions(extensionDevices, bindTarget === 'hub_extension' ? bindExtensionId : '')}
         </select>
         <input type="number" name="outputLevel" value="${device.config?.level ?? 15}" min="0" max="15" />
         <input type="number" name="intervalMs" value="${device.config?.intervalMs ?? 1000}" min="300" max="60000" />
@@ -1403,9 +1407,11 @@ const renderDeviceDetails = (device) => {
     const updateBindingFields = () => {
       if (!bindTargetSelect || !bindExtensionField) return;
       const isExtension = bindTargetSelect.value === 'hub_extension';
+      const hasExtensions = extensionDevices.length > 0;
       bindExtensionField.classList.toggle('hidden', !isExtension);
-      bindExtensionField.required = isExtension;
-      if (!isExtension) {
+      bindExtensionField.required = isExtension && hasExtensions;
+      bindExtensionField.disabled = !isExtension || !hasExtensions;
+      if (!isExtension || !hasExtensions) {
         bindExtensionField.value = '';
       }
     };
