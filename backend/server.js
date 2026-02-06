@@ -1906,6 +1906,7 @@ app.post('/api/spaces/:id/devices', requireAuth, requireInstaller, async (req, r
   const { id, name, room, status, type, side } = req.body ?? {};
   const normalizedName = normalizeText(name);
   const normalizedRoom = normalizeText(room);
+  const normalizedType = normalizeDeviceType(type);
   const normalizedSide = normalizeSideValue(side) ?? side;
   if (!normalizedName || !normalizedRoom || !type) {
     return res.status(400).json({ error: 'missing_fields' });
@@ -1942,6 +1943,23 @@ app.post('/api/spaces/:id/devices', requireAuth, requireInstaller, async (req, r
     );
     if ((countResult.rows[0]?.count ?? 0) >= 5) {
       return res.status(400).json({ error: 'extension_limit' });
+    }
+  }
+
+  if (normalizedType && normalizedType !== 'hub_extension' && normalizedType !== 'hub') {
+    const deviceLimitResult = await query(
+      'SELECT COUNT(*)::int AS count FROM devices WHERE space_id = $1 AND LOWER(type) = $2',
+      [req.params.id, normalizedType],
+    );
+    const deviceCount = deviceLimitResult.rows[0]?.count ?? 0;
+    if (normalizedType === 'zone' && deviceCount >= 32) {
+      return res.status(400).json({ error: 'zone_limit' });
+    }
+    if (normalizedType === 'key' && deviceCount >= 32) {
+      return res.status(400).json({ error: 'key_limit' });
+    }
+    if (normalizedType !== 'zone' && normalizedType !== 'key' && deviceCount >= 6) {
+      return res.status(400).json({ error: 'device_type_limit' });
     }
   }
 
@@ -2006,6 +2024,14 @@ app.post('/api/spaces/:id/keys', requireAuth, requireInstaller, async (req, res)
   if (isOverMaxLength(normalizedName, MAX_KEY_NAME_LENGTH)
     || isOverMaxLength(normalizedReaderId, MAX_DEVICE_ID_LENGTH)) {
     return res.status(400).json({ error: 'field_too_long' });
+  }
+
+  const keyLimitResult = await query(
+    'SELECT COUNT(*)::int AS count FROM keys WHERE space_id = $1',
+    [req.params.id],
+  );
+  if ((keyLimitResult.rows[0]?.count ?? 0) >= 32) {
+    return res.status(400).json({ error: 'key_limit' });
   }
 
   await query('INSERT INTO keys (space_id, name, reader_id, groups) VALUES ($1,$2,$3,$4)', [
