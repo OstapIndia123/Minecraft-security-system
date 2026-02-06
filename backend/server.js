@@ -1906,6 +1906,7 @@ app.post('/api/spaces/:id/devices', requireAuth, requireInstaller, async (req, r
   const { id, name, room, status, type, side } = req.body ?? {};
   const normalizedName = normalizeText(name);
   const normalizedRoom = normalizeText(room);
+  const normalizedType = normalizeDeviceType(type);
   const normalizedSide = normalizeSideValue(side) ?? side;
   if (!normalizedName || !normalizedRoom || !type) {
     return res.status(400).json({ error: 'missing_fields' });
@@ -1942,6 +1943,16 @@ app.post('/api/spaces/:id/devices', requireAuth, requireInstaller, async (req, r
     );
     if ((countResult.rows[0]?.count ?? 0) >= 5) {
       return res.status(400).json({ error: 'extension_limit' });
+    }
+  }
+
+  if (normalizedType && normalizedType !== 'hub_extension' && normalizedType !== 'hub') {
+    const deviceLimitResult = await query(
+      'SELECT COUNT(*)::int AS count FROM devices WHERE space_id = $1 AND LOWER(type) = $2',
+      [req.params.id, normalizedType],
+    );
+    if ((deviceLimitResult.rows[0]?.count ?? 0) >= 6) {
+      return res.status(400).json({ error: 'device_type_limit' });
     }
   }
 
