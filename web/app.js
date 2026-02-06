@@ -935,6 +935,14 @@ const handleApiError = (error, fallbackMessage) => {
     showToast('В пространство можно добавить до 6 устройств каждого типа.');
     return;
   }
+  if (error.message === 'zone_limit') {
+    showToast('В пространство можно добавить до 32 зон.');
+    return;
+  }
+  if (error.message === 'key_limit') {
+    showToast('В пространство можно добавить до 32 ключей.');
+    return;
+  }
   showToast(fallbackMessage);
 };
 

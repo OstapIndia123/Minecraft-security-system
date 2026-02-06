@@ -1951,7 +1951,14 @@ app.post('/api/spaces/:id/devices', requireAuth, requireInstaller, async (req, r
       'SELECT COUNT(*)::int AS count FROM devices WHERE space_id = $1 AND LOWER(type) = $2',
       [req.params.id, normalizedType],
     );
-    if ((deviceLimitResult.rows[0]?.count ?? 0) >= 6) {
+    const deviceCount = deviceLimitResult.rows[0]?.count ?? 0;
+    if (normalizedType === 'zone' && deviceCount >= 32) {
+      return res.status(400).json({ error: 'zone_limit' });
+    }
+    if (normalizedType === 'key' && deviceCount >= 32) {
+      return res.status(400).json({ error: 'key_limit' });
+    }
+    if (normalizedType !== 'zone' && normalizedType !== 'key' && deviceCount >= 6) {
       return res.status(400).json({ error: 'device_type_limit' });
     }
   }
@@ -2017,6 +2024,14 @@ app.post('/api/spaces/:id/keys', requireAuth, requireInstaller, async (req, res)
   if (isOverMaxLength(normalizedName, MAX_KEY_NAME_LENGTH)
     || isOverMaxLength(normalizedReaderId, MAX_DEVICE_ID_LENGTH)) {
     return res.status(400).json({ error: 'field_too_long' });
+  }
+
+  const keyLimitResult = await query(
+    'SELECT COUNT(*)::int AS count FROM keys WHERE space_id = $1',
+    [req.params.id],
+  );
+  if ((keyLimitResult.rows[0]?.count ?? 0) >= 32) {
+    return res.status(400).json({ error: 'key_limit' });
   }
 
   await query('INSERT INTO keys (space_id, name, reader_id, groups) VALUES ($1,$2,$3,$4)', [
