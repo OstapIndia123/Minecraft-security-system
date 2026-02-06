@@ -2728,14 +2728,25 @@ app.post('/api/hub/events', requireWebhookToken, async (req, res) => {
       return res.status(202).json({ ok: true, ignored: true });
     }
     spaceId = extensionDevice.space_id;
-    const isOnline = await checkHubExtensionLink(spaceId, extensionDevice);
+    // Respond immediately to unblock hub-backend's sequential webhook queue.
+    // checkHubExtensionLink sends a test pulse and waits for PORT_IN from the
+    // hub, which arrives through the same queue — holding the response would
+    // deadlock: hub-backend can't flush the test PORT_IN until we reply here.
+    res.json({ ok: true });
+    let isOnline;
+    try {
+      isOnline = await checkHubExtensionLink(spaceId, extensionDevice);
+    } catch (err) {
+      console.error('[HUB_EXT] Link check failed:', err);
+      return;
+    }
     if (!isOnline) {
       logExtensionTest('extension_event_offline', {
         hubId,
         type,
         spaceId,
       });
-      return res.json({ ok: true, extensionOffline: true });
+      return;
     }
   } else {
     const normalizedHubId = normalizeHubId(hubId);
@@ -2831,7 +2842,8 @@ app.post('/api/hub/events', requireWebhookToken, async (req, res) => {
     const normalizedSide = normalizeSideValue(payload.side);
     const inputLevel = Number(payload.level);
     if (!normalizedSide || Number.isNaN(inputLevel)) {
-      return res.json({ ok: true });
+      if (!res.headersSent) res.json({ ok: true });
+      return;
     }
 
     if (!isExtensionEvent) {
@@ -3001,7 +3013,7 @@ app.post('/api/hub/events', requireWebhookToken, async (req, res) => {
     }
   }
 
-  res.json({ ok: true });
+  if (!res.headersSent) res.json({ ok: true });
 });
 
 app.post('/api/reader/events', requireWebhookToken, async (req, res) => {
