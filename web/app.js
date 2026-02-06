@@ -931,6 +931,10 @@ const handleApiError = (error, fallbackMessage) => {
     showToast('В пространство можно добавить до 5 расширителей.');
     return;
   }
+  if (error.message === 'device_type_limit') {
+    showToast('В пространство можно добавить до 6 устройств каждого типа.');
+    return;
+  }
   showToast(fallbackMessage);
 };
 
