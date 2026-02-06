@@ -9,6 +9,7 @@ const state = {
   lastNicknameChangeAt: null,
   logs: [],
   logsOffset: 0,
+  logsLimit: 200,
   logsHasMore: true,
 };
 
@@ -638,14 +639,32 @@ const loadSpace = async (spaceId, { refreshLogs = true } = {}) => {
   }
 };
 
+const fetchLogsChunked = async (baseUrl, totalLimit) => {
+  let all = [];
+  let offset = 0;
+  let hasMore = true;
+  while (all.length < totalLimit && hasMore) {
+    const batch = Math.min(200, totalLimit - all.length);
+    const resp = await apiFetch(`${baseUrl}${baseUrl.includes('?') ? '&' : '?'}limit=${batch}&offset=${offset}`);
+    const logs = resp.logs ?? [];
+    all = [...all, ...logs];
+    hasMore = Boolean(resp.hasMore);
+    offset += logs.length;
+    if (!logs.length) break;
+  }
+  return { logs: all, hasMore };
+};
+
 const loadLogs = async (reset = false) => {
   if (!state.selectedSpaceId) return;
-  const offset = reset ? 0 : state.logsOffset;
-  const response = await apiFetch(`/api/spaces/${state.selectedSpaceId}/logs?limit=200&offset=${offset}`);
-  const logs = response.logs ?? [];
-  state.logs = reset ? logs : [...state.logs, ...logs];
-  state.logsOffset = state.logs.length;
-  state.logsHasMore = Boolean(response.hasMore);
+  if (!reset) state.logsLimit += 200;
+  const { logs, hasMore } = await fetchLogsChunked(
+    `/api/spaces/${state.selectedSpaceId}/logs`,
+    state.logsLimit,
+  );
+  state.logs = logs;
+  state.logsOffset = logs.length;
+  state.logsHasMore = hasMore;
   renderLogs(state.logs);
 };
 
@@ -667,8 +686,7 @@ const refreshUserData = async () => {
     localStorage.setItem('userSelectedSpace', state.selectedSpaceId);
   }
   renderSpaces(spacesCache);
-  const shouldRefreshLogs = state.logsOffset <= 200;
-  await loadSpace(state.selectedSpaceId, { refreshLogs: shouldRefreshLogs });
+  await loadSpace(state.selectedSpaceId, { refreshLogs: true });
 };
 
 chipActions.forEach((chip) => {

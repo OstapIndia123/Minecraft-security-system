@@ -997,16 +997,31 @@ const loadSpaces = async () => {
   }
 };
 
+const fetchLogsChunked = async (baseUrl, totalLimit) => {
+  let all = [];
+  let offset = 0;
+  let hasMore = true;
+  while (all.length < totalLimit && hasMore) {
+    const batch = Math.min(200, totalLimit - all.length);
+    const resp = await apiFetch(`${baseUrl}${baseUrl.includes('?') ? '&' : '?'}limit=${batch}&offset=${offset}`);
+    const logs = resp.logs ?? [];
+    all = [...all, ...logs];
+    hasMore = Boolean(resp.hasMore);
+    offset += logs.length;
+    if (!logs.length) break;
+  }
+  return { logs: all, hasMore };
+};
+
 const loadLogs = async (spaceId, reset = true) => {
   try {
     const space = spaces.find((item) => item.id === spaceId);
-    const offset = reset ? 0 : (space?.logsOffset ?? 0);
-    const response = await apiFetch(`/api/spaces/${spaceId}/logs?limit=200&offset=${offset}`);
-    const logs = response.logs ?? [];
+    const limit = space?.logsLimit ?? 200;
+    const { logs, hasMore } = await fetchLogsChunked(`/api/spaces/${spaceId}/logs`, limit);
     if (space) {
-      space.logs = reset ? logs : [...(space.logs ?? []), ...logs];
-      space.logsOffset = space.logs.length;
-      space.logsHasMore = Boolean(response.hasMore);
+      space.logs = logs;
+      space.logsOffset = logs.length;
+      space.logsHasMore = hasMore;
       const lastLog = space.logs[0];
       state.lastLogKey = `${space.logs.length}-${lastLog?.time ?? ''}-${lastLog?.text ?? ''}-${lastLog?.createdAt ?? ''}`;
     }
@@ -1966,8 +1981,9 @@ logFilters.forEach((button) => {
 
 logMoreButton?.addEventListener('click', () => {
   if (!state.selectedSpaceId) return;
-  loadLogs(state.selectedSpaceId, false).then(() => {
-    const space = spaces.find((item) => item.id === state.selectedSpaceId);
+  const space = spaces.find((item) => item.id === state.selectedSpaceId);
+  if (space) space.logsLimit = (space.logsLimit ?? 200) + 200;
+  loadLogs(state.selectedSpaceId, true).then(() => {
     if (space) renderLogs(space);
   }).catch(() => null);
 });
@@ -2067,15 +2083,15 @@ const pollLogs = async () => {
   if (!space) return;
 
   try {
-    const response = await apiFetch(`/api/spaces/${space.id}/logs?limit=200&offset=0`);
-    const logs = response.logs ?? [];
+    const limit = space.logsLimit ?? 200;
+    const { logs, hasMore } = await fetchLogsChunked(`/api/spaces/${space.id}/logs`, limit);
     const lastLog = logs[0];
     const logKey = `${logs.length}-${lastLog?.time ?? ''}-${lastLog?.text ?? ''}-${lastLog?.createdAt ?? ''}`;
     if (logKey !== state.lastLogKey) {
       state.lastLogKey = logKey;
       space.logs = logs;
       space.logsOffset = logs.length;
-      space.logsHasMore = Boolean(response.hasMore);
+      space.logsHasMore = hasMore;
       renderLogs(space);
       notifyLogEvent(space, lastLog).catch(() => null);
       if (lastLog?.type === 'alarm' || lastLog?.type === 'restore') {
