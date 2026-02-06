@@ -372,7 +372,7 @@ const mapLog = (row) => {
 };
 
 const HUB_EXTENSION_PREFIX = 'HUB_EXT-';
-const EXTENSION_TEST_WINDOW_MS = 5000;
+const EXTENSION_TEST_WINDOW_MS = 2000;
 const EXTENSION_TEST_GRACE_MS = 2000;
 const EXTENSION_TEST_SKEW_MS = 500;
 const normalizeHubId = (hubId) => (hubId?.startsWith('HUB-') ? hubId.replace('HUB-', '') : hubId);
@@ -578,9 +578,7 @@ const lightBlinkTimers = new Map();
 const lastKeyScans = new Map();
 const keyScanWaiters = new Map();
 const extensionPortWaiters = new Map();
-const logExtensionTest = (...args) => {
-  console.log('[EXT_TEST]', ...args);
-};
+const logExtensionTest = () => {};
 
 const buildExtensionWaiterKey = (spaceId, extensionKey, side, level) => (
   `${spaceId}:${extensionKey}:${side}:${level}`
@@ -2652,12 +2650,6 @@ app.post('/api/hub/events', requireWebhookToken, async (req, res) => {
   if (!type) {
     return res.status(400).json({ error: 'invalid_payload' });
   }
-  logExtensionTest('hub_event_received', {
-    type,
-    hubId,
-    payload,
-    hasPayload: Boolean(payload),
-  });
 
   if (type === 'READER_SCAN') {
     const result = await handleReaderScan({ readerId, payload, ts });
@@ -2669,11 +2661,6 @@ app.post('/api/hub/events', requireWebhookToken, async (req, res) => {
   }
 
   const isExtensionEvent = hubId.startsWith(HUB_EXTENSION_PREFIX);
-  logExtensionTest('hub_event_flags', {
-    type,
-    hubId,
-    isExtensionEvent,
-  });
   const shouldIgnoreExtensionEvent = isExtensionEvent
     && (type === 'TEST_OK' || type === 'TEST_FAIL' || type === 'HUB_PING');
   if (shouldIgnoreExtensionEvent) {
@@ -2715,16 +2702,6 @@ app.post('/api/hub/events', requireWebhookToken, async (req, res) => {
       && eventSide === extensionSide,
     );
     if (shouldIgnoreTestSetOutput || isTestSideEvent) {
-      logExtensionTest('extension_event_ignored', {
-        hubId,
-        type,
-        eventSide,
-        eventLevel,
-        extensionSide,
-        mirrorExtensionSide,
-        shouldIgnoreTestSetOutput,
-        isTestSideEvent,
-      });
       return res.status(202).json({ ok: true, ignored: true });
     }
     spaceId = extensionDevice.space_id;
@@ -2737,15 +2714,10 @@ app.post('/api/hub/events', requireWebhookToken, async (req, res) => {
     try {
       isOnline = await checkHubExtensionLink(spaceId, extensionDevice);
     } catch (err) {
-      console.error('[HUB_EXT] Link check failed:', err);
+      console.error('Hub extension link check failed:', err);
       return;
     }
     if (!isOnline) {
-      logExtensionTest('extension_event_offline', {
-        hubId,
-        type,
-        spaceId,
-      });
       return;
     }
   } else {
@@ -2759,15 +2731,6 @@ app.post('/api/hub/events', requireWebhookToken, async (req, res) => {
   if (!isExtensionEvent && type === 'PORT_IN') {
     const normalizedSide = normalizeSideValue(payload?.side);
     const inputLevel = Number(payload?.level);
-    logExtensionTest('hub_port_in_check', {
-      hubId,
-      type,
-      rawSide: payload?.side,
-      normalizedSide,
-      rawLevel: payload?.level,
-      inputLevel,
-      isInputLevelNaN: Number.isNaN(inputLevel),
-    });
     if (normalizedSide && !Number.isNaN(inputLevel)) {
       const extensionTestDevices = await getHubExtensionTestDevices(spaceId);
       if (extensionTestDevices.length) {
@@ -2776,31 +2739,12 @@ app.post('/api/hub/events', requireWebhookToken, async (req, res) => {
           if (hubSide && hubSide === normalizedSide) {
             const extensionKey = device.id ?? normalizeHubExtensionId(device.extension_id);
             if (extensionKey) {
-              logExtensionTest('hub_port_in_test_signal', {
-                spaceId,
-                hubSide: normalizedSide,
-                inputLevel,
-                extensionKey,
-                deviceStatus: device.status,
-              });
               const eventTime = Number.isFinite(ts) ? ts : Date.now();
               resolveHubPortWaiter(spaceId, extensionKey, normalizedSide, inputLevel, eventTime);
             }
           }
         });
-      } else {
-        logExtensionTest('hub_port_in_no_test_devices', {
-          spaceId,
-          normalizedSide,
-          inputLevel,
-        });
       }
-    } else {
-      logExtensionTest('hub_port_in_skipped', {
-        hubId,
-        normalizedSide,
-        inputLevel,
-      });
     }
   }
   const time = ts
