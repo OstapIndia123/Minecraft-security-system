@@ -664,11 +664,12 @@ const loadLogs = async (reset = false) => {
     state.logsOffset = logs.length;
     state.logsHasMore = hasMore;
   } else {
-    state.logsLimit += 200;
-    const { logs, hasMore } = await fetchLogsChunked('/api/logs', state.logsLimit);
-    state.logs = logs;
-    state.logsOffset = logs.length;
-    state.logsHasMore = hasMore;
+    const resp = await apiFetch(`/api/logs?limit=200&offset=${state.logsOffset}`);
+    const logs = resp.logs ?? [];
+    state.logs = [...state.logs, ...logs];
+    state.logsOffset += logs.length;
+    state.logsLimit = state.logsOffset;
+    state.logsHasMore = Boolean(resp.hasMore);
   }
   renderLogs(state.logs);
 };
