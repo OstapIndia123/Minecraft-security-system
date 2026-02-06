@@ -927,19 +927,20 @@ const handleApiError = (error, fallbackMessage) => {
     showToast('Такой ID модуля расширения уже используется.');
     return;
   }
-  if (error.message === 'extension_limit') {
+  const errorMessage = error?.message ?? '';
+  if (errorMessage === 'extension_limit') {
     showToast('В пространство можно добавить до 5 расширителей.');
     return;
   }
-  if (error.message === 'device_type_limit') {
+  if (errorMessage === 'device_type_limit' || errorMessage.includes('device_type_limit')) {
     showToast('В пространство можно добавить до 6 устройств каждого типа.');
     return;
   }
-  if (error.message === 'zone_limit') {
+  if (errorMessage === 'zone_limit' || errorMessage.includes('zone_limit')) {
     showToast('В пространство можно добавить до 32 зон.');
     return;
   }
-  if (error.message === 'key_limit') {
+  if (errorMessage === 'key_limit' || errorMessage.includes('key_limit')) {
     showToast('В пространство можно добавить до 32 ключей.');
     return;
   }
