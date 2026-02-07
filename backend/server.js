@@ -17,6 +17,10 @@ const launcherApiUrl = process.env.LAUNCHER_API_URL;
 const port = Number(process.env.PORT ?? 8080);
 const adminPanelPassword = process.env.ADMIN_PANEL_PASSWORD;
 const ADMIN_USER_ID = 0;
+const adminSessions = new Map();
+const loginAttempts = new Map();
+const MAX_LOGIN_ATTEMPTS = 5;
+const LOGIN_WINDOW_MS = 60 * 1000;
 
 const MAX_NICKNAME_LENGTH = 16;
 const NICKNAME_COOLDOWN_MS = 7 * 24 * 60 * 60 * 1000;
@@ -56,7 +60,10 @@ const wrapAppMethods = (instance) => {
 
 wrapAppMethods(app);
 
-app.use(cors());
+const allowedOrigins = process.env.CORS_ORIGINS
+  ? process.env.CORS_ORIGINS.split(',').map((o) => o.trim())
+  : null;
+app.use(cors(allowedOrigins ? { origin: allowedOrigins } : undefined));
 app.use(express.json({ limit: '1mb' }));
 app.use(express.static(path.resolve(__dirname, '..', 'web')));
 app.get(['/blocked', '/blocked.html'], (req, res) => {
@@ -70,22 +77,25 @@ app.use((req, res, next) => {
   next();
 });
 
-const hashPassword = (password, salt) => {
+const { promisify } = await import('node:util');
+const scryptAsync = promisify(crypto.scrypt);
+
+const hashPassword = async (password, salt) => {
   const effectiveSalt = salt ?? crypto.randomBytes(16).toString('hex');
-  const hash = crypto.scryptSync(password, effectiveSalt, 64).toString('hex');
+  const hash = (await scryptAsync(password, effectiveSalt, 64)).toString('hex');
   return { salt: effectiveSalt, hash };
 };
 
-const formatPasswordHash = (password) => {
-  const { salt, hash } = hashPassword(password);
+const formatPasswordHash = async (password) => {
+  const { salt, hash } = await hashPassword(password);
   return `scrypt$${salt}$${hash}`;
 };
 
-const verifyPassword = (password, stored) => {
+const verifyPassword = async (password, stored) => {
   if (!stored?.startsWith('scrypt$')) return false;
   const [, salt, hash] = stored.split('$');
   if (!salt || !hash) return false;
-  const candidate = hashPassword(password, salt).hash;
+  const candidate = (await hashPassword(password, salt)).hash;
   return crypto.timingSafeEqual(Buffer.from(candidate), Buffer.from(hash));
 };
 
@@ -140,7 +150,16 @@ const getAuthToken = (req) => {
 
 const getAdminToken = (req) => req.header('x-admin-token') ?? null;
 
-const isAdminTokenValid = (token) => Boolean(adminPanelPassword && token && token === adminPanelPassword);
+const isAdminTokenValid = (token) => {
+  if (!token) return false;
+  const session = adminSessions.get(token);
+  if (!session) return false;
+  if (Date.now() > session.expiresAt) {
+    adminSessions.delete(token);
+    return false;
+  }
+  return true;
+};
 
 const loadSessionUser = async (token) => {
   if (!token) return null;
@@ -264,8 +283,33 @@ const issueSession = async (userId) => {
   return { token, expiresAt };
 };
 
+const oauthStateSecret = process.env.OAUTH_STATE_SECRET ?? crypto.randomBytes(32).toString('hex');
+
+const signOAuthState = (data) => {
+  const payload = Buffer.from(JSON.stringify(data)).toString('base64url');
+  const sig = crypto.createHmac('sha256', oauthStateSecret).update(payload).digest('base64url');
+  return `${payload}.${sig}`;
+};
+
+const verifyOAuthState = (state) => {
+  if (!state || typeof state !== 'string') return null;
+  const dotIdx = state.indexOf('.');
+  if (dotIdx < 0) return null;
+  const payload = state.slice(0, dotIdx);
+  const sig = state.slice(dotIdx + 1);
+  const expectedSig = crypto.createHmac('sha256', oauthStateSecret).update(payload).digest('base64url');
+  if (sig.length !== expectedSig.length || !crypto.timingSafeEqual(Buffer.from(sig), Buffer.from(expectedSig))) {
+    return null;
+  }
+  try {
+    return JSON.parse(Buffer.from(payload, 'base64url').toString('utf8'));
+  } catch {
+    return null;
+  }
+};
+
 const buildDiscordAuthUrl = (mode) => {
-  const state = Buffer.from(JSON.stringify({ mode })).toString('base64');
+  const state = signOAuthState({ mode, ts: Date.now() });
   const params = new URLSearchParams({
     client_id: discordClientId ?? '',
     redirect_uri: discordRedirectUri ?? '',
@@ -449,11 +493,13 @@ const loadDevices = async (spaceId, hubId, hubOnline) => {
   return [hubDevice, ...devices.rows.map(mapDevice), ...keyDevices];
 };
 
+const sanitizeLogText = (str) => str.replace(/[<>&"']/g, (c) => ({ '<': '&lt;', '>': '&gt;', '&': '&amp;', '"': '&quot;', "'": '&#39;' })[c]);
+
 const appendLog = async (spaceId, text, who, type, groupId = null) => {
   const time = new Date().toLocaleTimeString('ru-RU', { hour: '2-digit', minute: '2-digit', second: '2-digit' });
   await query(
     'INSERT INTO logs (space_id, time, text, who, type, group_id) VALUES ($1,$2,$3,$4,$5,$6)',
-    [spaceId, time, text, who, type, groupId],
+    [spaceId, time, sanitizeLogText(text), sanitizeLogText(who), type, groupId],
   );
 };
 
@@ -477,11 +523,18 @@ const parsePagination = (req, defaultLimit = 200, maxLimit = 500) => {
 };
 
 const requireWebhookToken = (req, res, next) => {
-  if (!webhookToken) return next();
+  if (!webhookToken) {
+    return res.status(503).json({ error: 'webhook_not_configured' });
+  }
   const headerToken = req.header('x-webhook-token')
     ?? req.header('x-hub-token')
     ?? req.header('authorization')?.replace('Bearer ', '');
-  if (headerToken !== webhookToken) {
+  if (!headerToken || typeof headerToken !== 'string') {
+    return res.status(401).json({ error: 'invalid_token' });
+  }
+  const tokenBuf = Buffer.from(headerToken);
+  const expectedBuf = Buffer.from(webhookToken);
+  if (tokenBuf.length !== expectedBuf.length || !crypto.timingSafeEqual(tokenBuf, expectedBuf)) {
     return res.status(401).json({ error: 'invalid_token' });
   }
   return next();
@@ -989,13 +1042,10 @@ app.get('/api/auth/discord/callback', async (req, res) => {
     return;
   }
   const code = req.query.code;
-  const rawState = req.query.state ? Buffer.from(String(req.query.state), 'base64').toString('utf8') : '{}';
+  const stateData = verifyOAuthState(req.query.state);
   let mode = 'login';
-  try {
-    const parsed = JSON.parse(rawState);
-    mode = parsed.mode === 'register' ? 'register' : 'login';
-  } catch {
-    mode = 'login';
+  if (stateData) {
+    mode = stateData.mode === 'register' ? 'register' : 'login';
   }
   if (!code) {
     res.redirect('/login.html?error=discord');
@@ -1018,7 +1068,7 @@ app.get('/api/auth/discord/callback', async (req, res) => {
          RETURNING id, email, role, minecraft_nickname, language, timezone, discord_avatar_url, last_nickname_change_at`,
         [
           `discord:${discordId}`,
-          formatPasswordHash(crypto.randomUUID()),
+          await formatPasswordHash(crypto.randomUUID()),
           'user',
           null,
           discordId,
@@ -1111,12 +1161,34 @@ app.post('/api/admin/login', (req, res) => {
     res.status(503).json({ error: 'admin_disabled' });
     return;
   }
+  const ip = req.ip ?? 'unknown';
+  const now = Date.now();
+  const attempts = loginAttempts.get(ip) ?? [];
+  const recent = attempts.filter((ts) => now - ts < LOGIN_WINDOW_MS);
+  if (recent.length >= MAX_LOGIN_ATTEMPTS) {
+    res.status(429).json({ error: 'too_many_attempts' });
+    return;
+  }
   const { password } = req.body ?? {};
-  if (password !== adminPanelPassword) {
+  if (!password || typeof password !== 'string') {
+    recent.push(now);
+    loginAttempts.set(ip, recent);
     res.status(403).json({ error: 'admin_forbidden' });
     return;
   }
-  res.json({ token: adminPanelPassword });
+  const passwordBuf = Buffer.from(password);
+  const storedBuf = Buffer.from(adminPanelPassword);
+  if (passwordBuf.length !== storedBuf.length || !crypto.timingSafeEqual(passwordBuf, storedBuf)) {
+    recent.push(now);
+    loginAttempts.set(ip, recent);
+    res.status(403).json({ error: 'admin_forbidden' });
+    return;
+  }
+  loginAttempts.delete(ip);
+  const token = crypto.randomBytes(32).toString('hex');
+  const expiresAt = Date.now() + 24 * 60 * 60 * 1000;
+  adminSessions.set(token, { expiresAt });
+  res.json({ token });
 });
 
 app.get('/api/admin/users', requireAdmin, async (req, res) => {
@@ -1263,7 +1335,7 @@ app.get('/api/auth/launcher', async (req, res) => {
          RETURNING id, email, role, minecraft_nickname, language, timezone, discord_avatar_url, last_nickname_change_at`,
         [
           email,
-          formatPasswordHash(crypto.randomUUID()),
+          await formatPasswordHash(crypto.randomUUID()),
           'user',
           nickname,
           discordId,
@@ -1657,6 +1729,7 @@ app.post('/api/spaces/:id/contacts', requireAuth, requireInstaller, async (req, 
   if (!result.rows.length) return res.status(404).json({ error: 'space_not_found' });
 
   const contacts = result.rows[0].contacts ?? [];
+  if (contacts.length >= 32) return res.status(409).json({ error: 'contact_limit' });
   contacts.push({ name: normalizedName, role: normalizedRole, phone: normalizedPhone });
   await query('UPDATE spaces SET contacts = $1 WHERE id = $2', [JSON.stringify(contacts), req.params.id]);
   await appendLog(req.params.id, `Добавлено контактное лицо: ${normalizedName}`, 'UI', 'system');
@@ -1681,6 +1754,7 @@ app.post('/api/spaces/:id/notes', requireAuth, requireInstaller, async (req, res
   if (!result.rows.length) return res.status(404).json({ error: 'space_not_found' });
 
   const notes = result.rows[0].notes ?? [];
+  if (notes.length >= 32) return res.status(409).json({ error: 'note_limit' });
   notes.push(normalizedText);
   await query('UPDATE spaces SET notes = $1 WHERE id = $2', [JSON.stringify(notes), req.params.id]);
   await appendLog(req.params.id, 'Добавлено примечание', 'UI', 'system');
@@ -1701,8 +1775,12 @@ app.post('/api/spaces/:id/photos', requireAuth, requireInstaller, async (req, re
   if (isOverMaxLength(normalizedLabel, MAX_PHOTO_LABEL_LENGTH)) {
     return res.status(400).json({ error: 'field_too_long' });
   }
+  if (normalizedUrl.length > 2048) return res.status(400).json({ error: 'field_too_long' });
   try {
-    new URL(normalizedUrl);
+    const parsed = new URL(normalizedUrl);
+    if (parsed.protocol !== 'https:' && parsed.protocol !== 'http:') {
+      return res.status(400).json({ error: 'invalid_url' });
+    }
   } catch {
     return res.status(400).json({ error: 'invalid_url' });
   }
@@ -2949,6 +3027,12 @@ app.post('/api/spaces/:id/groups/:groupId/arm', requireAuth, async (req, res) =>
   const roleFilter = appMode === 'pro' ? 'installer' : 'user';
   const allowed = await ensureSpaceRole(req.user.id, req.params.id, roleFilter);
   if (!allowed) return res.status(403).json({ error: 'forbidden' });
+  if (roleFilter === 'user' && req.user.id !== ADMIN_USER_ID) {
+    const userGroups = await loadUserGroupAccess(req.params.id, req.user.id);
+    if (userGroups.length > 0 && !userGroups.includes(Number(req.params.groupId))) {
+      return res.status(403).json({ error: 'forbidden' });
+    }
+  }
   const { id: spaceId, groupId } = req.params;
   const groupRow = await query('SELECT name, status FROM groups WHERE id = $1 AND space_id = $2', [groupId, spaceId]);
   if (!groupRow.rows.length) return res.status(404).json({ error: 'group_not_found' });
@@ -3001,6 +3085,12 @@ app.post('/api/spaces/:id/groups/:groupId/disarm', requireAuth, async (req, res)
   const roleFilter = appMode === 'pro' ? 'installer' : 'user';
   const allowed = await ensureSpaceRole(req.user.id, req.params.id, roleFilter);
   if (!allowed) return res.status(403).json({ error: 'forbidden' });
+  if (roleFilter === 'user' && req.user.id !== ADMIN_USER_ID) {
+    const userGroups = await loadUserGroupAccess(req.params.id, req.user.id);
+    if (userGroups.length > 0 && !userGroups.includes(Number(req.params.groupId))) {
+      return res.status(403).json({ error: 'forbidden' });
+    }
+  }
   const { id: spaceId, groupId } = req.params;
   const groupRow = await query('SELECT name FROM groups WHERE id = $1 AND space_id = $2', [groupId, spaceId]);
   if (!groupRow.rows.length) return res.status(404).json({ error: 'group_not_found' });
@@ -3474,3 +3564,19 @@ app.use((error, req, res, next) => {
 app.listen(port, () => {
   console.log(`Backend listening on http://localhost:${port}`);
 });
+
+setInterval(() => {
+  query('DELETE FROM sessions WHERE expires_at < NOW()').catch(() => {});
+}, 60 * 60 * 1000);
+
+setInterval(() => {
+  const now = Date.now();
+  for (const [token, session] of adminSessions) {
+    if (now > session.expiresAt) adminSessions.delete(token);
+  }
+  for (const [ip, attempts] of loginAttempts) {
+    const recent = attempts.filter((ts) => now - ts < LOGIN_WINDOW_MS);
+    if (recent.length === 0) loginAttempts.delete(ip);
+    else loginAttempts.set(ip, recent);
+  }
+}, 10 * 60 * 1000);

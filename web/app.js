@@ -108,6 +108,18 @@ const notifyLogEvent = async (space, log) => {
   await notifySecurityEvent({ title, body, tag: key });
 };
 
+(() => {
+  const maxAge = 24 * 60 * 60 * 1000;
+  const now = Date.now();
+  for (let i = localStorage.length - 1; i >= 0; i--) {
+    const k = localStorage.key(i);
+    if (k && (k.startsWith('notify:') || k.startsWith('logFlash:'))) {
+      const ts = Number(localStorage.getItem(k));
+      if (!ts || now - ts > maxAge) localStorage.removeItem(k);
+    }
+  }
+})();
+
 const objectList = document.getElementById('objectList');
 const spaceNameEl = document.getElementById('spaceName');
 const spaceIdEl = document.getElementById('spaceId');
@@ -1161,18 +1173,6 @@ const handleApiError = (error, fallbackMessage) => {
   }
   if (errorMessage === 'key_limit' || errorMessage.includes('key_limit')) {
     showToast(t('errors.keyLimit'));
-    return;
-  }
-  if (errorMessage === 'device_type_limit' || errorMessage.includes('device_type_limit')) {
-    showToast('В пространство можно добавить до 6 устройств каждого типа.');
-    return;
-  }
-  if (errorMessage === 'zone_limit' || errorMessage.includes('zone_limit')) {
-    showToast('В пространство можно добавить до 32 зон.');
-    return;
-  }
-  if (errorMessage === 'key_limit' || errorMessage.includes('key_limit')) {
-    showToast('В пространство можно добавить до 32 ключей.');
     return;
   }
   showToast(fallbackMessage);
@@ -3100,7 +3100,9 @@ if (generateKey && deviceForm) {
   generateKey.addEventListener('click', () => {
     const keyInput = deviceForm.querySelector('input[name=\"keyName\"]');
     if (keyInput) {
-      keyInput.value = `KEY-${Math.random().toString(36).slice(2, 8).toUpperCase()}`;
+      const arr = new Uint8Array(4);
+      crypto.getRandomValues(arr);
+      keyInput.value = `KEY-${Array.from(arr, (b) => b.toString(36)).join('').slice(0, 6).toUpperCase()}`;
     }
   });
 }
