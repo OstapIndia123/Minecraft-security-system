@@ -109,6 +109,7 @@ const notifyLogEvent = async (space, log) => {
 };
 
 const objectList = document.getElementById('objectList');
+const spaceNameEl = document.getElementById('spaceName');
 const spaceIdEl = document.getElementById('spaceId');
 const spaceStateEl = document.getElementById('spaceState');
 const spaceMetaEl = document.getElementById('spaceMeta');
@@ -1362,10 +1363,12 @@ const renderObjectList = () => {
 };
 
 const renderSpaceHeader = (space) => {
-  spaceIdEl.innerHTML = `
-    <span>${escapeHtml(space.name)}</span>
-    <span class="status-card__subid">${escapeHtml(space.id)}</span>
-  `;
+  if (spaceNameEl) {
+    spaceNameEl.textContent = space.name ?? space.id;
+  }
+  if (spaceIdEl) {
+    spaceIdEl.textContent = space.id;
+  }
   spaceStateEl.textContent = getStatusLabel(space.status);
   spaceStateEl.className = `status-card__state ${statusTone[space.status] ?? ''}`;
   spaceMetaEl.textContent = `${t('engineer.object.coordsLabel')}: ${space.address} • ${space.server ?? '—'} • ${space.city}`;

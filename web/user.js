@@ -29,7 +29,7 @@ const escapeHtml = (value) => String(value ?? '')
   .replace(/'/g, '&#39;');
 
 const objectList = document.getElementById('userObjectList');
-const spaceIdEl = document.getElementById('userSpaceId');
+const spaceIdEl = document.getElementById('userSpaceName');
 const spaceStateEl = document.getElementById('userSpaceState');
 const spaceMetaEl = document.getElementById('userSpaceMeta');
 const deviceList = document.getElementById('userDeviceList');
@@ -517,7 +517,9 @@ const renderSpaces = (spaces) => {
 };
 
 const renderStatus = (space) => {
-  spaceIdEl.textContent = space.name ?? space.id;
+  if (spaceIdEl) {
+    spaceIdEl.textContent = space.name ?? space.id;
+  }
   const statusKey = `status.${space.status}`;
   const statusLabel = t(statusKey);
   spaceStateEl.textContent = (!statusLabel || statusLabel === statusKey) ? space.status : statusLabel;
