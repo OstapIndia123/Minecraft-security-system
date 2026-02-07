@@ -299,6 +299,9 @@ const translations = {
     'engineer.members.delete': 'Удалить',
     'engineer.members.leave': 'Покинуть пространство',
     'engineer.members.you': 'вы',
+    'engineer.members.groups': 'Группы',
+    'engineer.members.groupsTitle': 'Доступные группы',
+    'engineer.members.groupsEmpty': 'Нет доступных групп',
     'engineer.empty.devicesSearch': 'Нет устройств по запросу',
     'engineer.empty.photos': 'Нет фотографий',
     'engineer.empty.logs': 'Нет событий по выбранному фильтру',
@@ -492,6 +495,9 @@ const translations = {
     'engineer.members.delete': 'Remove',
     'engineer.members.leave': 'Leave space',
     'engineer.members.you': 'you',
+    'engineer.members.groups': 'Groups',
+    'engineer.members.groupsTitle': 'Allowed groups',
+    'engineer.members.groupsEmpty': 'No groups available',
     'engineer.empty.devicesSearch': 'No devices for this search',
     'engineer.empty.photos': 'No photos',
     'engineer.empty.logs': 'No events for the selected filter',
@@ -909,12 +915,28 @@ const openActionModal = ({
       input.type = field.type ?? 'text';
       input.name = field.name;
       input.placeholder = field.placeholder ?? '';
-      input.value = field.value ?? '';
+      if (field.value !== undefined) {
+        input.value = field.value ?? '';
+      }
+      if (field.checked !== undefined) {
+        input.checked = Boolean(field.checked);
+      }
       if (field.required) input.required = true;
       if (field.min !== undefined) input.min = field.min;
       if (field.max !== undefined) input.max = field.max;
       if (field.maxLength !== undefined) input.maxLength = field.maxLength;
-      actionModalForm.appendChild(input);
+
+      if (field.type === 'checkbox') {
+        const label = document.createElement('label');
+        label.className = 'checkbox-field';
+        label.appendChild(input);
+        const text = document.createElement('span');
+        text.textContent = field.label ?? field.placeholder ?? '';
+        label.appendChild(text);
+        actionModalForm.appendChild(label);
+      } else {
+        actionModalForm.appendChild(input);
+      }
     });
   }
 
@@ -1340,7 +1362,10 @@ const renderObjectList = () => {
 };
 
 const renderSpaceHeader = (space) => {
-  spaceIdEl.textContent = space.id;
+  spaceIdEl.innerHTML = `
+    <span>${escapeHtml(space.name)}</span>
+    <span class="status-card__subid">${escapeHtml(space.id)}</span>
+  `;
   spaceStateEl.textContent = getStatusLabel(space.status);
   spaceStateEl.className = `status-card__state ${statusTone[space.status] ?? ''}`;
   spaceMetaEl.textContent = `${t('engineer.object.coordsLabel')}: ${space.address} • ${space.server ?? '—'} • ${space.city}`;
@@ -1792,7 +1817,7 @@ const renderObjectInfo = (space) => {
     </div>
     <div class="info-card">
       <span>${t('engineer.object.label.mode')}</span>
-      <strong>${t(`status.${space.status}`) ?? space.status}</strong>
+      <strong>${getStatusLabel(space.status)}</strong>
     </div>
   `;
 
@@ -1807,6 +1832,8 @@ const renderObjectInfo = (space) => {
 const renderMembers = (members) => {
   const installers = members.filter((member) => member.space_role === 'installer');
   const users = members.filter((member) => member.space_role !== 'installer');
+  const space = spaces.find((item) => item.id === state.selectedSpaceId);
+  const groups = space?.groups ?? [];
 
   if (usersList) {
     usersList.innerHTML = '';
@@ -1823,11 +1850,17 @@ const renderMembers = (members) => {
             <div class="member-card__title">${label}</div>
             <div class="member-card__meta">ID: ${member.id}</div>
           </div>
-          <button class="button button--ghost button--danger" data-member-id="${member.id}">
-            ${t('engineer.members.delete')}
-          </button>
+          <div class="member-card__actions">
+            <button class="button button--ghost" data-member-groups="${member.id}">
+              ${t('engineer.members.groups')}
+            </button>
+            <button class="button button--ghost button--danger" data-member-id="${member.id}">
+              ${t('engineer.members.delete')}
+            </button>
+          </div>
         `;
-        card.querySelector('button').addEventListener('click', async () => {
+        const deleteButton = card.querySelector('[data-member-id]');
+        deleteButton?.addEventListener('click', async () => {
           try {
             showLoading();
             const roleToRemove = member.space_role ?? 'user';
@@ -1841,6 +1874,42 @@ const renderMembers = (members) => {
             } else {
               handleApiError(error, 'Не удалось удалить пользователя.');
             }
+          } finally {
+            hideLoading();
+          }
+        });
+        const groupsButton = card.querySelector('[data-member-groups]');
+        groupsButton?.addEventListener('click', async () => {
+          if (!groups.length) {
+            showToast(t('engineer.members.groupsEmpty'));
+            return;
+          }
+          const fields = groups.map((group) => ({
+            type: 'checkbox',
+            name: `group_${group.id}`,
+            label: group.name,
+            checked: (member.group_ids ?? []).includes(group.id),
+          }));
+          const values = await promptAction({
+            title: t('engineer.members.groupsTitle'),
+            fields,
+            confirmText: t('common.save'),
+          });
+          if (!values) return;
+          const selectedGroups = groups
+            .filter((group) => values[`group_${group.id}`])
+            .map((group) => group.id);
+          try {
+            showLoading();
+            await apiFetch(`/api/spaces/${state.selectedSpaceId}/members/${member.id}/groups`, {
+              method: 'PATCH',
+              body: JSON.stringify({ groups: selectedGroups }),
+            });
+            await loadMembers();
+            showToast('Группы обновлены.');
+          } catch (error) {
+            console.error(error);
+            handleApiError(error, 'Не удалось обновить группы пользователя.');
           } finally {
             hideLoading();
           }
