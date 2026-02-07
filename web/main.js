@@ -114,6 +114,7 @@ const translations = {
     'profile.language': 'Язык',
     'profile.switchUser': 'Перейти на обычный',
     'profile.logout': 'Выйти',
+    'pcn.pageTitle': 'Minecraft Security System — Режим ПЦН',
   },
   'en-US': {
     'pcn.title': 'PCN Mode',
@@ -146,6 +147,7 @@ const translations = {
     'profile.language': 'Language',
     'profile.switchUser': 'Go to user',
     'profile.logout': 'Sign out',
+    'pcn.pageTitle': 'Minecraft Security System — PCN mode',
   },
 };
 
@@ -163,6 +165,9 @@ const applyTranslations = () => {
       node.setAttribute('placeholder', dict[key]);
     }
   });
+  if (dict['pcn.pageTitle']) {
+    document.title = dict['pcn.pageTitle'];
+  }
 };
 
 const t = (key) => translations[state.language]?.[key] ?? translations.ru[key] ?? key;

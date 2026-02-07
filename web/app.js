@@ -313,6 +313,66 @@ const translations = {
     'profile.language': 'Язык',
     'profile.switchUser': 'Перейти на обычный',
     'profile.logout': 'Выйти',
+    'errors.extensionLimit': 'В пространство можно добавить до 5 расширителей.',
+    'errors.deviceTypeLimit': 'В пространство можно добавить до 6 устройств каждого типа.',
+    'errors.zoneLimit': 'В пространство можно добавить до 32 зон.',
+    'errors.keyLimit': 'В пространство можно добавить до 32 ключей.',
+    'common.close': 'Закрыть',
+    'common.back': 'Назад',
+    'common.loading': 'Выполняется действие...',
+    'common.actionConfirmTitle': 'Подтвердите действие',
+    'common.cancel': 'Отмена',
+    'common.confirm': 'Подтвердить',
+    'common.guardTitle': 'Действие недоступно',
+    'common.guardMessage': 'Невозможно выполнить действие: объект под охраной.',
+    'common.ok': 'Понятно',
+    'engineer.spaceModal.title': 'Создать пространство',
+    'engineer.spaceModal.hubId': 'ID хаба',
+    'engineer.spaceModal.name': 'Название',
+    'engineer.spaceModal.address': 'Координаты',
+    'engineer.spaceModal.server': 'Сервер',
+    'engineer.spaceModal.city': 'Город',
+    'engineer.spaceModal.submit': 'Создать',
+    'engineer.deviceModal.title': 'Добавить устройство',
+    'engineer.deviceModal.name': 'Имя устройства',
+    'engineer.deviceModal.room': 'Комната',
+    'engineer.deviceModal.type.zone': 'Шлейф/зона',
+    'engineer.deviceModal.type.outputLight': 'Постановочный светодиод',
+    'engineer.deviceModal.type.siren': 'Сирена',
+    'engineer.deviceModal.type.reader': 'Считыватель',
+    'engineer.deviceModal.type.extension': 'Модуль расширения',
+    'engineer.deviceModal.type.key': 'Ключ',
+    'engineer.deviceModal.side': 'Сторона (N/S/E/W/U/D)',
+    'engineer.deviceModal.bindTarget.hub': 'К хабу',
+    'engineer.deviceModal.bindTarget.extension': 'К модулю расширения',
+    'engineer.deviceModal.bindExtension.empty': 'Нет модулей расширения',
+    'engineer.deviceModal.bindExtension.select': 'Выберите модуль',
+    'engineer.deviceModal.extension.id': 'ID модуля (HUB_EXT-...)',
+    'engineer.deviceModal.extension.hubSide': 'Сторона хаба (N/S/E/W/U/D)',
+    'engineer.deviceModal.extension.extensionSide': 'Сторона модуля (N/S/E/W/U/D)',
+    'engineer.deviceModal.zoneType.instant': 'Нормальная',
+    'engineer.deviceModal.zoneType.delayed': 'Задержанная',
+    'engineer.deviceModal.zoneType.pass': 'Проходная',
+    'engineer.deviceModal.zoneType.24h': '24-часовая',
+    'engineer.deviceModal.bypass.false': 'Обход: нет',
+    'engineer.deviceModal.bypass.true': 'Обход: да',
+    'engineer.deviceModal.silent.false': 'Тихая: нет',
+    'engineer.deviceModal.silent.true': 'Тихая: да',
+    'engineer.deviceModal.delaySeconds': 'Задержка (сек)',
+    'engineer.deviceModal.normalLevel': 'Норма уровня',
+    'engineer.deviceModal.outputLevel': 'Уровень сигнала',
+    'engineer.deviceModal.intervalMs': 'Интервал (мс)',
+    'engineer.deviceModal.alarmDuration': 'Время тревоги (сек)',
+    'engineer.deviceModal.reader.id': 'ID считывателя',
+    'engineer.deviceModal.reader.outputLevel': 'Выходной уровень',
+    'engineer.deviceModal.reader.inputLevel': 'Входной уровень',
+    'engineer.deviceModal.key.name': 'Имя ключа',
+    'engineer.deviceModal.key.readerId': 'ID считывателя',
+    'engineer.deviceModal.key.read': 'Считать ключ',
+    'engineer.deviceModal.key.generate': 'Сгенерировать',
+    'engineer.deviceModal.submit': 'Добавить',
+    'page.title.engineer': 'Minecraft Security System — Демо интерфейс',
+    'page.title.admin': 'Minecraft Security System — Админ-панель',
   },
   'en-US': {
     'admin.title': 'Admin panel',
@@ -421,6 +481,66 @@ const translations = {
     'profile.language': 'Language',
     'profile.switchUser': 'Go to user',
     'profile.logout': 'Sign out',
+    'errors.extensionLimit': 'You can add up to 5 extensions to a space.',
+    'errors.deviceTypeLimit': 'You can add up to 6 devices of each type to a space.',
+    'errors.zoneLimit': 'You can add up to 32 zones to a space.',
+    'errors.keyLimit': 'You can add up to 32 keys to a space.',
+    'common.close': 'Close',
+    'common.back': 'Back',
+    'common.loading': 'Working on it...',
+    'common.actionConfirmTitle': 'Confirm action',
+    'common.cancel': 'Cancel',
+    'common.confirm': 'Confirm',
+    'common.guardTitle': 'Action unavailable',
+    'common.guardMessage': 'Unable to perform the action: the space is armed.',
+    'common.ok': 'OK',
+    'engineer.spaceModal.title': 'Create space',
+    'engineer.spaceModal.hubId': 'Hub ID',
+    'engineer.spaceModal.name': 'Name',
+    'engineer.spaceModal.address': 'Coordinates',
+    'engineer.spaceModal.server': 'Server',
+    'engineer.spaceModal.city': 'City',
+    'engineer.spaceModal.submit': 'Create',
+    'engineer.deviceModal.title': 'Add device',
+    'engineer.deviceModal.name': 'Device name',
+    'engineer.deviceModal.room': 'Room',
+    'engineer.deviceModal.type.zone': 'Zone',
+    'engineer.deviceModal.type.outputLight': 'Arming LED',
+    'engineer.deviceModal.type.siren': 'Siren',
+    'engineer.deviceModal.type.reader': 'Reader',
+    'engineer.deviceModal.type.extension': 'Extension module',
+    'engineer.deviceModal.type.key': 'Key',
+    'engineer.deviceModal.side': 'Side (N/S/E/W/U/D)',
+    'engineer.deviceModal.bindTarget.hub': 'To hub',
+    'engineer.deviceModal.bindTarget.extension': 'To extension module',
+    'engineer.deviceModal.bindExtension.empty': 'No extension modules',
+    'engineer.deviceModal.bindExtension.select': 'Select a module',
+    'engineer.deviceModal.extension.id': 'Module ID (HUB_EXT-...)',
+    'engineer.deviceModal.extension.hubSide': 'Hub side (N/S/E/W/U/D)',
+    'engineer.deviceModal.extension.extensionSide': 'Module side (N/S/E/W/U/D)',
+    'engineer.deviceModal.zoneType.instant': 'Normal',
+    'engineer.deviceModal.zoneType.delayed': 'Delayed',
+    'engineer.deviceModal.zoneType.pass': 'Pass-through',
+    'engineer.deviceModal.zoneType.24h': '24-hour',
+    'engineer.deviceModal.bypass.false': 'Bypass: no',
+    'engineer.deviceModal.bypass.true': 'Bypass: yes',
+    'engineer.deviceModal.silent.false': 'Silent: no',
+    'engineer.deviceModal.silent.true': 'Silent: yes',
+    'engineer.deviceModal.delaySeconds': 'Delay (sec)',
+    'engineer.deviceModal.normalLevel': 'Normal level',
+    'engineer.deviceModal.outputLevel': 'Output level',
+    'engineer.deviceModal.intervalMs': 'Interval (ms)',
+    'engineer.deviceModal.alarmDuration': 'Alarm duration (sec)',
+    'engineer.deviceModal.reader.id': 'Reader ID',
+    'engineer.deviceModal.reader.outputLevel': 'Output level',
+    'engineer.deviceModal.reader.inputLevel': 'Input level',
+    'engineer.deviceModal.key.name': 'Key name',
+    'engineer.deviceModal.key.readerId': 'Reader ID',
+    'engineer.deviceModal.key.read': 'Read key',
+    'engineer.deviceModal.key.generate': 'Generate',
+    'engineer.deviceModal.submit': 'Add',
+    'page.title.engineer': 'Minecraft Security System — Demo',
+    'page.title.admin': 'Minecraft Security System — Admin panel',
   },
 };
 
@@ -440,6 +560,16 @@ const applyTranslations = () => {
       node.setAttribute('placeholder', dict[key]);
     }
   });
+  document.querySelectorAll('[data-i18n-aria-label]').forEach((node) => {
+    const key = node.dataset.i18nAriaLabel;
+    if (dict[key]) {
+      node.setAttribute('aria-label', dict[key]);
+    }
+  });
+  const titleKey = isAdminPage ? 'page.title.admin' : 'page.title.engineer';
+  if (dict[titleKey]) {
+    document.title = dict[titleKey];
+  }
 };
 
 const loadProfileSettings = () => {
@@ -927,8 +1057,21 @@ const handleApiError = (error, fallbackMessage) => {
     showToast('Такой ID модуля расширения уже используется.');
     return;
   }
-  if (error.message === 'extension_limit') {
-    showToast('В пространство можно добавить до 5 расширителей.');
+  const errorMessage = error?.message ?? '';
+  if (errorMessage === 'extension_limit') {
+    showToast(t('errors.extensionLimit'));
+    return;
+  }
+  if (errorMessage === 'device_type_limit' || errorMessage.includes('device_type_limit')) {
+    showToast(t('errors.deviceTypeLimit'));
+    return;
+  }
+  if (errorMessage === 'zone_limit' || errorMessage.includes('zone_limit')) {
+    showToast(t('errors.zoneLimit'));
+    return;
+  }
+  if (errorMessage === 'key_limit' || errorMessage.includes('key_limit')) {
+    showToast(t('errors.keyLimit'));
     return;
   }
   showToast(fallbackMessage);
@@ -1167,7 +1310,7 @@ const renderDevices = (space) => {
 
 const getExtensionOptions = (extensions, selectedId = '') => {
   if (!extensions.length) {
-    return '<option value="">Нет модулей расширения</option>';
+    return `<option value="">${t('engineer.deviceModal.bindExtension.empty')}</option>`;
   }
   const options = extensions.map((device) => {
     const id = device.extensionId ?? device.id;
@@ -1176,7 +1319,28 @@ const getExtensionOptions = (extensions, selectedId = '') => {
     const isSelected = id === selectedId ? ' selected' : '';
     return `<option value="${safeId}"${isSelected}>${safeName} (${safeId})</option>`;
   }).join('');
-  return `<option value="">Выберите модуль</option>${options}`;
+  return `<option value="">${t('engineer.deviceModal.bindExtension.select')}</option>${options}`;
+};
+
+const getSpaceExtensionDevices = (space) => (space?.devices ?? [])
+  .filter((device) => isHubExtensionType(device.type));
+
+const updateEditExtensionOptions = async ({ spaceId, selectEl, selectedId }) => {
+  if (!selectEl || !spaceId) return;
+  try {
+    const response = await apiFetch(`/api/spaces/${spaceId}/extensions`);
+    const extensions = response.extensions ?? [];
+    selectEl.innerHTML = getExtensionOptions(extensions, selectedId);
+    selectEl.disabled = !extensions.length;
+    if (!extensions.length) {
+      selectEl.value = '';
+    }
+  } catch (error) {
+    console.error(error);
+    selectEl.innerHTML = getExtensionOptions([], selectedId);
+    selectEl.disabled = true;
+    selectEl.value = '';
+  }
 };
 
 const updateCreateExtensionOptions = async () => {
@@ -1211,6 +1375,7 @@ const renderDeviceDetails = (device) => {
   const safeType = escapeHtml(device.type);
   const safeId = escapeHtml(device.id);
   const space = spaces.find((item) => item.id === state.selectedSpaceId);
+  const extensionDevices = getSpaceExtensionDevices(space);
   const statusBlock = device.type === 'zone' || device.type === 'hub' || isHubExtensionType(device.type)
     ? `
       <div class="stat">
@@ -1256,7 +1421,7 @@ const renderDeviceDetails = (device) => {
           id="bindExtensionIdEdit"
           class="${bindTarget === 'hub_extension' ? '' : 'hidden'}"
         >
-          ${getExtensionOptions(space, bindTarget === 'hub_extension' ? bindExtensionId : '')}
+          ${getExtensionOptions(extensionDevices, bindTarget === 'hub_extension' ? bindExtensionId : '')}
         </select>
         <select name="zoneType">
           <option value="instant" ${device.config?.zoneType === 'instant' ? 'selected' : ''}>Нормальная</option>
@@ -1297,7 +1462,7 @@ const renderDeviceDetails = (device) => {
           id="bindExtensionIdEdit"
           class="${bindTarget === 'hub_extension' ? '' : 'hidden'}"
         >
-          ${getExtensionOptions(space, bindTarget === 'hub_extension' ? bindExtensionId : '')}
+          ${getExtensionOptions(extensionDevices, bindTarget === 'hub_extension' ? bindExtensionId : '')}
         </select>
         <input type="number" name="outputLevel" value="${device.config?.level ?? 15}" min="0" max="15" />
       `;
@@ -1315,7 +1480,7 @@ const renderDeviceDetails = (device) => {
           id="bindExtensionIdEdit"
           class="${bindTarget === 'hub_extension' ? '' : 'hidden'}"
         >
-          ${getExtensionOptions(space, bindTarget === 'hub_extension' ? bindExtensionId : '')}
+          ${getExtensionOptions(extensionDevices, bindTarget === 'hub_extension' ? bindExtensionId : '')}
         </select>
         <input type="number" name="outputLevel" value="${device.config?.level ?? 15}" min="0" max="15" />
         <input type="number" name="intervalMs" value="${device.config?.intervalMs ?? 1000}" min="300" max="60000" />
@@ -1403,15 +1568,35 @@ const renderDeviceDetails = (device) => {
     const updateBindingFields = () => {
       if (!bindTargetSelect || !bindExtensionField) return;
       const isExtension = bindTargetSelect.value === 'hub_extension';
+      const hasExtensions = Array.from(bindExtensionField.options).some((option) => option.value);
       bindExtensionField.classList.toggle('hidden', !isExtension);
-      bindExtensionField.required = isExtension;
-      if (!isExtension) {
+      bindExtensionField.required = isExtension && hasExtensions;
+      bindExtensionField.disabled = !isExtension || !hasExtensions;
+      if (!isExtension || !hasExtensions) {
         bindExtensionField.value = '';
       }
     };
-    if (bindTargetSelect) {
-      bindTargetSelect.addEventListener('change', updateBindingFields);
+    const refreshBindExtensions = async () => {
+      if (!bindExtensionField || !space) return;
+      await updateEditExtensionOptions({
+        spaceId: space.id,
+        selectEl: bindExtensionField,
+        selectedId: bindExtensionField.value,
+      });
       updateBindingFields();
+    };
+    if (bindTargetSelect) {
+      bindTargetSelect.addEventListener('change', () => {
+        if (bindTargetSelect.value === 'hub_extension') {
+          refreshBindExtensions().catch(() => null);
+        } else {
+          updateBindingFields();
+        }
+      });
+      updateBindingFields();
+    }
+    if (bindTargetSelect?.value === 'hub_extension') {
+      refreshBindExtensions().catch(() => null);
     }
     editForm.addEventListener('submit', async (event) => {
       event.preventDefault();
