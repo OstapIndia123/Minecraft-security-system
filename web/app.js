@@ -155,6 +155,7 @@ const deviceNameInput = deviceForm?.querySelector('input[name="name"]');
 const deviceRoomInput = deviceForm?.querySelector('input[name="room"]');
 const bindTargetInput = deviceForm?.querySelector('select[name="bindTarget"]');
 const bindExtensionInput = deviceForm?.querySelector('select[name="bindExtensionId"]');
+const deviceGroupSelect = document.getElementById('deviceGroupSelect');
 const bindingFields = document.getElementById('bindingFields');
 const extensionFields = document.getElementById('extensionFields');
 const readerIdInput = readerFields?.querySelector('input[name="id"]');
@@ -193,6 +194,15 @@ const statusMap = {
   disarmed: 'Снято с охраны',
   night: 'Ночной режим',
   partial: 'Частично под охраной',
+};
+
+const getStatusLabel = (status) => {
+  const key = `status.${status}`;
+  const translated = t(key);
+  if (!translated || translated === key) {
+    return statusMap[status] ?? status;
+  }
+  return translated;
 };
 
 const statusTone = {
@@ -326,6 +336,12 @@ const translations = {
     'engineer.groups.noGroups': 'Нет групп',
     'engineer.groups.groupId': 'Группа',
     'engineer.groups.none': 'Без группы',
+    'engineer.groups.assign.title': 'Назначение устройств',
+    'engineer.groups.assign.device': 'Устройство',
+    'engineer.groups.assign.group': 'Группа',
+    'engineer.groups.assign.apply': 'Применить',
+    'engineer.groups.assign.empty': 'Нет доступных устройств',
+    'errors.groupLimit': 'В пространство можно добавить до 32 групп.',
     'profile.title': 'Профиль',
     'profile.nickname': 'Игровой ник',
     'profile.nickname.change': 'Сменить',
@@ -333,6 +349,7 @@ const translations = {
     'profile.language': 'Язык',
     'profile.switchUser': 'Перейти на обычный',
     'profile.logout': 'Выйти',
+    'common.save': 'Сохранить',
     'errors.extensionLimit': 'В пространство можно добавить до 5 расширителей.',
     'errors.deviceTypeLimit': 'В пространство можно добавить до 6 устройств каждого типа.',
     'errors.zoneLimit': 'В пространство можно добавить до 32 зон.',
@@ -512,6 +529,12 @@ const translations = {
     'engineer.groups.noGroups': 'No groups',
     'engineer.groups.groupId': 'Group',
     'engineer.groups.none': 'No group',
+    'engineer.groups.assign.title': 'Assign devices',
+    'engineer.groups.assign.device': 'Device',
+    'engineer.groups.assign.group': 'Group',
+    'engineer.groups.assign.apply': 'Apply',
+    'engineer.groups.assign.empty': 'No devices available',
+    'errors.groupLimit': 'You can add up to 32 groups to a space.',
     'profile.title': 'Profile',
     'profile.nickname': 'Game nickname',
     'profile.nickname.change': 'Change',
@@ -519,6 +542,7 @@ const translations = {
     'profile.language': 'Language',
     'profile.switchUser': 'Go to user',
     'profile.logout': 'Sign out',
+    'common.save': 'Save',
     'errors.extensionLimit': 'You can add up to 5 extensions to a space.',
     'errors.deviceTypeLimit': 'You can add up to 6 devices of each type to a space.',
     'errors.zoneLimit': 'You can add up to 32 zones to a space.',
@@ -1100,6 +1124,10 @@ const handleApiError = (error, fallbackMessage) => {
     showToast(t('errors.extensionLimit'));
     return;
   }
+  if (errorMessage === 'group_limit') {
+    showToast(t('errors.groupLimit'));
+    return;
+  }
   if (errorMessage === 'device_type_limit' || errorMessage.includes('device_type_limit')) {
     showToast(t('errors.deviceTypeLimit'));
     return;
@@ -1294,7 +1322,7 @@ const renderObjectList = () => {
       <div class="object-card__title">${escapeHtml(space.name)}</div>
       <div class="object-card__meta">${t('engineer.object.hubId')} ${escapeHtml(space.hubId ?? '—')}</div>
       ${hubOfflineLabel}
-      <div class="object-card__status ${statusTone[space.status] ?? ''}">${t(`status.${space.status}`) ?? statusMap[space.status] ?? space.status}</div>
+      <div class="object-card__status ${statusTone[space.status] ?? ''}">${getStatusLabel(space.status)}</div>
       <div class="object-card__meta">${t('engineer.object.server')}: ${escapeHtml(space.server ?? '—')}</div>
       <div class="object-card__meta">${escapeHtml(space.address)}</div>
     `;
@@ -1313,7 +1341,7 @@ const renderObjectList = () => {
 
 const renderSpaceHeader = (space) => {
   spaceIdEl.textContent = space.id;
-  spaceStateEl.textContent = t(`status.${space.status}`) ?? statusMap[space.status] ?? space.status;
+  spaceStateEl.textContent = getStatusLabel(space.status);
   spaceStateEl.className = `status-card__state ${statusTone[space.status] ?? ''}`;
   spaceMetaEl.textContent = `${t('engineer.object.coordsLabel')}: ${space.address} • ${space.server ?? '—'} • ${space.city}`;
   hubLabel.textContent = space.hubId ? `Hub ${space.hubId}` : t('engineer.hub.unbound');
@@ -2234,14 +2262,33 @@ const groupsManageList = document.getElementById('groupsManageList');
 const closeGroupsManageModal = document.getElementById('closeGroupsManageModal');
 const groupsManageClose = document.getElementById('groupsManageClose');
 
+const openGroupsManage = () => {
+  if (!groupsManageModal) return;
+  groupsManageModal.classList.add('modal--open');
+  groupsManageModal.setAttribute('aria-hidden', 'false');
+};
+
+const closeGroupsManage = () => {
+  if (!groupsManageModal) return;
+  groupsManageModal.classList.remove('modal--open');
+  groupsManageModal.setAttribute('aria-hidden', 'true');
+};
+
 if (closeGroupsManageModal) {
   closeGroupsManageModal.addEventListener('click', () => {
-    groupsManageModal.setAttribute('aria-hidden', 'true');
+    closeGroupsManage();
   });
 }
 if (groupsManageClose) {
   groupsManageClose.addEventListener('click', () => {
-    groupsManageModal.setAttribute('aria-hidden', 'true');
+    closeGroupsManage();
+  });
+}
+if (groupsManageModal) {
+  groupsManageModal.addEventListener('click', (event) => {
+    if (event.target === groupsManageModal) {
+      closeGroupsManage();
+    }
   });
 }
 
@@ -2250,19 +2297,42 @@ const renderStatusActions = (space) => {
   if (!actionsContainer) return;
   if (space.groupsEnabled) {
     actionsContainer.innerHTML = `<button class="chip chip--info" id="openGroupsManage">${t('engineer.groups.manage')}</button>`;
-    const btn = document.getElementById('openGroupsManage');
-    if (btn) {
-      btn.addEventListener('click', () => {
-        renderGroupsManageModal(space);
-        groupsManageModal?.setAttribute('aria-hidden', 'false');
-      });
-    }
   } else {
     actionsContainer.innerHTML = `
       <button class="chip chip--danger" data-action="arm">${t('engineer.actions.arm')}</button>
       <button class="chip chip--success" data-action="disarm">${t('engineer.actions.disarm')}</button>
     `;
     rebindChipActions();
+  }
+};
+
+document.addEventListener('click', (event) => {
+  const btn = event.target.closest('#openGroupsManage');
+  if (!btn) return;
+  const space = spaces.find((item) => item.id === state.selectedSpaceId);
+  if (!space || !space.groupsEnabled) return;
+  renderGroupsManageModal(space);
+  openGroupsManage();
+});
+
+const updateDeviceGroupSelect = (space) => {
+  if (!deviceGroupSelect) return;
+  const groups = space?.groups ?? [];
+  const selectedValue = deviceGroupSelect.value;
+  deviceGroupSelect.innerHTML = [
+    `<option value="">${t('engineer.groups.none')}</option>`,
+    ...groups.map((group) => (
+      `<option value="${group.id}" ${String(selectedValue) === String(group.id) ? 'selected' : ''}>${escapeHtml(group.name)}</option>`
+    )),
+  ].join('');
+
+  const selectedType = deviceType?.value;
+  const isSupportedType = ['zone', 'siren', 'output-light'].includes(selectedType);
+  const shouldShow = Boolean(space?.groupsEnabled && isSupportedType && groups.length);
+  deviceGroupSelect.classList.toggle('hidden', !shouldShow);
+  deviceGroupSelect.disabled = !shouldShow;
+  if (!shouldShow) {
+    deviceGroupSelect.value = '';
   }
 };
 
@@ -2301,6 +2371,7 @@ const renderGroups = (space) => {
   if (!container) return;
   const groups = space.groups ?? [];
   const devices = (space.devices ?? []).filter((d) => d.type !== 'hub' && d.type !== 'key');
+  const assignableDevices = devices.filter((device) => ['zone', 'siren', 'output-light'].includes(device.type));
 
   const toggleChecked = space.groupsEnabled ? 'checked' : '';
   let html = `
@@ -2311,6 +2382,43 @@ const renderGroups = (space) => {
   `;
 
   if (space.groupsEnabled) {
+    html += `
+      <div class="group-assign">
+        <div class="group-assign__header">
+          <h3>${t('engineer.groups.assign.title')}</h3>
+        </div>
+        <div class="group-assign__list">
+          ${assignableDevices.length
+            ? assignableDevices.map((device) => {
+              const currentGroupId = device.config?.groupId ?? '';
+              const groupOptions = [
+                `<option value="" ${!currentGroupId ? 'selected' : ''}>${t('engineer.groups.none')}</option>`,
+                ...groups.map((group) => (
+                  `<option value="${group.id}" ${String(currentGroupId) === String(group.id) ? 'selected' : ''}>${escapeHtml(group.name)}</option>`
+                )),
+              ].join('');
+              return `
+                <div class="group-assign__item">
+                  <div class="group-assign__info">
+                    <span class="group-assign__name">${escapeHtml(device.name)}</span>
+                    <span class="muted">${escapeHtml(device.room ?? '')}</span>
+                  </div>
+                  <div class="group-assign__controls">
+                    <select data-device-group="${device.id}">
+                      ${groupOptions}
+                    </select>
+                    <button class="button button--ghost" data-device-group-apply="${device.id}">
+                      ${t('engineer.groups.assign.apply')}
+                    </button>
+                  </div>
+                </div>
+              `;
+            }).join('')
+            : `<div class="empty-state">${t('engineer.groups.assign.empty')}</div>`}
+        </div>
+      </div>
+    `;
+
     if (groups.length) {
       html += '<div class="groups-list">';
       for (const group of groups) {
@@ -2363,6 +2471,7 @@ const renderGroups = (space) => {
   }
 
   container.innerHTML = html;
+  updateDeviceGroupSelect(space);
 
   // Bind toggle
   const toggle = document.getElementById('groupsModeToggle');
@@ -2415,8 +2524,22 @@ const renderGroups = (space) => {
       if (!ensureEditable()) return;
       const groupId = btn.dataset.groupRename;
       const group = groups.find((g) => String(g.id) === String(groupId));
-      const newName = prompt(t('engineer.groups.name'), group?.name ?? '');
-      if (!newName || !newName.trim()) return;
+      const values = await promptAction({
+        title: t('engineer.groups.rename'),
+        message: t('engineer.groups.name'),
+        confirmText: t('common.save') ?? 'Сохранить',
+        fields: [
+          {
+            name: 'name',
+            value: group?.name ?? '',
+            placeholder: t('engineer.groups.name'),
+            required: true,
+            maxLength: 60,
+          },
+        ],
+      });
+      const newName = values?.name?.trim();
+      if (!newName) return;
       try {
         showLoading();
         await apiFetch(`/api/spaces/${space.id}/groups/${groupId}`, {
@@ -2428,6 +2551,29 @@ const renderGroups = (space) => {
       } catch (error) {
         console.error(error);
         handleApiError(error, 'Не удалось переименовать группу.');
+      } finally {
+        hideLoading();
+      }
+    });
+  });
+
+  container.querySelectorAll('[data-device-group-apply]').forEach((btn) => {
+    btn.addEventListener('click', async () => {
+      if (!ensureEditable()) return;
+      const deviceId = btn.dataset.deviceGroupApply;
+      const select = container.querySelector(`[data-device-group="${deviceId}"]`);
+      if (!select) return;
+      try {
+        showLoading();
+        await apiFetch(`/api/spaces/${space.id}/devices/${deviceId}`, {
+          method: 'PATCH',
+          body: JSON.stringify({ groupId: select.value }),
+        });
+        await refreshAll();
+        showToast('Группа для устройства обновлена.');
+      } catch (error) {
+        console.error(error);
+        handleApiError(error, 'Не удалось обновить группу устройства.');
       } finally {
         hideLoading();
       }
@@ -2806,6 +2952,7 @@ if (deviceType) {
       input.disabled = !isExtension;
       input.required = isExtension;
     });
+    updateDeviceGroupSelect(space);
 
     [deviceNameInput, deviceRoomInput].forEach((input) => {
       if (!input) return;

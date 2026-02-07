@@ -518,7 +518,9 @@ const renderSpaces = (spaces) => {
 
 const renderStatus = (space) => {
   spaceIdEl.textContent = space.id;
-  spaceStateEl.textContent = t(`status.${space.status}`) ?? space.status;
+  const statusKey = `status.${space.status}`;
+  const statusLabel = t(statusKey);
+  spaceStateEl.textContent = (!statusLabel || statusLabel === statusKey) ? space.status : statusLabel;
   spaceStateEl.className = `status-card__state ${statusTone[space.status] ?? ''}`;
   const serverLabel = space.server ?? '—';
   const cityLabel = space.city ?? '—';
@@ -729,14 +731,33 @@ const groupsManageList = document.getElementById('groupsManageList');
 const closeGroupsManageModalBtn = document.getElementById('closeGroupsManageModal');
 const groupsManageCloseBtn = document.getElementById('groupsManageClose');
 
+const openGroupsManage = () => {
+  if (!groupsManageModal) return;
+  groupsManageModal.classList.add('modal--open');
+  groupsManageModal.setAttribute('aria-hidden', 'false');
+};
+
+const closeGroupsManage = () => {
+  if (!groupsManageModal) return;
+  groupsManageModal.classList.remove('modal--open');
+  groupsManageModal.setAttribute('aria-hidden', 'true');
+};
+
 if (closeGroupsManageModalBtn) {
   closeGroupsManageModalBtn.addEventListener('click', () => {
-    groupsManageModal?.setAttribute('aria-hidden', 'true');
+    closeGroupsManage();
   });
 }
 if (groupsManageCloseBtn) {
   groupsManageCloseBtn.addEventListener('click', () => {
-    groupsManageModal?.setAttribute('aria-hidden', 'true');
+    closeGroupsManage();
+  });
+}
+if (groupsManageModal) {
+  groupsManageModal.addEventListener('click', (event) => {
+    if (event.target === groupsManageModal) {
+      closeGroupsManage();
+    }
   });
 }
 
@@ -748,13 +769,6 @@ const renderStatusActions = (space) => {
   if (!actionsContainer) return;
   if (space.groupsEnabled) {
     actionsContainer.innerHTML = `<button class="chip chip--info" id="openGroupsManage">${t('user.groups.manage')}</button>`;
-    const btn = document.getElementById('openGroupsManage');
-    if (btn) {
-      btn.addEventListener('click', () => {
-        renderUserGroupsModal(space);
-        groupsManageModal?.setAttribute('aria-hidden', 'false');
-      });
-    }
   } else {
     actionsContainer.innerHTML = `
       <button class="chip chip--danger" data-action="arm">${t('user.actions.arm')}</button>
@@ -763,6 +777,16 @@ const renderStatusActions = (space) => {
     rebindUserChipActions();
   }
 };
+
+document.addEventListener('click', (event) => {
+  const btn = event.target.closest('#openGroupsManage');
+  if (!btn) return;
+  const space = currentSpace
+    ?? spacesCache.find((item) => item.id === state.selectedSpaceId);
+  if (!space?.groupsEnabled) return;
+  renderUserGroupsModal(space);
+  openGroupsManage();
+});
 
 const rebindUserChipActions = () => {
   document.querySelectorAll('.status-actions .chip[data-action]').forEach((chip) => {
