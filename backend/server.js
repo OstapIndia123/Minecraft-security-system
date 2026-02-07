@@ -2840,7 +2840,7 @@ app.post('/api/spaces/:id/groups', requireAuth, requireInstaller, async (req, re
   if (!name) return res.status(400).json({ error: 'missing_fields' });
   if (name.length > 60) return res.status(400).json({ error: 'field_too_long' });
   const existing = await query('SELECT count(*)::int AS cnt FROM groups WHERE space_id = $1', [req.params.id]);
-  if (existing.rows[0].cnt >= 16) return res.status(400).json({ error: 'group_limit' });
+  if (existing.rows[0].cnt >= 32) return res.status(400).json({ error: 'group_limit' });
   const result = await query(
     'INSERT INTO groups (space_id, name) VALUES ($1, $2) RETURNING id, name, status',
     [req.params.id, name],
@@ -2922,6 +2922,7 @@ app.post('/api/spaces/:id/groups/:groupId/arm', requireAuth, async (req, res) =>
   await query('UPDATE groups SET status = $1 WHERE id = $2 AND space_id = $3', ['armed', groupId, spaceId]);
   const computedStatus = await computeSpaceStatusFromGroups(spaceId);
   await query('UPDATE spaces SET status = $1 WHERE id = $2', [computedStatus, spaceId]);
+  await evaluateZoneIssues(spaceId);
   await applyLightOutputs(spaceId, hubId, 'armed', Number(groupId));
   await appendLog(spaceId, `Группа '${groupName}' поставлена под охрану`, req.user.minecraft_nickname ?? 'UI', 'security');
   const sk = stateKey(spaceId, Number(groupId));
@@ -2956,6 +2957,7 @@ app.post('/api/spaces/:id/groups/:groupId/disarm', requireAuth, async (req, res)
   await applyLightOutputs(spaceId, hubId, 'disarmed', gId);
   const computedStatus = await computeSpaceStatusFromGroups(spaceId);
   await query('UPDATE spaces SET status = $1 WHERE id = $2', [computedStatus, spaceId]);
+  await evaluateZoneIssues(spaceId);
   await appendLog(spaceId, `Группа '${groupName}' снята с охраны`, req.user.minecraft_nickname ?? 'UI', 'security');
   const result = await query('SELECT * FROM spaces WHERE id = $1', [spaceId]);
   const space = mapSpace(result.rows[0]);

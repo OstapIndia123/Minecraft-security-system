@@ -729,14 +729,33 @@ const groupsManageList = document.getElementById('groupsManageList');
 const closeGroupsManageModalBtn = document.getElementById('closeGroupsManageModal');
 const groupsManageCloseBtn = document.getElementById('groupsManageClose');
 
+const openGroupsManage = () => {
+  if (!groupsManageModal) return;
+  groupsManageModal.classList.add('modal--open');
+  groupsManageModal.setAttribute('aria-hidden', 'false');
+};
+
+const closeGroupsManage = () => {
+  if (!groupsManageModal) return;
+  groupsManageModal.classList.remove('modal--open');
+  groupsManageModal.setAttribute('aria-hidden', 'true');
+};
+
 if (closeGroupsManageModalBtn) {
   closeGroupsManageModalBtn.addEventListener('click', () => {
-    groupsManageModal?.setAttribute('aria-hidden', 'true');
+    closeGroupsManage();
   });
 }
 if (groupsManageCloseBtn) {
   groupsManageCloseBtn.addEventListener('click', () => {
-    groupsManageModal?.setAttribute('aria-hidden', 'true');
+    closeGroupsManage();
+  });
+}
+if (groupsManageModal) {
+  groupsManageModal.addEventListener('click', (event) => {
+    if (event.target === groupsManageModal) {
+      closeGroupsManage();
+    }
   });
 }
 
@@ -752,7 +771,7 @@ const renderStatusActions = (space) => {
     if (btn) {
       btn.addEventListener('click', () => {
         renderUserGroupsModal(space);
-        groupsManageModal?.setAttribute('aria-hidden', 'false');
+        openGroupsManage();
       });
     }
   } else {
