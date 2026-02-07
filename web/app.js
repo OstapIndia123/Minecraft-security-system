@@ -1074,6 +1074,18 @@ const handleApiError = (error, fallbackMessage) => {
     showToast(t('errors.keyLimit'));
     return;
   }
+  if (errorMessage === 'device_type_limit' || errorMessage.includes('device_type_limit')) {
+    showToast('В пространство можно добавить до 6 устройств каждого типа.');
+    return;
+  }
+  if (errorMessage === 'zone_limit' || errorMessage.includes('zone_limit')) {
+    showToast('В пространство можно добавить до 32 зон.');
+    return;
+  }
+  if (errorMessage === 'key_limit' || errorMessage.includes('key_limit')) {
+    showToast('В пространство можно добавить до 32 ключей.');
+    return;
+  }
   showToast(fallbackMessage);
 };
 
@@ -1320,6 +1332,27 @@ const getExtensionOptions = (extensions, selectedId = '') => {
     return `<option value="${safeId}"${isSelected}>${safeName} (${safeId})</option>`;
   }).join('');
   return `<option value="">${t('engineer.deviceModal.bindExtension.select')}</option>${options}`;
+};
+
+const getSpaceExtensionDevices = (space) => (space?.devices ?? [])
+  .filter((device) => isHubExtensionType(device.type));
+
+const updateEditExtensionOptions = async ({ spaceId, selectEl, selectedId }) => {
+  if (!selectEl || !spaceId) return;
+  try {
+    const response = await apiFetch(`/api/spaces/${spaceId}/extensions`);
+    const extensions = response.extensions ?? [];
+    selectEl.innerHTML = getExtensionOptions(extensions, selectedId);
+    selectEl.disabled = !extensions.length;
+    if (!extensions.length) {
+      selectEl.value = '';
+    }
+  } catch (error) {
+    console.error(error);
+    selectEl.innerHTML = getExtensionOptions([], selectedId);
+    selectEl.disabled = true;
+    selectEl.value = '';
+  }
 };
 
 const getSpaceExtensionDevices = (space) => (space?.devices ?? [])
