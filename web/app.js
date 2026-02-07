@@ -1490,7 +1490,8 @@ const renderDeviceDetails = (device) => {
       </div>
     `
     : '';
-  const sideOptions = (value) => ['north', 'south', 'west', 'east', 'up', 'down']
+  const sideOptionValues = ['north', 'south', 'west', 'east', 'up', 'down'];
+  const sideOptions = (value) => sideOptionValues
     .map((side) => `<option value="${side}" ${value === side ? 'selected' : ''}>${side}</option>`)
     .join('');
 
@@ -1500,7 +1501,7 @@ const renderDeviceDetails = (device) => {
       <input type="text" name="room" value="${safeRoom}" placeholder="Комната" required />
       ${!isHubExtensionType(device.type)
         ? `
-          <select name="side">
+          <select name="side" required>
             ${sideOptions(device.side ?? '')}
           </select>
         `
