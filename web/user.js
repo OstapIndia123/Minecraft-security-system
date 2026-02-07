@@ -79,6 +79,12 @@ const translations = {
     'status.armed': 'Под охраной',
     'status.disarmed': 'Снято с охраны',
     'status.night': 'Ночной режим',
+    'status.partial': 'Частично под охраной',
+    'user.groups.manage': 'Управление',
+    'user.groups.manageTitle': 'Управление группами',
+    'user.groups.arm': 'Под охрану',
+    'user.groups.disarm': 'С охраны',
+    'user.groups.noGroups': 'Нет групп',
     'profile.title': 'Профиль',
     'profile.nickname': 'Игровой ник',
     'profile.nickname.change': 'Сменить',
@@ -108,6 +114,12 @@ const translations = {
     'status.armed': 'Armed',
     'status.disarmed': 'Disarmed',
     'status.night': 'Night mode',
+    'status.partial': 'Partially armed',
+    'user.groups.manage': 'Manage',
+    'user.groups.manageTitle': 'Manage groups',
+    'user.groups.arm': 'Arm',
+    'user.groups.disarm': 'Disarm',
+    'user.groups.noGroups': 'No groups',
     'profile.title': 'Profile',
     'profile.nickname': 'Game nickname',
     'profile.nickname.change': 'Change',
@@ -123,6 +135,7 @@ const statusTone = {
   armed: 'status--armed',
   disarmed: 'status--disarmed',
   night: 'status--night',
+  partial: 'status--partial',
 };
 
 const applyTranslations = () => {
@@ -586,6 +599,14 @@ const translateLogText = (text) => {
     { pattern: /^Обновлён ключ: (.+)$/, replacement: 'Key updated: $1' },
     { pattern: /^Пользователь покинул пространство: (.+)$/, replacement: 'User left space: $1' },
     { pattern: /^Пользователь удалён из пространства: (.+)$/, replacement: 'User removed from space: $1' },
+    { pattern: /^Группа '(.+)' поставлена под охрану$/, replacement: "Group '$1' armed" },
+    { pattern: /^Группа '(.+)' снята с охраны$/, replacement: "Group '$1' disarmed" },
+    { pattern: /^Постановка группы '(.+)' ключом: (.+)$/, replacement: "Group '$1' armed by key: $2" },
+    { pattern: /^Снятие группы '(.+)' ключом: (.+)$/, replacement: "Group '$1' disarmed by key: $2" },
+    { pattern: /^Режим групп включён$/, replacement: 'Groups mode enabled' },
+    { pattern: /^Режим групп отключён$/, replacement: 'Groups mode disabled' },
+    { pattern: /^Тревога шлейфа: (.+) \[(.+)\]$/, replacement: 'Zone alarm: $1 [$2]' },
+    { pattern: /^Восстановление шлейфа: (.+) \[(.+)\]$/, replacement: 'Zone restored: $1 [$2]' },
   ];
   for (const entry of translations) {
     if (entry.pattern.test(text)) {
@@ -638,6 +659,7 @@ const renderLogs = (logs) => {
 const loadSpace = async (spaceId, { refreshLogs = true } = {}) => {
   const space = await apiFetch(`/api/spaces/${spaceId}`);
   renderStatus(space);
+  renderStatusActions(space);
   renderDevices(space.devices ?? []);
   if (refreshLogs) {
     await loadLogs(true);
@@ -700,6 +722,116 @@ const refreshUserData = async () => {
   }
   renderSpaces(spacesCache);
   await loadSpace(state.selectedSpaceId, { refreshLogs: true });
+};
+
+const groupsManageModal = document.getElementById('groupsManageModal');
+const groupsManageList = document.getElementById('groupsManageList');
+const closeGroupsManageModalBtn = document.getElementById('closeGroupsManageModal');
+const groupsManageCloseBtn = document.getElementById('groupsManageClose');
+
+if (closeGroupsManageModalBtn) {
+  closeGroupsManageModalBtn.addEventListener('click', () => {
+    groupsManageModal?.setAttribute('aria-hidden', 'true');
+  });
+}
+if (groupsManageCloseBtn) {
+  groupsManageCloseBtn.addEventListener('click', () => {
+    groupsManageModal?.setAttribute('aria-hidden', 'true');
+  });
+}
+
+let currentSpace = null;
+
+const renderStatusActions = (space) => {
+  currentSpace = space;
+  const actionsContainer = document.querySelector('.status-actions');
+  if (!actionsContainer) return;
+  if (space.groupsEnabled) {
+    actionsContainer.innerHTML = `<button class="chip chip--info" id="openGroupsManage">${t('user.groups.manage')}</button>`;
+    const btn = document.getElementById('openGroupsManage');
+    if (btn) {
+      btn.addEventListener('click', () => {
+        renderUserGroupsModal(space);
+        groupsManageModal?.setAttribute('aria-hidden', 'false');
+      });
+    }
+  } else {
+    actionsContainer.innerHTML = `
+      <button class="chip chip--danger" data-action="arm">${t('user.actions.arm')}</button>
+      <button class="chip chip--success" data-action="disarm">${t('user.actions.disarm')}</button>
+    `;
+    rebindUserChipActions();
+  }
+};
+
+const rebindUserChipActions = () => {
+  document.querySelectorAll('.status-actions .chip[data-action]').forEach((chip) => {
+    chip.addEventListener('click', async () => {
+      if (!state.selectedSpaceId) return;
+      if (chip.dataset.action === 'arm') {
+        await apiFetch(`/api/spaces/${state.selectedSpaceId}/arm`, { method: 'POST' });
+      } else {
+        await apiFetch(`/api/spaces/${state.selectedSpaceId}/disarm`, { method: 'POST' });
+      }
+      await loadSpace(state.selectedSpaceId);
+    });
+  });
+};
+
+const renderUserGroupsModal = (space) => {
+  if (!groupsManageList) return;
+  const groups = space.groups ?? [];
+  if (!groups.length) {
+    groupsManageList.innerHTML = `<div class="empty-state">${t('user.groups.noGroups')}</div>`;
+    return;
+  }
+  groupsManageList.innerHTML = groups.map((group) => {
+    const statusLabel = t(`status.${group.status}`) ?? group.status;
+    const statusClass = statusTone[group.status] ?? '';
+    return `
+      <div class="group-manage-item">
+        <div class="group-manage-item__info">
+          <span class="group-manage-item__name">${escapeHtml(group.name)}</span>
+          <span class="group-manage-item__status ${statusClass}">${escapeHtml(statusLabel)}</span>
+        </div>
+        <div class="group-manage-item__actions">
+          ${group.status === 'armed'
+            ? `<button class="button button--ghost" data-group-disarm="${group.id}">${t('user.groups.disarm')}</button>`
+            : `<button class="button button--primary" data-group-arm="${group.id}">${t('user.groups.arm')}</button>`}
+        </div>
+      </div>
+    `;
+  }).join('');
+
+  groupsManageList.querySelectorAll('[data-group-arm]').forEach((btn) => {
+    btn.addEventListener('click', async () => {
+      const groupId = btn.dataset.groupArm;
+      try {
+        const updated = await apiFetch(`/api/spaces/${space.id}/groups/${groupId}/arm`, { method: 'POST' });
+        Object.assign(space, updated);
+        renderStatus(space);
+        renderStatusActions(space);
+        renderUserGroupsModal(space);
+      } catch {
+        // Ignore
+      }
+    });
+  });
+
+  groupsManageList.querySelectorAll('[data-group-disarm]').forEach((btn) => {
+    btn.addEventListener('click', async () => {
+      const groupId = btn.dataset.groupDisarm;
+      try {
+        const updated = await apiFetch(`/api/spaces/${space.id}/groups/${groupId}/disarm`, { method: 'POST' });
+        Object.assign(space, updated);
+        renderStatus(space);
+        renderStatusActions(space);
+        renderUserGroupsModal(space);
+      } catch {
+        // Ignore
+      }
+    });
+  });
 };
 
 chipActions.forEach((chip) => {
