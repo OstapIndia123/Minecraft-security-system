@@ -1393,27 +1393,6 @@ const updateEditExtensionOptions = async ({ spaceId, selectEl, selectedId }) => 
   }
 };
 
-const getSpaceExtensionDevices = (space) => (space?.devices ?? [])
-  .filter((device) => isHubExtensionType(device.type));
-
-const updateEditExtensionOptions = async ({ spaceId, selectEl, selectedId }) => {
-  if (!selectEl || !spaceId) return;
-  try {
-    const response = await apiFetch(`/api/spaces/${spaceId}/extensions`);
-    const extensions = response.extensions ?? [];
-    selectEl.innerHTML = getExtensionOptions(extensions, selectedId);
-    selectEl.disabled = !extensions.length;
-    if (!extensions.length) {
-      selectEl.value = '';
-    }
-  } catch (error) {
-    console.error(error);
-    selectEl.innerHTML = getExtensionOptions([], selectedId);
-    selectEl.disabled = true;
-    selectEl.value = '';
-  }
-};
-
 const updateCreateExtensionOptions = async () => {
   if (!bindExtensionInput) return;
   const selectedId = bindExtensionInput.value;
