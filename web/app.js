@@ -148,6 +148,14 @@ const sirenFields = document.getElementById('sirenFields');
 const lightFields = document.getElementById('lightFields');
 const zoneFields = document.getElementById('zoneFields');
 const keyFields = document.getElementById('keyFields');
+const groupModeToggle = document.getElementById('groupModeToggle');
+const groupsList = document.getElementById('groupsList');
+const groupCreateForm = document.getElementById('groupCreateForm');
+const deviceGroupSelect = document.getElementById('deviceGroupSelect');
+const keyGroupSelect = document.getElementById('keyGroupSelect');
+const groupManageModal = document.getElementById('groupManageModal');
+const groupManageList = document.getElementById('groupManageList');
+const closeGroupManage = document.getElementById('closeGroupManage');
 const generateKey = document.getElementById('generateKey');
 const readKeyButton = document.getElementById('readKey');
 const sideInput = deviceForm?.querySelector('input[name="side"]');
@@ -191,12 +199,14 @@ if (noteInput) {
 const statusMap = {
   armed: 'Под охраной',
   disarmed: 'Снято с охраны',
+  partial: 'Под охраной (частично)',
   night: 'Ночной режим',
 };
 
 const statusTone = {
   armed: 'status--armed',
   disarmed: 'status--disarmed',
+  partial: 'status--armed',
   night: 'status--night',
 };
 
@@ -204,6 +214,39 @@ const chipActions = document.querySelectorAll('.status-actions .chip');
 const filterButtons = document.querySelectorAll('.nav-pill');
 const logFilters = document.querySelectorAll('#logFilters .chip');
 const logMoreButton = document.getElementById('logMore');
+
+const getSpaceDisplayStatus = (space) => {
+  if (space.groupMode) {
+    return {
+      key: 'partial',
+      label: t('status.partial') ?? statusMap.partial,
+      tone: statusTone.partial,
+    };
+  }
+  const key = space.status;
+  return {
+    key,
+    label: t(`status.${key}`) ?? statusMap[key] ?? key,
+    tone: statusTone[key] ?? '',
+  };
+};
+
+const getGroupOptions = (groups, { selected = '', includeNone = false, includeAll = false } = {}) => {
+  const options = [];
+  if (includeAll) {
+    options.push(`<option value="all"${selected === 'all' ? ' selected' : ''}>${t('engineer.deviceModal.key.groupAll')}</option>`);
+  }
+  if (includeNone) {
+    options.push(`<option value=""${selected === '' ? ' selected' : ''}>${t('engineer.deviceModal.group.none')}</option>`);
+  }
+  options.push(...groups.map((group) => {
+    const safeName = escapeHtml(group.name);
+    const value = String(group.id);
+    const isSelected = String(selected) === value;
+    return `<option value="${value}"${isSelected ? ' selected' : ''}>${safeName}</option>`;
+  }));
+  return options.join('');
+};
 
 const translations = {
   ru: {
@@ -221,12 +264,14 @@ const translations = {
     'engineer.subtitle': 'Управление пространствами и событиями',
     'engineer.actions.arm': 'Под охрану',
     'engineer.actions.disarm': 'С охраны',
+    'engineer.actions.manage': 'Управление',
     'engineer.tabs.equipment': 'Оборудование',
     'engineer.tabs.object': 'Про объект',
     'engineer.tabs.contacts': 'Контактные лица',
     'engineer.tabs.photos': 'Фото',
     'engineer.tabs.notes': 'Примечания',
     'engineer.tabs.log': 'Лог',
+    'engineer.tabs.groups': 'Группы',
     'engineer.equipment.title': 'Оборудование',
     'engineer.equipment.add': 'Добавить устройство',
     'engineer.object.title': 'Информация об объекте',
@@ -266,6 +311,23 @@ const translations = {
     'engineer.log.filters.hub': 'События хаба',
     'engineer.tabs.users': 'Пользователи',
     'engineer.tabs.installers': 'Инженеры монтажа',
+    'engineer.groups.title': 'Группы',
+    'engineer.groups.mode': 'Включить режим групп',
+    'engineer.groups.name': 'Название группы',
+    'engineer.groups.add': 'Создать группу',
+    'engineer.groups.note': 'Устройства без группы не работают при включённом режиме.',
+    'engineer.groups.empty': 'Группы не созданы',
+    'engineer.groups.rename': 'Переименовать',
+    'engineer.groups.delete': 'Удалить',
+    'engineer.groups.arm': 'Под охрану',
+    'engineer.groups.disarm': 'С охраны',
+    'engineer.groups.status.armed': 'Под охраной',
+    'engineer.groups.status.disarmed': 'Снято с охраны',
+    'engineer.groups.renameTitle': 'Переименовать группу',
+    'engineer.groups.renameMessage': 'Введите новое название.',
+    'engineer.groups.deleteConfirm': 'Удалить группу?',
+    'engineer.groups.deleteTitle': 'Удаление группы',
+    'engineer.groups.manageTitle': 'Управление группами',
     'engineer.users.title': 'Пользователи',
     'engineer.users.placeholder': 'Добавление пользователей появится вместе с системой аккаунтов.',
     'engineer.installers.title': 'Инженеры монтажа',
@@ -305,6 +367,7 @@ const translations = {
     'engineer.hub.none': 'Нет хаба',
     'status.armed': 'Под охраной',
     'status.disarmed': 'Снято с охраны',
+    'status.partial': 'Под охраной (частично)',
     'status.night': 'Ночной режим',
     'profile.title': 'Профиль',
     'profile.nickname': 'Игровой ник',
@@ -370,7 +433,11 @@ const translations = {
     'engineer.deviceModal.key.readerId': 'ID считывателя',
     'engineer.deviceModal.key.read': 'Считать ключ',
     'engineer.deviceModal.key.generate': 'Сгенерировать',
+    'engineer.deviceModal.key.groupAll': 'Все группы',
+    'engineer.deviceModal.group.none': 'Без группы',
     'engineer.deviceModal.submit': 'Добавить',
+    'user.actions.manage': 'Управление',
+    'user.groups.manageTitle': 'Управление группами',
     'page.title.engineer': 'Minecraft Security System — Демо интерфейс',
     'page.title.admin': 'Minecraft Security System — Админ-панель',
   },
@@ -389,12 +456,14 @@ const translations = {
     'engineer.subtitle': 'Space and event management',
     'engineer.actions.arm': 'Arm',
     'engineer.actions.disarm': 'Disarm',
+    'engineer.actions.manage': 'Manage',
     'engineer.tabs.equipment': 'Equipment',
     'engineer.tabs.object': 'Object',
     'engineer.tabs.contacts': 'Contacts',
     'engineer.tabs.photos': 'Photos',
     'engineer.tabs.notes': 'Notes',
     'engineer.tabs.log': 'Log',
+    'engineer.tabs.groups': 'Groups',
     'engineer.equipment.title': 'Equipment',
     'engineer.equipment.add': 'Add device',
     'engineer.object.title': 'Object information',
@@ -434,6 +503,23 @@ const translations = {
     'engineer.log.filters.hub': 'Hub events',
     'engineer.tabs.users': 'Users',
     'engineer.tabs.installers': 'Installers',
+    'engineer.groups.title': 'Groups',
+    'engineer.groups.mode': 'Enable group mode',
+    'engineer.groups.name': 'Group name',
+    'engineer.groups.add': 'Create group',
+    'engineer.groups.note': 'Devices without a group do not work in group mode.',
+    'engineer.groups.empty': 'No groups created',
+    'engineer.groups.rename': 'Rename',
+    'engineer.groups.delete': 'Delete',
+    'engineer.groups.arm': 'Arm',
+    'engineer.groups.disarm': 'Disarm',
+    'engineer.groups.status.armed': 'Armed',
+    'engineer.groups.status.disarmed': 'Disarmed',
+    'engineer.groups.renameTitle': 'Rename group',
+    'engineer.groups.renameMessage': 'Enter a new name.',
+    'engineer.groups.deleteConfirm': 'Delete group?',
+    'engineer.groups.deleteTitle': 'Delete group',
+    'engineer.groups.manageTitle': 'Group control',
     'engineer.users.title': 'Users',
     'engineer.users.placeholder': 'User access will appear after authentication is connected.',
     'engineer.installers.title': 'Installers',
@@ -473,6 +559,7 @@ const translations = {
     'engineer.hub.none': 'No hub',
     'status.armed': 'Armed',
     'status.disarmed': 'Disarmed',
+    'status.partial': 'Armed (partial)',
     'status.night': 'Night',
     'profile.title': 'Profile',
     'profile.nickname': 'Game nickname',
@@ -538,7 +625,11 @@ const translations = {
     'engineer.deviceModal.key.readerId': 'Reader ID',
     'engineer.deviceModal.key.read': 'Read key',
     'engineer.deviceModal.key.generate': 'Generate',
+    'engineer.deviceModal.key.groupAll': 'All groups',
+    'engineer.deviceModal.group.none': 'No group',
     'engineer.deviceModal.submit': 'Add',
+    'user.actions.manage': 'Manage',
+    'user.groups.manageTitle': 'Group control',
     'page.title.engineer': 'Minecraft Security System — Demo',
     'page.title.admin': 'Minecraft Security System — Admin panel',
   },
@@ -959,6 +1050,9 @@ const showGuardModal = () => {
 
 const isSpaceArmed = () => {
   const space = spaces.find((item) => item.id === state.selectedSpaceId);
+  if (space?.groupMode) {
+    return space.groupArmed;
+  }
   return space?.status === 'armed';
 };
 
@@ -1138,6 +1232,7 @@ const loadSpaces = async () => {
         logsLimit: previous.logsLimit,
         logsOffset: previous.logsOffset,
         logsHasMore: previous.logsHasMore,
+        groups: previous.groups,
       };
     });
     const params = new URLSearchParams(window.location.search);
@@ -1206,6 +1301,20 @@ const loadLogs = async (spaceId, reset = true) => {
   }
 };
 
+const loadGroupsForSpace = async (spaceId) => {
+  try {
+    const space = spaces.find((item) => item.id === spaceId);
+    if (!space) return [];
+    const resp = await apiFetch(`/api/spaces/${spaceId}/groups`);
+    space.groups = resp.groups ?? [];
+    space.groupArmed = space.groups.some((group) => group.armed);
+    return space.groups;
+  } catch (error) {
+    console.error(error);
+    return [];
+  }
+};
+
 const applyFilter = (list) => {
   if (state.filter === 'offline') {
     return list.filter((space) => space.hubOnline === false);
@@ -1249,6 +1358,7 @@ const renderObjectList = () => {
     const hubOfflineLabel = space.hubOnline === false
       ? `<div class="object-card__hub-offline">${t('engineer.object.hubOffline')}</div>`
       : '';
+    const statusInfo = getSpaceDisplayStatus(space);
     card.className = `object-card ${space.id === state.selectedSpaceId ? 'object-card--active' : ''} ${
       isAlarm ? 'object-card--alarm' : ''
     } ${alarmFlash ? 'object-card--alarm-flash' : ''}`;
@@ -1256,7 +1366,7 @@ const renderObjectList = () => {
       <div class="object-card__title">${escapeHtml(space.name)}</div>
       <div class="object-card__meta">${t('engineer.object.hubId')} ${escapeHtml(space.hubId ?? '—')}</div>
       ${hubOfflineLabel}
-      <div class="object-card__status ${statusTone[space.status] ?? ''}">${t(`status.${space.status}`) ?? statusMap[space.status] ?? space.status}</div>
+      <div class="object-card__status ${statusInfo.tone}">${statusInfo.label}</div>
       <div class="object-card__meta">${t('engineer.object.server')}: ${escapeHtml(space.server ?? '—')}</div>
       <div class="object-card__meta">${escapeHtml(space.address)}</div>
     `;
@@ -1266,6 +1376,7 @@ const renderObjectList = () => {
       state.lastLogKey = '';
       localStorage.setItem('selectedSpaceId', space.id);
       await loadLogs(space.id);
+      await loadGroupsForSpace(space.id);
       renderAll();
     });
     objectList.appendChild(card);
@@ -1275,10 +1386,151 @@ const renderObjectList = () => {
 
 const renderSpaceHeader = (space) => {
   spaceIdEl.textContent = space.id;
-  spaceStateEl.textContent = t(`status.${space.status}`) ?? statusMap[space.status] ?? space.status;
-  spaceStateEl.className = `status-card__state ${statusTone[space.status] ?? ''}`;
+  const statusInfo = getSpaceDisplayStatus(space);
+  spaceStateEl.textContent = statusInfo.label;
+  spaceStateEl.className = `status-card__state ${statusInfo.tone}`;
   spaceMetaEl.textContent = `${t('engineer.object.coordsLabel')}: ${space.address} • ${space.server ?? '—'} • ${space.city}`;
   hubLabel.textContent = space.hubId ? `Hub ${space.hubId}` : t('engineer.hub.unbound');
+};
+
+const updateStatusActions = (space) => {
+  const manageButton = document.querySelector('.status-actions [data-action="manage"]');
+  const armButton = document.querySelector('.status-actions [data-action="arm"]');
+  const disarmButton = document.querySelector('.status-actions [data-action="disarm"]');
+  const isGroupMode = Boolean(space.groupMode);
+  manageButton?.classList.toggle('hidden', !isGroupMode);
+  armButton?.classList.toggle('hidden', isGroupMode);
+  disarmButton?.classList.toggle('hidden', isGroupMode);
+};
+
+const renderGroupsPanel = (space) => {
+  if (!groupsList || !groupModeToggle) return;
+  const groups = space.groups ?? [];
+  groupModeToggle.checked = Boolean(space.groupMode);
+  if (!groups.length) {
+    groupsList.innerHTML = `<div class="empty-state">${t('engineer.groups.empty')}</div>`;
+    return;
+  }
+  groupsList.innerHTML = '';
+  groups.forEach((group) => {
+    const card = document.createElement('div');
+    card.className = 'group-card';
+    card.innerHTML = `
+      <div>
+        <div class="group-card__title">${escapeHtml(group.name)}</div>
+        <div class="group-card__meta">${group.armed ? t('engineer.groups.status.armed') : t('engineer.groups.status.disarmed')}</div>
+      </div>
+      <div class="group-card__actions">
+        <button class="button button--ghost" data-action="rename">${t('engineer.groups.rename')}</button>
+        <button class="button button--ghost button--danger" data-action="delete">${t('engineer.groups.delete')}</button>
+      </div>
+    `;
+    card.querySelector('[data-action="rename"]')?.addEventListener('click', async () => {
+      if (!ensureEditable()) return;
+      const values = await promptAction({
+        title: t('engineer.groups.renameTitle'),
+        message: t('engineer.groups.renameMessage'),
+        fields: [{ name: 'name', placeholder: t('engineer.groups.name'), value: group.name, required: true, maxLength: 32 }],
+      });
+      if (!values?.name) return;
+      try {
+        showLoading();
+        await apiFetch(`/api/spaces/${space.id}/groups/${group.id}`, {
+          method: 'PATCH',
+          body: JSON.stringify({ name: values.name }),
+        });
+        await loadGroupsForSpace(space.id);
+        renderAll();
+      } catch (error) {
+        console.error(error);
+        handleApiError(error, 'Не удалось переименовать группу.');
+      } finally {
+        hideLoading();
+      }
+    });
+    card.querySelector('[data-action="delete"]')?.addEventListener('click', async () => {
+      if (!ensureEditable()) return;
+      if (!await confirmAction(t('engineer.groups.deleteConfirm'), t('engineer.groups.deleteTitle'))) return;
+      try {
+        showLoading();
+        await apiFetch(`/api/spaces/${space.id}/groups/${group.id}`, { method: 'DELETE' });
+        await loadGroupsForSpace(space.id);
+        await loadSpaces();
+        renderAll();
+      } catch (error) {
+        console.error(error);
+        handleApiError(error, 'Не удалось удалить группу.');
+      } finally {
+        hideLoading();
+      }
+    });
+    groupsList.appendChild(card);
+  });
+};
+
+const renderGroupManageList = (space) => {
+  if (!groupManageList) return;
+  const groups = space.groups ?? [];
+  if (!groups.length) {
+    groupManageList.innerHTML = `<div class="empty-state">${t('engineer.groups.empty')}</div>`;
+    return;
+  }
+  groupManageList.innerHTML = '';
+  groups.forEach((group) => {
+    const card = document.createElement('div');
+    card.className = 'group-card';
+    card.innerHTML = `
+      <div>
+        <div class="group-card__title">${escapeHtml(group.name)}</div>
+        <div class="group-card__meta">${group.armed ? t('engineer.groups.status.armed') : t('engineer.groups.status.disarmed')}</div>
+      </div>
+      <div class="group-card__actions">
+        <button class="button button--ghost" data-action="arm">${t('engineer.groups.arm')}</button>
+        <button class="button button--ghost" data-action="disarm">${t('engineer.groups.disarm')}</button>
+      </div>
+    `;
+    card.querySelector('[data-action="arm"]')?.addEventListener('click', async () => {
+      try {
+        showLoading();
+        await apiFetch(`/api/spaces/${space.id}/groups/${group.id}/arm`, { method: 'POST' });
+        await loadGroupsForSpace(space.id);
+        await loadLogs(space.id);
+        renderAll();
+      } catch (error) {
+        console.error(error);
+        handleApiError(error, 'Не удалось поставить группу под охрану.');
+      } finally {
+        hideLoading();
+      }
+    });
+    card.querySelector('[data-action="disarm"]')?.addEventListener('click', async () => {
+      try {
+        showLoading();
+        await apiFetch(`/api/spaces/${space.id}/groups/${group.id}/disarm`, { method: 'POST' });
+        await loadGroupsForSpace(space.id);
+        await loadLogs(space.id);
+        renderAll();
+      } catch (error) {
+        console.error(error);
+        handleApiError(error, 'Не удалось снять группу с охраны.');
+      } finally {
+        hideLoading();
+      }
+    });
+    groupManageList.appendChild(card);
+  });
+};
+
+const updateGroupSelects = (space) => {
+  const groups = space?.groups ?? [];
+  if (deviceGroupSelect) {
+    const selected = deviceGroupSelect.value;
+    deviceGroupSelect.innerHTML = getGroupOptions(groups, { selected, includeNone: true });
+  }
+  if (keyGroupSelect) {
+    const selected = keyGroupSelect.value || 'all';
+    keyGroupSelect.innerHTML = getGroupOptions(groups, { selected, includeAll: true });
+  }
 };
 
 const renderDevices = (space) => {
@@ -1409,6 +1661,17 @@ const renderDeviceDetails = (device) => {
   const safeId = escapeHtml(device.id);
   const space = spaces.find((item) => item.id === state.selectedSpaceId);
   const extensionDevices = getSpaceExtensionDevices(space);
+  const groups = space?.groups ?? [];
+  const isGroupedDevice = ['zone', 'siren', 'output-light'].includes(device.type);
+  const groupField = isGroupedDevice
+    ? `<select name="groupId">${getGroupOptions(groups, { selected: device.groupId ?? '', includeNone: true })}</select>`
+    : '';
+  const keyGroupValue = Array.isArray(device.config?.groups) && device.config.groups.length
+    ? device.config.groups[0]
+    : 'all';
+  const keyGroupField = device.type === 'key'
+    ? `<select name="keyGroup">${getGroupOptions(groups, { selected: keyGroupValue, includeAll: true })}</select>`
+    : '';
   const statusBlock = device.type === 'zone' || device.type === 'hub' || isHubExtensionType(device.type)
     ? `
       <div class="stat">
@@ -1421,6 +1684,7 @@ const renderDeviceDetails = (device) => {
     ? `
       <input type="text" name="name" value="${safeName}" placeholder="Имя" required />
       <input type="text" name="room" value="${safeRoom}" placeholder="Комната" required />
+      ${groupField}
       ${device.side && !isHubExtensionType(device.type)
         ? `<input type="text" name="side" value="${safeSide}" placeholder="Сторона (N/S/E/W/U/D)" />`
         : ''}
@@ -1428,6 +1692,7 @@ const renderDeviceDetails = (device) => {
     : `
       <input type="text" name="name" value="${escapeHtml(device.name.replace('Ключ: ', ''))}" placeholder="Имя ключа" required />
       <input type="text" name="readerId" value="${safeReaderId}" placeholder="ID считывателя" />
+      ${keyGroupField}
     `;
 
   const configFields = (() => {
@@ -1642,11 +1907,16 @@ const renderDeviceDetails = (device) => {
       try {
         showLoading();
         if (device.type === 'key') {
+          const groupValue = payload.keyGroup ?? 'all';
+          const groupPayload = groupValue === 'all' || groupValue === ''
+            ? ['all']
+            : [Number(groupValue)];
           await apiFetch(`/api/spaces/${space.id}/keys/${device.config.keyId}`, {
             method: 'PATCH',
             body: JSON.stringify({
               name: payload.name,
               readerId: payload.readerId || null,
+              groups: groupPayload,
             }),
           });
         } else {
@@ -2135,11 +2405,12 @@ const renderLogs = (space) => {
     row.className = `log-row ${isAlarm ? 'log-row--alarm' : ''} ${shouldFlash ? 'log-row--alarm-flash' : ''} ${isRestore ? 'log-row--restore' : ''} ${isHub ? 'log-row--hub' : ''} ${(isHubOffline || isExtensionOffline) ? 'log-row--hub-offline' : ''}`;
     const safeText = escapeHtml(translated);
     const text = isHub ? safeText.replace(/\n/g, '<br />') : safeText;
+    const groupLabel = log.groupName ? `<span class="log-group">${escapeHtml(log.groupName)}</span>` : '';
     const timeLabel = escapeHtml(formatLogTime(logTimestamp) ?? log.time);
     const whoLabel = escapeHtml(log.who);
     row.innerHTML = `
       <span>${timeLabel}</span>
-      <span>${text}</span>
+      <span>${groupLabel}${text}</span>
       <span class="muted">${whoLabel}</span>
     `;
     logTable.appendChild(row);
@@ -2158,12 +2429,15 @@ const renderAll = () => {
   const space = spaces.find((item) => item.id === state.selectedSpaceId) || spaces[0];
   if (!space) return;
   renderSpaceHeader(space);
+  updateStatusActions(space);
   renderDevices(space);
   updateCreateExtensionOptions().catch(() => null);
+  updateGroupSelects(space);
   renderObjectInfo(space);
   renderContacts(space);
   renderNotes(space);
   renderPhotos(space);
+  renderGroupsPanel(space);
   renderLogs(space);
 };
 
@@ -2173,13 +2447,19 @@ chipActions.forEach((chip) => {
     const space = spaces.find((item) => item.id === state.selectedSpaceId);
     if (!space) return;
 
-      try {
-        showLoading();
-        if (action === 'arm') {
-          const updated = await apiFetch(`/api/spaces/${space.id}/arm`, { method: 'POST' });
-          Object.assign(space, updated);
-          showToast(updated.pendingArm ? 'Запущена постановка под охрану.' : 'Объект поставлен под охрану.');
-        }
+    if (action === 'manage') {
+      renderGroupManageList(space);
+      groupManageModal?.classList.add('modal--open');
+      return;
+    }
+
+    try {
+      showLoading();
+      if (action === 'arm') {
+        const updated = await apiFetch(`/api/spaces/${space.id}/arm`, { method: 'POST' });
+        Object.assign(space, updated);
+        showToast(updated.pendingArm ? 'Запущена постановка под охрану.' : 'Объект поставлен под охрану.');
+      }
       if (action === 'disarm') {
         const updated = await apiFetch(`/api/spaces/${space.id}/disarm`, { method: 'POST' });
         Object.assign(space, updated);
@@ -2259,6 +2539,7 @@ const refreshAll = async () => {
   const space = spaces.find((item) => item.id === state.selectedSpaceId);
   if (space) {
     await loadLogs(space.id);
+    await loadGroupsForSpace(space.id);
   }
   await loadMembers();
   renderAll();
@@ -2390,6 +2671,7 @@ if (deviceType) {
     const isZone = value === 'zone';
     const isExtension = value === 'hub_extension';
     const isKey = value === 'key';
+    const canAssignGroup = isZone || isSiren || isLight;
 
     readerFields?.classList.toggle('hidden', !isReader);
     sirenFields?.classList.toggle('hidden', !isSiren);
@@ -2463,6 +2745,23 @@ if (deviceType) {
     if (readerIdInput && !isReader) {
       readerIdInput.value = '';
     }
+
+    if (deviceGroupSelect) {
+      deviceGroupSelect.classList.toggle('hidden', !canAssignGroup);
+      deviceGroupSelect.disabled = !canAssignGroup;
+      if (!canAssignGroup) {
+        deviceGroupSelect.value = '';
+      }
+    }
+    if (keyGroupSelect) {
+      keyGroupSelect.disabled = !isKey;
+      keyGroupSelect.classList.toggle('hidden', !isKey);
+      if (!isKey) {
+        keyGroupSelect.value = 'all';
+      }
+    }
+    const space = spaces.find((item) => item.id === state.selectedSpaceId);
+    if (space) updateGroupSelects(space);
   };
 
   deviceType.addEventListener('change', updateDeviceFields);
@@ -2483,9 +2782,13 @@ if (deviceForm) {
     try {
       showLoading();
       if (payload.type === 'key') {
+        const groupValue = payload.keyGroup ?? 'all';
+        const groupPayload = groupValue === 'all' || groupValue === ''
+          ? ['all']
+          : [Number(groupValue)];
         await apiFetch(`/api/spaces/${space.id}/keys`, {
           method: 'POST',
-          body: JSON.stringify({ name: payload.keyName, readerId: payload.readerId }),
+          body: JSON.stringify({ name: payload.keyName, readerId: payload.readerId, groups: groupPayload }),
         });
       } else {
         await apiFetch(`/api/spaces/${space.id}/devices`, {
@@ -2502,6 +2805,56 @@ if (deviceForm) {
     } catch (error) {
       console.error(error);
       handleApiError(error, 'Не удалось добавить устройство.');
+    } finally {
+      hideLoading();
+    }
+  });
+}
+
+if (groupModeToggle) {
+  groupModeToggle.addEventListener('change', async () => {
+    const space = spaces.find((item) => item.id === state.selectedSpaceId);
+    if (!space) return;
+    try {
+      showLoading();
+      await apiFetch(`/api/spaces/${space.id}/group-mode`, {
+        method: 'PATCH',
+        body: JSON.stringify({ enabled: groupModeToggle.checked }),
+      });
+      await loadSpaces();
+      await loadGroupsForSpace(space.id);
+      await loadLogs(space.id);
+      renderAll();
+      showToast(groupModeToggle.checked ? 'Режим групп включён.' : 'Режим групп выключен.');
+    } catch (error) {
+      console.error(error);
+      handleApiError(error, 'Не удалось обновить режим групп.');
+    } finally {
+      hideLoading();
+    }
+  });
+}
+
+if (groupCreateForm) {
+  groupCreateForm.addEventListener('submit', async (event) => {
+    event.preventDefault();
+    if (!ensureEditable()) return;
+    const space = spaces.find((item) => item.id === state.selectedSpaceId);
+    if (!space) return;
+    const formData = new FormData(groupCreateForm);
+    const payload = Object.fromEntries(formData.entries());
+    try {
+      showLoading();
+      await apiFetch(`/api/spaces/${space.id}/groups`, {
+        method: 'POST',
+        body: JSON.stringify({ name: payload.name }),
+      });
+      groupCreateForm.reset();
+      await loadGroupsForSpace(space.id);
+      renderAll();
+    } catch (error) {
+      console.error(error);
+      handleApiError(error, 'Не удалось создать группу.');
     } finally {
       hideLoading();
     }
@@ -2803,6 +3156,16 @@ if (deviceModal) {
   deviceModal.addEventListener('click', (event) => {
     if (event.target === deviceModal) {
       deviceModal.classList.remove('modal--open');
+    }
+  });
+}
+
+if (groupManageModal) {
+  const closeGroupModal = () => groupManageModal.classList.remove('modal--open');
+  closeGroupManage?.addEventListener('click', closeGroupModal);
+  groupManageModal.addEventListener('click', (event) => {
+    if (event.target === groupManageModal) {
+      closeGroupModal();
     }
   });
 }

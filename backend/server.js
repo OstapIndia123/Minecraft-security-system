@@ -37,6 +37,7 @@ const MAX_DEVICE_NAME_LENGTH = 60;
 const MAX_DEVICE_ROOM_LENGTH = 60;
 const MAX_DEVICE_ID_LENGTH = 80;
 const MAX_KEY_NAME_LENGTH = 60;
+const MAX_GROUP_NAME_LENGTH = 32;
 const MAX_PHOTO_LABEL_LENGTH = 60;
 
 const asyncHandler = (handler) => (req, res, next) =>
@@ -323,6 +324,8 @@ const mapSpace = (row) => ({
   address: row.address,
   server: row.server,
   status: row.status,
+  groupMode: row.group_mode,
+  groupArmed: row.group_armed ?? false,
   hubOnline: row.hub_online,
   issues: row.issues,
   city: row.city,
@@ -350,6 +353,7 @@ const normalizeDeviceType = (type) => {
 
 const mapDevice = (row) => ({
   id: row.id,
+  groupId: row.group_id ?? null,
   name: row.name,
   room: row.room,
   status: row.status,
@@ -366,9 +370,27 @@ const mapLog = (row) => {
     text: row.text,
     who: row.who,
     type: row.type,
+    groupId: row.group_id ?? null,
+    groupName: row.group_name ?? null,
     createdAt,
     createdAtMs,
   };
+};
+
+const getSpaceGroupMode = async (spaceId) => {
+  const result = await query('SELECT group_mode FROM spaces WHERE id = $1', [spaceId]);
+  return result.rows[0]?.group_mode ?? false;
+};
+
+const loadGroups = async (spaceId) => {
+  const result = await query('SELECT id, name, armed FROM groups WHERE space_id = $1 ORDER BY id', [spaceId]);
+  return result.rows;
+};
+
+const getGroupById = async (spaceId, groupId) => {
+  if (!groupId) return null;
+  const result = await query('SELECT id, name, armed FROM groups WHERE id = $1 AND space_id = $2', [groupId, spaceId]);
+  return result.rows[0] ?? null;
 };
 
 const HUB_EXTENSION_PREFIX = 'HUB_EXT-';
@@ -418,7 +440,7 @@ const mirrorOutputSide = (side) => {
 
 const loadDevices = async (spaceId, hubId, hubOnline) => {
   const devices = await query('SELECT * FROM devices WHERE space_id = $1 ORDER BY id', [spaceId]);
-  const keys = await query('SELECT id, name, reader_id FROM keys WHERE space_id = $1 ORDER BY id', [spaceId]);
+  const keys = await query('SELECT id, name, reader_id, groups FROM keys WHERE space_id = $1 ORDER BY id', [spaceId]);
 
   const hubLabel = hubId ? `Хаб ${hubId}` : 'Хаб не привязан';
   const hubStatus = hubId
@@ -441,17 +463,17 @@ const loadDevices = async (spaceId, hubId, hubOnline) => {
     status: 'Активен',
     type: 'key',
     side: null,
-    config: { keyId: key.id, readerId: key.reader_id ?? null },
+    config: { keyId: key.id, readerId: key.reader_id ?? null, groups: key.groups ?? [] },
   }));
 
   return [hubDevice, ...devices.rows.map(mapDevice), ...keyDevices];
 };
 
-const appendLog = async (spaceId, text, who, type) => {
+const appendLog = async (spaceId, text, who, type, groupId = null) => {
   const time = new Date().toLocaleTimeString('ru-RU', { hour: '2-digit', minute: '2-digit', second: '2-digit' });
   await query(
-    'INSERT INTO logs (space_id, time, text, who, type) VALUES ($1,$2,$3,$4,$5)',
-    [spaceId, time, text, who, type],
+    'INSERT INTO logs (space_id, group_id, time, text, who, type) VALUES ($1,$2,$3,$4,$5,$6)',
+    [spaceId, groupId, time, text, who, type],
   );
 };
 
@@ -486,14 +508,22 @@ const requireWebhookToken = (req, res, next) => {
 };
 
 const ensureSpaceDisarmed = async (spaceId, res) => {
-  const statusResult = await query('SELECT status FROM spaces WHERE id = $1', [spaceId]);
+  const statusResult = await query('SELECT status, group_mode FROM spaces WHERE id = $1', [spaceId]);
   if (!statusResult.rows.length) {
     res.status(404).json({ error: 'space_not_found' });
     return false;
   }
-  if (statusResult.rows[0].status === 'armed') {
+  const row = statusResult.rows[0];
+  if (!row.group_mode && row.status === 'armed') {
     res.status(409).json({ error: 'space_armed' });
     return false;
+  }
+  if (row.group_mode) {
+    const armedGroups = await query('SELECT 1 FROM groups WHERE space_id = $1 AND armed = true LIMIT 1', [spaceId]);
+    if (armedGroups.rows.length) {
+      res.status(409).json({ error: 'space_armed' });
+      return false;
+    }
   }
   return true;
 };
@@ -575,6 +605,7 @@ const entryDelayTimers = new Map();
 const entryDelayFailed = new Map();
 const zoneAlarmState = new Map();
 const lightBlinkTimers = new Map();
+const getGroupKey = (spaceId, groupId) => `${spaceId}:${groupId ?? 'space'}`;
 const lastKeyScans = new Map();
 const keyScanWaiters = new Map();
 const extensionPortWaiters = new Map();
@@ -709,16 +740,23 @@ const resolveDeviceTargetId = (config, hubId) => {
   return hubId;
 };
 
-const stopSirenTimers = async (spaceId, hubId) => {
-  const timers = sirenTimers.get(spaceId) ?? [];
+const stopSirenTimers = async (spaceId, hubId, groupId = null, groupMode = false) => {
+  const groupKey = groupMode ? getGroupKey(spaceId, groupId) : getGroupKey(spaceId, null);
+  const timers = sirenTimers.get(groupKey) ?? [];
   timers.forEach((timer) => clearInterval(timer));
-  sirenTimers.delete(spaceId);
-  const stopTimeout = sirenStopTimeouts.get(spaceId);
+  sirenTimers.delete(groupKey);
+  const stopTimeout = sirenStopTimeouts.get(groupKey);
   if (stopTimeout) {
     clearTimeout(stopTimeout);
-    sirenStopTimeouts.delete(spaceId);
+    sirenStopTimeouts.delete(groupKey);
   }
-  const sirens = await query('SELECT side, config FROM devices WHERE space_id = $1 AND type = $2', [spaceId, 'siren']);
+  const params = [spaceId, 'siren'];
+  const groupClause = groupMode ? ' AND group_id = $3' : '';
+  if (groupMode) params.push(groupId);
+  const sirens = await query(
+    `SELECT side, config FROM devices WHERE space_id = $1 AND type = $2${groupClause}`,
+    params,
+  );
   await Promise.all(
     sirens.rows.map((siren) => {
       const targetId = resolveDeviceTargetId(siren.config, hubId);
@@ -728,15 +766,19 @@ const stopSirenTimers = async (spaceId, hubId) => {
   );
 };
 
-const startBlinkingLights = async (spaceId, hubId, reason) => {
-  const existing = lightBlinkTimers.get(spaceId);
+const startBlinkingLights = async (spaceId, hubId, reason, groupId = null, groupMode = false) => {
+  const groupKey = groupMode ? getGroupKey(spaceId, groupId) : getGroupKey(spaceId, null);
+  const existing = lightBlinkTimers.get(groupKey);
   if (existing) {
     existing.reasons.add(reason);
     return;
   }
+  const params = [spaceId, 'output-light'];
+  const groupClause = groupMode ? ' AND group_id = $3' : '';
+  if (groupMode) params.push(groupId);
   const outputs = await query(
-    'SELECT side, config FROM devices WHERE space_id = $1 AND type = $2',
-    [spaceId, 'output-light'],
+    `SELECT side, config FROM devices WHERE space_id = $1 AND type = $2${groupClause}`,
+    params,
   );
   if (!outputs.rows.length) return;
   const targets = outputs.rows
@@ -757,30 +799,37 @@ const startBlinkingLights = async (spaceId, hubId, reason) => {
       sendHubOutputChecked(spaceId, output.targetId, output.side, on ? output.level : 0).catch(() => null);
     });
   }, 500);
-  lightBlinkTimers.set(spaceId, { timer, reasons: new Set([reason]) });
+  lightBlinkTimers.set(groupKey, { timer, reasons: new Set([reason]) });
 };
 
-const stopBlinkingLights = async (spaceId, hubId, reason) => {
-  const existing = lightBlinkTimers.get(spaceId);
+const stopBlinkingLights = async (spaceId, hubId, reason, groupId = null, groupMode = false) => {
+  const groupKey = groupMode ? getGroupKey(spaceId, groupId) : getGroupKey(spaceId, null);
+  const existing = lightBlinkTimers.get(groupKey);
   if (!existing) return;
   existing.reasons.delete(reason);
   if (existing.reasons.size) return;
   clearInterval(existing.timer);
-  lightBlinkTimers.delete(spaceId);
+  lightBlinkTimers.delete(groupKey);
   const spaceRow = await query('SELECT status, hub_id FROM spaces WHERE id = $1', [spaceId]);
   const status = spaceRow.rows[0]?.status ?? 'disarmed';
   const resolvedHubId = hubId ?? spaceRow.rows[0]?.hub_id;
-  await applyLightOutputs(spaceId, resolvedHubId, status);
+  let appliedStatus = status;
+  if (groupMode) {
+    const group = await getGroupById(spaceId, groupId);
+    appliedStatus = group?.armed ? 'armed' : 'disarmed';
+  }
+  await applyLightOutputs(spaceId, resolvedHubId, appliedStatus, groupId, groupMode);
 };
 
-const scheduleSirenStop = (spaceId, hubId, durationMs) => {
+const scheduleSirenStop = (spaceId, hubId, durationMs, groupId = null, groupMode = false) => {
   if (!durationMs || durationMs <= 0) return;
-  const existing = sirenStopTimeouts.get(spaceId);
+  const groupKey = groupMode ? getGroupKey(spaceId, groupId) : getGroupKey(spaceId, null);
+  const existing = sirenStopTimeouts.get(groupKey);
   if (existing) clearTimeout(existing);
   const timer = setTimeout(() => {
-    stopSirenTimers(spaceId, hubId).catch(() => null);
+    stopSirenTimers(spaceId, hubId, groupId, groupMode).catch(() => null);
   }, durationMs);
-  sirenStopTimeouts.set(spaceId, timer);
+  sirenStopTimeouts.set(groupKey, timer);
 };
 
 const getMaxSirenDuration = (sirens) => sirens.reduce((max, siren) => {
@@ -796,30 +845,33 @@ const getExitDelaySeconds = (zones) => zones.reduce((max, zone) => {
   return Math.max(max, delaySeconds);
 }, 0);
 
-const clearPendingArm = async (spaceId, hubId) => {
-  const timer = pendingArmTimers.get(spaceId);
+const clearPendingArm = async (spaceId, hubId, groupId = null, groupMode = false) => {
+  const groupKey = groupMode ? getGroupKey(spaceId, groupId) : getGroupKey(spaceId, null);
+  const timer = pendingArmTimers.get(groupKey);
   if (timer) {
     clearTimeout(timer);
-    pendingArmTimers.delete(spaceId);
-    await stopBlinkingLights(spaceId, hubId, 'exit-delay');
+    pendingArmTimers.delete(groupKey);
+    await stopBlinkingLights(spaceId, hubId, 'exit-delay', groupId, groupMode);
   }
 };
 
-const clearEntryDelay = async (spaceId, hubId) => {
-  const entry = entryDelayTimers.get(spaceId);
+const clearEntryDelay = async (spaceId, hubId, groupId = null, groupMode = false) => {
+  const groupKey = groupMode ? getGroupKey(spaceId, groupId) : getGroupKey(spaceId, null);
+  const entry = entryDelayTimers.get(groupKey);
   if (!entry) return;
   clearTimeout(entry.timer);
-  entryDelayTimers.delete(spaceId);
-  await stopBlinkingLights(spaceId, hubId, 'entry-delay');
+  entryDelayTimers.delete(groupKey);
+  await stopBlinkingLights(spaceId, hubId, 'entry-delay', groupId, groupMode);
 };
 
-const startSirenTimers = async (spaceId, hubId) => {
-  const sirens = await query('SELECT id, side, config FROM devices WHERE space_id = $1 AND type = $2', [
-    spaceId,
-    'siren',
-  ]);
+const startSirenTimers = async (spaceId, hubId, groupId = null, groupMode = false) => {
+  const params = [spaceId, 'siren'];
+  const groupClause = groupMode ? ' AND group_id = $3' : '';
+  if (groupMode) params.push(groupId);
+  const sirens = await query(`SELECT id, side, config FROM devices WHERE space_id = $1 AND type = $2${groupClause}`, params);
+  const groupKey = groupMode ? getGroupKey(spaceId, groupId) : getGroupKey(spaceId, null);
 
-  if (!sirenTimers.has(spaceId)) {
+  if (!sirenTimers.has(groupKey)) {
     const timers = [];
     for (const siren of sirens.rows) {
       const intervalMs = clampNumber(siren.config?.intervalMs ?? 1000, MIN_INTERVAL_MS, 60_000, 1000);
@@ -834,70 +886,100 @@ const startSirenTimers = async (spaceId, hubId) => {
       timers.push(timer);
     }
     if (timers.length) {
-      sirenTimers.set(spaceId, timers);
+      sirenTimers.set(groupKey, timers);
     }
   }
 
   const maxDurationMs = getMaxSirenDuration(sirens.rows);
-  scheduleSirenStop(spaceId, hubId, maxDurationMs);
+  scheduleSirenStop(spaceId, hubId, maxDurationMs, groupId, groupMode);
 };
 
-const startPendingArm = async (spaceId, hubId, delaySeconds, who, logMessage) => {
-  if (!hubId || pendingArmTimers.has(spaceId)) return;
-  await startBlinkingLights(spaceId, hubId, 'exit-delay');
+const startPendingArm = async (spaceId, hubId, delaySeconds, who, logMessage, groupId = null, groupMode = false) => {
+  const groupKey = groupMode ? getGroupKey(spaceId, groupId) : getGroupKey(spaceId, null);
+  if (!hubId || pendingArmTimers.has(groupKey)) return;
+  await startBlinkingLights(spaceId, hubId, 'exit-delay', groupId, groupMode);
   const timer = setTimeout(async () => {
-    pendingArmTimers.delete(spaceId);
-    await stopBlinkingLights(spaceId, hubId, 'exit-delay');
-    const zones = await query('SELECT status, config FROM devices WHERE space_id = $1 AND type = $2', [
-      spaceId,
-      'zone',
-    ]);
+    pendingArmTimers.delete(groupKey);
+    await stopBlinkingLights(spaceId, hubId, 'exit-delay', groupId, groupMode);
+    const params = [spaceId, 'zone'];
+    const groupClause = groupMode ? ' AND group_id = $3' : '';
+    if (groupMode) params.push(groupId);
+    const zones = await query(`SELECT status, config FROM devices WHERE space_id = $1 AND type = $2${groupClause}`, params);
     const hasViolations = zones.rows.some((zone) => {
       const zoneType = zone.config?.zoneType;
       if (zoneType !== 'delayed' && zoneType !== 'pass') return false;
       return zone.status !== 'Норма';
     });
     if (hasViolations) {
-      await appendLog(spaceId, 'Неудачная попытка постановки под охрану', 'Zone', 'security');
-      await applyLightOutputs(spaceId, hubId, 'disarmed');
+      await appendLog(spaceId, 'Неудачная попытка постановки под охрану', 'Zone', 'security', groupId);
+      await applyLightOutputs(spaceId, hubId, 'disarmed', groupId, groupMode);
       return;
     }
-    await updateStatus(spaceId, 'armed', who, logMessage);
+    if (groupMode) {
+      await updateGroupStatus(spaceId, groupId, 'armed', who, logMessage);
+    } else {
+      await updateStatus(spaceId, 'armed', who, logMessage);
+    }
   }, delaySeconds * 1000);
-  pendingArmTimers.set(spaceId, timer);
+  pendingArmTimers.set(groupKey, timer);
 };
 
-const startEntryDelay = async (spaceId, hubId, delaySeconds, zoneName, zoneId) => {
-  if (!hubId || entryDelayTimers.has(spaceId) || entryDelayFailed.get(spaceId)) return;
+const startEntryDelay = async (spaceId, hubId, delaySeconds, zoneName, zoneId, groupId = null, groupMode = false) => {
+  const groupKey = groupMode ? getGroupKey(spaceId, groupId) : getGroupKey(spaceId, null);
+  if (!hubId || entryDelayTimers.has(groupKey) || entryDelayFailed.get(groupKey)) return;
   const resolvedDelay = clampDelaySeconds(delaySeconds) ?? 0;
-  await appendLog(spaceId, 'Начало снятия', 'Zone', 'security');
-  await startBlinkingLights(spaceId, hubId, 'entry-delay');
+  await appendLog(spaceId, 'Начало снятия', 'Zone', 'security', groupId);
+  await startBlinkingLights(spaceId, hubId, 'entry-delay', groupId, groupMode);
   const timer = setTimeout(async () => {
-    entryDelayTimers.delete(spaceId);
-    await stopBlinkingLights(spaceId, hubId, 'entry-delay');
+    entryDelayTimers.delete(groupKey);
+    await stopBlinkingLights(spaceId, hubId, 'entry-delay', groupId, groupMode);
     const spaceRow = await query('SELECT status, hub_id FROM spaces WHERE id = $1', [spaceId]);
     const status = spaceRow.rows[0]?.status ?? 'disarmed';
-    if (status === 'armed') {
-      entryDelayFailed.set(spaceId, true);
-      alarmSinceArmed.set(spaceId, true);
+    if (!groupMode && status === 'armed') {
+      entryDelayFailed.set(groupKey, true);
+      alarmSinceArmed.set(groupKey, true);
       await appendLog(
         spaceId,
         'Неудачное снятие с охраны, выслать группу реагирования!',
         'Zone',
         'alarm',
+        groupId,
       );
       if (zoneName) {
-        await appendLog(spaceId, `Тревога шлейфа: ${zoneName}`, 'Zone', 'alarm');
+        await appendLog(spaceId, `Тревога шлейфа: ${zoneName}`, 'Zone', 'alarm', groupId);
       }
       if (zoneId) {
-        zoneAlarmState.set(`${spaceId}:${zoneId}`, true);
+        zoneAlarmState.set(`${spaceId}:${groupId ?? 'space'}:${zoneId}`, true);
       }
-      spaceAlarmState.set(spaceId, true);
-      await startSirenTimers(spaceId, spaceRow.rows[0]?.hub_id);
+      spaceAlarmState.set(groupKey, true);
+      await startSirenTimers(spaceId, spaceRow.rows[0]?.hub_id, groupId, groupMode);
       await query('UPDATE spaces SET issues = true WHERE id = $1', [spaceId]);
     }
+    if (groupMode) {
+      const group = await getGroupById(spaceId, groupId);
+      if (group?.armed) {
+        entryDelayFailed.set(groupKey, true);
+        alarmSinceArmed.set(groupKey, true);
+        await appendLog(
+          spaceId,
+          'Неудачное снятие с охраны, выслать группу реагирования!',
+          'Zone',
+          'alarm',
+          groupId,
+        );
+        if (zoneName) {
+          await appendLog(spaceId, `Тревога шлейфа: ${zoneName}`, 'Zone', 'alarm', groupId);
+        }
+        if (zoneId) {
+          zoneAlarmState.set(`${spaceId}:${groupId ?? 'space'}:${zoneId}`, true);
+        }
+        spaceAlarmState.set(groupKey, true);
+        await startSirenTimers(spaceId, spaceRow.rows[0]?.hub_id, groupId, groupMode);
+        await query('UPDATE spaces SET issues = true WHERE id = $1', [spaceId]);
+      }
+    }
   }, resolvedDelay * 1000);
-  entryDelayTimers.set(spaceId, { timer, zoneName });
+  entryDelayTimers.set(groupKey, { timer, zoneName });
 };
 
 const handleExpiredReaderSessions = async () => {
@@ -1235,7 +1317,12 @@ app.get('/api/auth/launcher', async (req, res) => {
 
 app.get('/api/spaces', requireAuth, async (req, res) => {
   if (req.user.is_admin) {
-    const result = await query('SELECT * FROM spaces ORDER BY id');
+    const result = await query(
+      `SELECT spaces.*,
+              EXISTS(SELECT 1 FROM groups WHERE space_id = spaces.id AND armed = true) AS group_armed
+       FROM spaces
+       ORDER BY id`,
+    );
     const spaces = await Promise.all(
       result.rows.map(async (row) => ({
         ...mapSpace(row),
@@ -1248,7 +1335,9 @@ app.get('/api/spaces', requireAuth, async (req, res) => {
   const appMode = req.header('x-app-mode');
   const roleFilter = appMode === 'pro' ? 'installer' : 'user';
   const result = await query(
-    `SELECT spaces.* FROM spaces
+    `SELECT spaces.*,
+            EXISTS(SELECT 1 FROM groups WHERE space_id = spaces.id AND armed = true) AS group_armed
+     FROM spaces
      JOIN user_spaces ON user_spaces.space_id = spaces.id
      WHERE user_spaces.user_id = $1 AND user_spaces.role = $2
      ORDER BY spaces.id`,
@@ -1271,13 +1360,199 @@ app.get('/api/spaces/:id', requireAuth, async (req, res) => {
     res.status(403).json({ error: 'forbidden' });
     return;
   }
-  const result = await query('SELECT * FROM spaces WHERE id = $1', [req.params.id]);
+  const result = await query(
+    `SELECT spaces.*,
+            EXISTS(SELECT 1 FROM groups WHERE space_id = spaces.id AND armed = true) AS group_armed
+     FROM spaces
+     WHERE id = $1`,
+    [req.params.id],
+  );
   if (!result.rows.length) {
     return res.status(404).json({ error: 'space_not_found' });
   }
   const space = mapSpace(result.rows[0]);
   space.devices = await loadDevices(space.id, space.hubId, space.hubOnline);
   res.json(space);
+});
+
+app.get('/api/spaces/:id/groups', requireAuth, async (req, res) => {
+  const appMode = req.header('x-app-mode');
+  const roleFilter = appMode === 'pro' ? 'installer' : 'user';
+  const allowed = await ensureSpaceRole(req.user.id, req.params.id, roleFilter);
+  if (!allowed) {
+    res.status(403).json({ error: 'forbidden' });
+    return;
+  }
+  const groups = await loadGroups(req.params.id);
+  res.json({ groups });
+});
+
+app.post('/api/spaces/:id/groups', requireAuth, requireInstaller, async (req, res) => {
+  const allowed = await ensureSpaceAccess(req.user.id, req.params.id);
+  if (!allowed) {
+    res.status(403).json({ error: 'forbidden' });
+    return;
+  }
+  if (!await ensureSpaceDisarmed(req.params.id, res)) return;
+  const name = normalizeText(req.body?.name);
+  if (!name) return res.status(400).json({ error: 'missing_fields' });
+  if (isOverMaxLength(name, MAX_GROUP_NAME_LENGTH)) {
+    return res.status(400).json({ error: 'field_too_long' });
+  }
+  const exists = await query(
+    'SELECT id FROM groups WHERE space_id = $1 AND lower(name) = lower($2)',
+    [req.params.id, name],
+  );
+  if (exists.rows.length) {
+    return res.status(409).json({ error: 'group_exists' });
+  }
+  const result = await query(
+    'INSERT INTO groups (space_id, name, armed) VALUES ($1,$2,false) RETURNING id, name, armed',
+    [req.params.id, name],
+  );
+  await appendLog(req.params.id, `Создана группа: ${name}`, 'UI', 'system');
+  res.status(201).json({ group: result.rows[0] });
+});
+
+app.patch('/api/spaces/:id/groups/:groupId', requireAuth, requireInstaller, async (req, res) => {
+  const allowed = await ensureSpaceAccess(req.user.id, req.params.id);
+  if (!allowed) {
+    res.status(403).json({ error: 'forbidden' });
+    return;
+  }
+  if (!await ensureSpaceDisarmed(req.params.id, res)) return;
+  const name = normalizeText(req.body?.name);
+  if (!name) return res.status(400).json({ error: 'missing_fields' });
+  if (isOverMaxLength(name, MAX_GROUP_NAME_LENGTH)) {
+    return res.status(400).json({ error: 'field_too_long' });
+  }
+  const exists = await query(
+    'SELECT id FROM groups WHERE space_id = $1 AND lower(name) = lower($2) AND id <> $3',
+    [req.params.id, name, req.params.groupId],
+  );
+  if (exists.rows.length) {
+    return res.status(409).json({ error: 'group_exists' });
+  }
+  const updated = await query(
+    'UPDATE groups SET name = $1 WHERE id = $2 AND space_id = $3 RETURNING id, name, armed',
+    [name, req.params.groupId, req.params.id],
+  );
+  if (!updated.rows.length) return res.status(404).json({ error: 'group_not_found' });
+  await appendLog(req.params.id, `Переименована группа: ${name}`, 'UI', 'system', updated.rows[0].id);
+  res.json({ group: updated.rows[0] });
+});
+
+app.delete('/api/spaces/:id/groups/:groupId', requireAuth, requireInstaller, async (req, res) => {
+  const allowed = await ensureSpaceAccess(req.user.id, req.params.id);
+  if (!allowed) {
+    res.status(403).json({ error: 'forbidden' });
+    return;
+  }
+  if (!await ensureSpaceDisarmed(req.params.id, res)) return;
+  const group = await getGroupById(req.params.id, req.params.groupId);
+  if (!group) return res.status(404).json({ error: 'group_not_found' });
+  const spaceRow = await query('SELECT hub_id FROM spaces WHERE id = $1', [req.params.id]);
+  if (group.armed) {
+    await updateGroupStatus(req.params.id, group.id, 'disarmed', 'UI');
+  }
+  await stopSirenTimers(req.params.id, spaceRow.rows[0]?.hub_id, group.id, true);
+  await query('UPDATE devices SET group_id = NULL WHERE space_id = $1 AND group_id = $2', [req.params.id, group.id]);
+  await query('UPDATE logs SET group_id = NULL WHERE space_id = $1 AND group_id = $2', [req.params.id, group.id]);
+  await query('DELETE FROM groups WHERE id = $1 AND space_id = $2', [group.id, req.params.id]);
+  await appendLog(req.params.id, `Удалена группа: ${group.name}`, 'UI', 'system');
+  await evaluateZoneIssues(req.params.id);
+  res.json({ ok: true });
+});
+
+app.patch('/api/spaces/:id/group-mode', requireAuth, requireInstaller, async (req, res) => {
+  const allowed = await ensureSpaceAccess(req.user.id, req.params.id);
+  if (!allowed) {
+    res.status(403).json({ error: 'forbidden' });
+    return;
+  }
+  const enabled = Boolean(req.body?.enabled);
+  const spaceRow = await query('SELECT hub_id FROM spaces WHERE id = $1', [req.params.id]);
+  await query('UPDATE spaces SET group_mode = $1, status = $2 WHERE id = $3', [enabled, 'disarmed', req.params.id]);
+  if (!enabled) {
+    const groups = await loadGroups(req.params.id);
+    for (const group of groups) {
+      if (group.armed) {
+        await updateGroupStatus(req.params.id, group.id, 'disarmed', 'UI');
+      }
+    }
+    await stopSirenTimers(req.params.id, spaceRow.rows[0]?.hub_id, null, false);
+    await applyLightOutputs(req.params.id, spaceRow.rows[0]?.hub_id, 'disarmed');
+  }
+  await appendLog(req.params.id, enabled ? 'Режим групп включен' : 'Режим групп выключен', 'UI', 'system');
+  res.json({ ok: true, enabled });
+});
+
+app.post('/api/spaces/:id/groups/:groupId/arm', requireAuth, async (req, res) => {
+  const appMode = req.header('x-app-mode');
+  const roleFilter = appMode === 'pro' ? 'installer' : 'user';
+  const allowed = await ensureSpaceRole(req.user.id, req.params.id, roleFilter);
+  if (!allowed) {
+    res.status(403).json({ error: 'forbidden' });
+    return;
+  }
+  const group = await getGroupById(req.params.id, req.params.groupId);
+  if (!group) return res.status(404).json({ error: 'group_not_found' });
+  const zones = await query(
+    'SELECT name, status, config FROM devices WHERE space_id = $1 AND type = $2 AND group_id = $3',
+    [req.params.id, 'zone', group.id],
+  );
+  const hasBypass = zones.rows.some((zone) => zone.config?.bypass);
+  const hasViolations = zones.rows.some((zone) => zone.status !== 'Норма');
+  if (hasBypass) {
+    await appendLog(req.params.id, 'Неудачная постановка (обход зоны активен)', 'UI', 'security', group.id);
+    return res.status(409).json({ error: 'bypass' });
+  }
+  if (hasViolations) {
+    await appendLog(req.params.id, 'Неудачная постановка (зоны не в норме)', 'UI', 'security', group.id);
+    return res.status(409).json({ error: 'zone_state' });
+  }
+  const delaySeconds = getExitDelaySeconds(zones.rows);
+  const spaceRow = await query('SELECT hub_id FROM spaces WHERE id = $1', [req.params.id]);
+  if (delaySeconds > 0) {
+    await startPendingArm(
+      req.params.id,
+      spaceRow.rows[0]?.hub_id,
+      delaySeconds,
+      req.user.minecraft_nickname ?? 'UI',
+      `Постановка группы ${group.name}`,
+      group.id,
+      true,
+    );
+  } else {
+    await updateGroupStatus(
+      req.params.id,
+      group.id,
+      'armed',
+      req.user.minecraft_nickname ?? 'UI',
+      `Постановка группы ${group.name}`,
+    );
+  }
+  res.json({ ok: true });
+});
+
+app.post('/api/spaces/:id/groups/:groupId/disarm', requireAuth, async (req, res) => {
+  const appMode = req.header('x-app-mode');
+  const roleFilter = appMode === 'pro' ? 'installer' : 'user';
+  const allowed = await ensureSpaceRole(req.user.id, req.params.id, roleFilter);
+  if (!allowed) {
+    res.status(403).json({ error: 'forbidden' });
+    return;
+  }
+  const group = await getGroupById(req.params.id, req.params.groupId);
+  if (!group) return res.status(404).json({ error: 'group_not_found' });
+  await updateGroupStatus(
+    req.params.id,
+    group.id,
+    'disarmed',
+    req.user.minecraft_nickname ?? 'UI',
+    `Снятие с охраны группы ${group.name}`,
+  );
+  res.json({ ok: true });
 });
 
 app.get('/api/spaces/:id/extensions', requireAuth, async (req, res) => {
@@ -1362,8 +1637,11 @@ app.get('/api/spaces/:id/logs', requireAuth, async (req, res) => {
             text,
             who,
             type,
-            created_at
+            created_at,
+            logs.group_id,
+            groups.name AS group_name
      FROM logs
+     LEFT JOIN groups ON groups.id = logs.group_id
      WHERE ${whereClauses.join(' AND ')}
      ORDER BY id DESC
      LIMIT $${params.length + 1} OFFSET $${params.length + 2}`,
@@ -1382,10 +1660,13 @@ app.get('/api/logs', requireAuth, async (req, res) => {
               logs.who,
               logs.type,
               logs.created_at,
+              logs.group_id,
+              groups.name AS group_name,
               spaces.name AS space_name,
               spaces.id AS space_id
        FROM logs
        JOIN spaces ON spaces.id = logs.space_id
+       LEFT JOIN groups ON groups.id = logs.group_id
        ORDER BY logs.id DESC
        LIMIT $1 OFFSET $2`,
       [limit + 1, offset],
@@ -1398,6 +1679,8 @@ app.get('/api/logs', requireAuth, async (req, res) => {
         text: row.text,
         who: row.who,
         type: row.type,
+        groupId: row.group_id ?? null,
+        groupName: row.group_name ?? null,
         createdAt,
         createdAtMs,
         spaceName: row.space_name,
@@ -1419,11 +1702,14 @@ app.get('/api/logs', requireAuth, async (req, res) => {
             logs.who,
             logs.type,
             logs.created_at,
+            logs.group_id,
+            groups.name AS group_name,
             spaces.name AS space_name,
             spaces.id AS space_id
      FROM logs
      JOIN spaces ON spaces.id = logs.space_id
      JOIN user_spaces ON user_spaces.space_id = spaces.id
+     LEFT JOIN groups ON groups.id = logs.group_id
      WHERE ${whereClauses.join(' AND ')}
      ORDER BY logs.id DESC
      LIMIT $3 OFFSET $4`,
@@ -1437,6 +1723,8 @@ app.get('/api/logs', requireAuth, async (req, res) => {
       text: row.text,
       who: row.who,
       type: row.type,
+      groupId: row.group_id ?? null,
+      groupName: row.group_name ?? null,
       createdAt,
       createdAtMs,
       spaceName: row.space_name,
@@ -1908,6 +2196,20 @@ app.post('/api/spaces/:id/devices', requireAuth, requireInstaller, async (req, r
   const normalizedRoom = normalizeText(room);
   const normalizedType = normalizeDeviceType(type);
   const normalizedSide = normalizeSideValue(side) ?? side;
+  const groupMode = await getSpaceGroupMode(req.params.id);
+  const rawGroupId = req.body?.groupId;
+  const normalizedGroupId = rawGroupId === undefined || rawGroupId === null || rawGroupId === ''
+    ? null
+    : Number(rawGroupId);
+  const canAssignGroup = ['zone', 'siren', 'output-light'].includes(normalizedType);
+  const groupId = canAssignGroup ? normalizedGroupId : null;
+  if (groupId !== null && Number.isNaN(groupId)) {
+    return res.status(400).json({ error: 'invalid_group' });
+  }
+  if (groupId !== null) {
+    const group = await getGroupById(req.params.id, groupId);
+    if (!group) return res.status(404).json({ error: 'group_not_found' });
+  }
   if (!normalizedName || !normalizedRoom || !type) {
     return res.status(400).json({ error: 'missing_fields' });
   }
@@ -1982,10 +2284,11 @@ app.post('/api/spaces/:id/devices', requireAuth, requireInstaller, async (req, r
 
   const generatedId = id ?? `${type}-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`;
   await query(
-    'INSERT INTO devices (id, space_id, name, room, status, type, side, config) VALUES ($1,$2,$3,$4,$5,$6,$7,$8)',
+    'INSERT INTO devices (id, space_id, group_id, name, room, status, type, side, config) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9)',
     [
       generatedId,
       req.params.id,
+      groupId,
       normalizedName,
       normalizedRoom,
       type === 'hub_extension' ? 'Не в сети' : (status ?? 'Норма'),
@@ -1998,12 +2301,24 @@ app.post('/api/spaces/:id/devices', requireAuth, requireInstaller, async (req, r
   if (type === 'output-light') {
     const spaceRow = await query('SELECT status, hub_id FROM spaces WHERE id = $1', [req.params.id]);
     const status = spaceRow.rows[0]?.status ?? 'disarmed';
-    await applyLightOutputs(req.params.id, spaceRow.rows[0]?.hub_id, status);
+    if (groupMode) {
+      const group = groupId ? await getGroupById(req.params.id, groupId) : null;
+      const groupStatus = group?.armed ? 'armed' : 'disarmed';
+      await applyLightOutputs(req.params.id, spaceRow.rows[0]?.hub_id, groupStatus, groupId, true);
+    } else {
+      await applyLightOutputs(req.params.id, spaceRow.rows[0]?.hub_id, status);
+    }
   }
 
-  if (type === 'siren' && spaceAlarmState.get(req.params.id)) {
+  if (type === 'siren') {
     const spaceRow = await query('SELECT hub_id FROM spaces WHERE id = $1', [req.params.id]);
-    await startSirenTimers(req.params.id, spaceRow.rows[0]?.hub_id);
+    if (groupMode) {
+      if (spaceAlarmState.get(getGroupKey(req.params.id, groupId))) {
+        await startSirenTimers(req.params.id, spaceRow.rows[0]?.hub_id, groupId, true);
+      }
+    } else if (spaceAlarmState.get(getGroupKey(req.params.id, null))) {
+      await startSirenTimers(req.params.id, spaceRow.rows[0]?.hub_id);
+    }
   }
 
   await appendLog(req.params.id, `Добавлено устройство: ${normalizedName}`, 'UI', 'system');
@@ -2025,6 +2340,23 @@ app.post('/api/spaces/:id/keys', requireAuth, requireInstaller, async (req, res)
     || isOverMaxLength(normalizedReaderId, MAX_DEVICE_ID_LENGTH)) {
     return res.status(400).json({ error: 'field_too_long' });
   }
+  const groupMode = await getSpaceGroupMode(req.params.id);
+  const rawGroups = Array.isArray(req.body?.groups) ? req.body.groups : ['all'];
+  const normalizedGroups = rawGroups
+    .map((group) => (group === 'all' ? 'all' : Number(group)))
+    .filter((group) => (group === 'all' || !Number.isNaN(group)));
+  if (normalizedGroups.some((group) => group !== 'all') && groupMode) {
+    const ids = normalizedGroups.filter((group) => group !== 'all');
+    if (ids.length) {
+      const groupCheck = await query(
+        'SELECT id FROM groups WHERE space_id = $1 AND id = ANY($2::int[])',
+        [req.params.id, ids],
+      );
+      if (groupCheck.rows.length !== ids.length) {
+        return res.status(404).json({ error: 'group_not_found' });
+      }
+    }
+  }
 
   const keyLimitResult = await query(
     'SELECT COUNT(*)::int AS count FROM keys WHERE space_id = $1',
@@ -2038,7 +2370,7 @@ app.post('/api/spaces/:id/keys', requireAuth, requireInstaller, async (req, res)
     req.params.id,
     normalizedName,
     normalizedReaderId || null,
-    JSON.stringify(['all']),
+    JSON.stringify(normalizedGroups.length ? normalizedGroups : ['all']),
   ]);
   await appendLog(req.params.id, `Добавлен ключ: ${normalizedName}`, 'UI', 'system');
   res.status(201).json({ ok: true });
@@ -2054,7 +2386,16 @@ app.delete('/api/spaces/:id', requireAuth, requireInstaller, async (req, res) =>
   const existing = await query('SELECT id FROM spaces WHERE id = $1', [req.params.id]);
   if (!existing.rows.length) return res.status(404).json({ error: 'space_not_found' });
 
-  await stopSirenTimers(req.params.id);
+  const groupMode = await getSpaceGroupMode(req.params.id);
+  const spaceRow = await query('SELECT hub_id FROM spaces WHERE id = $1', [req.params.id]);
+  if (groupMode) {
+    const groups = await loadGroups(req.params.id);
+    for (const group of groups) {
+      await stopSirenTimers(req.params.id, spaceRow.rows[0]?.hub_id, group.id, true);
+    }
+  } else {
+    await stopSirenTimers(req.params.id, spaceRow.rows[0]?.hub_id, null, false);
+  }
   await query('DELETE FROM hubs WHERE space_id = $1', [req.params.id]);
   await query('DELETE FROM spaces WHERE id = $1', [req.params.id]);
   res.json({ ok: true });
@@ -2072,13 +2413,15 @@ app.delete('/api/spaces/:id/devices/:deviceId', requireAuth, requireInstaller, a
   if (!existing.rows.length) return res.status(404).json({ error: 'device_not_found' });
 
   const deviceType = existing.rows[0].type;
+  const groupId = existing.rows[0].group_id ?? null;
+  const groupMode = await getSpaceGroupMode(id);
   await query('DELETE FROM devices WHERE id = $1 AND space_id = $2', [deviceId, id]);
   if (deviceType === 'zone') {
     await evaluateZoneIssues(id);
   }
   if (deviceType === 'siren') {
     const spaceRow = await query('SELECT hub_id FROM spaces WHERE id = $1', [id]);
-    await stopSirenTimers(id, spaceRow.rows[0]?.hub_id);
+    await stopSirenTimers(id, spaceRow.rows[0]?.hub_id, groupId, groupMode);
   }
   await appendLog(id, `Удалено устройство: ${deviceId}`, 'UI', 'system');
   res.json({ ok: true });
@@ -2118,6 +2461,20 @@ app.patch('/api/spaces/:id/devices/:deviceId', requireAuth, requireInstaller, as
   const side = normalizeSideValue(req.body?.side ?? device.side) ?? (req.body?.side ?? device.side);
   const normalizedName = normalizeText(name);
   const normalizedRoom = normalizeText(room);
+  const groupMode = await getSpaceGroupMode(id);
+  const rawGroupId = req.body?.groupId ?? device.group_id;
+  const normalizedGroupId = rawGroupId === undefined || rawGroupId === null || rawGroupId === ''
+    ? null
+    : Number(rawGroupId);
+  const canAssignGroup = ['zone', 'siren', 'output-light'].includes(deviceType);
+  const groupId = canAssignGroup ? normalizedGroupId : null;
+  if (groupId !== null && Number.isNaN(groupId)) {
+    return res.status(400).json({ error: 'invalid_group' });
+  }
+  if (groupId !== null) {
+    const group = await getGroupById(id, groupId);
+    if (!group) return res.status(404).json({ error: 'group_not_found' });
+  }
   if (!normalizedName || !normalizedRoom) {
     return res.status(400).json({ error: 'missing_fields' });
   }
@@ -2171,16 +2528,27 @@ app.patch('/api/spaces/:id/devices/:deviceId', requireAuth, requireInstaller, as
   }
 
   await query(
-    'UPDATE devices SET name = $1, room = $2, side = $3, config = $4 WHERE id = $5 AND space_id = $6',
+    'UPDATE devices SET name = $1, room = $2, side = $3, group_id = $4, config = $5 WHERE id = $6 AND space_id = $7',
     [
       normalizedName,
       normalizedRoom,
       deviceType === 'hub_extension' ? null : side,
+      groupId,
       JSON.stringify(mergedConfig),
       deviceId,
       id,
     ],
   );
+  if (deviceType === 'output-light') {
+    const spaceRow = await query('SELECT status, hub_id FROM spaces WHERE id = $1', [id]);
+    if (groupMode) {
+      const group = groupId ? await getGroupById(id, groupId) : null;
+      const groupStatus = group?.armed ? 'armed' : 'disarmed';
+      await applyLightOutputs(id, spaceRow.rows[0]?.hub_id, groupStatus, groupId, true);
+    } else {
+      await applyLightOutputs(id, spaceRow.rows[0]?.hub_id, spaceRow.rows[0]?.status ?? 'disarmed');
+    }
+  }
 
   await appendLog(id, `Обновлено устройство: ${deviceId}`, 'UI', 'system');
   res.json({ ok: true });
@@ -2218,14 +2586,32 @@ app.patch('/api/spaces/:id/keys/:keyId', requireAuth, requireInstaller, async (r
   const readerId = req.body?.readerId ?? existing.rows[0].reader_id;
   const normalizedName = normalizeText(name);
   const normalizedReaderId = normalizeText(readerId);
+  const groupMode = await getSpaceGroupMode(id);
+  const rawGroups = Array.isArray(req.body?.groups) ? req.body.groups : existing.rows[0].groups ?? [];
+  const normalizedGroups = rawGroups
+    .map((group) => (group === 'all' ? 'all' : Number(group)))
+    .filter((group) => (group === 'all' || !Number.isNaN(group)));
   if (!normalizedName) return res.status(400).json({ error: 'missing_fields' });
   if (isOverMaxLength(normalizedName, MAX_KEY_NAME_LENGTH)
     || isOverMaxLength(normalizedReaderId, MAX_DEVICE_ID_LENGTH)) {
     return res.status(400).json({ error: 'field_too_long' });
   }
-  await query('UPDATE keys SET name = $1, reader_id = $2 WHERE id = $3 AND space_id = $4', [
+  if (normalizedGroups.some((group) => group !== 'all') && groupMode) {
+    const ids = normalizedGroups.filter((group) => group !== 'all');
+    if (ids.length) {
+      const groupCheck = await query(
+        'SELECT id FROM groups WHERE space_id = $1 AND id = ANY($2::int[])',
+        [id, ids],
+      );
+      if (groupCheck.rows.length !== ids.length) {
+        return res.status(404).json({ error: 'group_not_found' });
+      }
+    }
+  }
+  await query('UPDATE keys SET name = $1, reader_id = $2, groups = $3 WHERE id = $4 AND space_id = $5', [
     normalizedName,
     normalizedReaderId || null,
+    JSON.stringify(normalizedGroups),
     keyId,
     id,
   ]);
@@ -2387,10 +2773,13 @@ app.patch('/api/spaces/:id/photos/:index', requireAuth, requireInstaller, async 
   res.json({ ok: true });
 });
 
-async function applyLightOutputs(spaceId, hubId, status) {
+async function applyLightOutputs(spaceId, hubId, status, groupId = null, groupMode = false) {
+  const params = [spaceId, 'output-light'];
+  const groupClause = groupMode ? ' AND group_id = $3' : '';
+  if (groupMode) params.push(groupId);
   const outputs = await query(
-    'SELECT side, config FROM devices WHERE space_id = $1 AND type = $2',
-    [spaceId, 'output-light'],
+    `SELECT side, config FROM devices WHERE space_id = $1 AND type = $2${groupClause}`,
+    params,
   );
   await Promise.all(
     outputs.rows.map((output) => {
@@ -2410,23 +2799,54 @@ const updateStatus = async (spaceId, status, who, logMessage) => {
   const space = mapSpace(updated.rows[0]);
   await applyLightOutputs(spaceId, space.hubId, status);
   if (status !== 'armed') {
-    await stopSirenTimers(spaceId, space.hubId);
-    spaceAlarmState.set(spaceId, false);
-    alarmSinceArmed.delete(spaceId);
-    await clearEntryDelay(spaceId, space.hubId);
-    await clearPendingArm(spaceId, space.hubId);
-    entryDelayFailed.delete(spaceId);
+    await stopSirenTimers(spaceId, space.hubId, null, false);
+    spaceAlarmState.set(getGroupKey(spaceId, null), false);
+    alarmSinceArmed.delete(getGroupKey(spaceId, null));
+    await clearEntryDelay(spaceId, space.hubId, null, false);
+    await clearPendingArm(spaceId, space.hubId, null, false);
+    entryDelayFailed.delete(getGroupKey(spaceId, null));
   }
   if (status === 'armed') {
-    alarmSinceArmed.set(spaceId, false);
+    alarmSinceArmed.set(getGroupKey(spaceId, null), false);
   }
   space.devices = await loadDevices(spaceId, space.hubId, space.hubOnline);
   return space;
 };
 
+const updateGroupStatus = async (spaceId, groupId, status, who, logMessage) => {
+  const group = await getGroupById(spaceId, groupId);
+  if (!group) return null;
+  await query('UPDATE groups SET armed = $1 WHERE id = $2 AND space_id = $3', [status === 'armed', groupId, spaceId]);
+  const defaultMessage = status === 'armed'
+    ? `Группа ${group.name} поставлена под охрану`
+    : `Группа ${group.name} снята с охраны`;
+  await appendLog(spaceId, logMessage ?? defaultMessage, who, 'security', groupId);
+  const spaceRow = await query('SELECT hub_id, hub_online FROM spaces WHERE id = $1', [spaceId]);
+  const hubId = spaceRow.rows[0]?.hub_id;
+  const groupKey = getGroupKey(spaceId, groupId);
+  await applyLightOutputs(spaceId, hubId, status, groupId, true);
+  if (status !== 'armed') {
+    await stopSirenTimers(spaceId, hubId, groupId, true);
+    spaceAlarmState.set(groupKey, false);
+    alarmSinceArmed.delete(groupKey);
+    await clearEntryDelay(spaceId, hubId, groupId, true);
+    await clearPendingArm(spaceId, hubId, groupId, true);
+    entryDelayFailed.delete(groupKey);
+  } else {
+    alarmSinceArmed.set(groupKey, false);
+  }
+  return {
+    ...group,
+    armed: status === 'armed',
+  };
+};
+
 const evaluateZoneIssues = async (spaceId) => {
+  const spaceRow = await query('SELECT group_mode FROM spaces WHERE id = $1', [spaceId]);
+  const groupMode = spaceRow.rows[0]?.group_mode ?? false;
+  const groupClause = groupMode ? ' AND group_id IS NOT NULL' : '';
   const zones = await query(
-    "SELECT status FROM devices WHERE space_id = $1 AND type = 'zone'",
+    `SELECT status FROM devices WHERE space_id = $1 AND type = 'zone'${groupClause}`,
     [spaceId],
   );
   const hasIssues = zones.rows.some((zone) => zone.status !== 'Норма');
@@ -2467,40 +2887,92 @@ const handleReaderScan = async ({ readerId, payload, ts }) => {
   );
 
   const key = await query(
-    'SELECT name FROM keys WHERE space_id = $1 AND (reader_id IS NULL OR reader_id = $2)',
+    'SELECT name, groups FROM keys WHERE space_id = $1 AND (reader_id IS NULL OR reader_id = $2)',
     [spaceId, readerId],
   );
-  const hasKey = key.rows.some((row) => keyName.includes(row.name));
-  if (!hasKey) {
+  const matchedKey = key.rows.find((row) => keyName.includes(row.name));
+  if (!matchedKey) {
     await appendLog(spaceId, `Неизвестный ключ: ${keyName}`, name ?? readerId, 'access');
     return { ok: true, ignored: true };
   }
 
-  const action = spaceStatus === 'armed' ? 'disarm' : 'arm';
+  const groupMode = await getSpaceGroupMode(spaceId);
+  const groups = groupMode ? await loadGroups(spaceId) : [];
+  const groupMap = new Map(groups.map((group) => [group.id, group]));
+  const keyGroups = Array.isArray(matchedKey.groups) ? matchedKey.groups : [];
+  const targetGroupIds = groupMode
+    ? (keyGroups.includes('all') || !keyGroups.length
+      ? groups.map((group) => group.id)
+      : keyGroups.map((group) => Number(group)).filter((group) => groupMap.has(group)))
+    : [];
+  const anyGroupArmed = targetGroupIds.some((groupId) => groupMap.get(groupId)?.armed);
+  const action = groupMode
+    ? (anyGroupArmed ? 'disarm' : 'arm')
+    : (spaceStatus === 'armed' ? 'disarm' : 'arm');
+  if (groupMode && !targetGroupIds.length) {
+    await appendLog(spaceId, `Ключ без группы: ${keyName}`, name ?? readerId, 'access');
+    return { ok: true, ignored: true };
+  }
   if (action === 'arm') {
-    const zones = await query('SELECT name, status, config FROM devices WHERE space_id = $1 AND type = $2', [
-      spaceId,
-      'zone',
-    ]);
-    const hasBypass = zones.rows.some((zone) => zone.config?.bypass);
-    const hasViolations = zones.rows.some((zone) => zone.status !== 'Норма');
-    if (hasBypass) {
-      await appendLog(
-        spaceId,
-        `Неудачная постановка (обход зоны активен): ${keyName}`,
-        name ?? readerId,
-        'security',
+    if (groupMode) {
+      const zones = await query(
+        'SELECT name, status, config, group_id FROM devices WHERE space_id = $1 AND type = $2 AND group_id = ANY($3::int[])',
+        [spaceId, 'zone', targetGroupIds],
       );
-      return { ok: true, blocked: 'bypass' };
-    }
-    if (hasViolations) {
-      await appendLog(
+      const byGroup = targetGroupIds.reduce((acc, groupId) => {
+        acc.set(groupId, zones.rows.filter((zone) => zone.group_id === groupId));
+        return acc;
+      }, new Map());
+      for (const groupId of targetGroupIds) {
+        const groupZones = byGroup.get(groupId) ?? [];
+        const hasBypass = groupZones.some((zone) => zone.config?.bypass);
+        const hasViolations = groupZones.some((zone) => zone.status !== 'Норма');
+        if (hasBypass) {
+          await appendLog(
+            spaceId,
+            `Неудачная постановка (обход зоны активен): ${keyName}`,
+            name ?? readerId,
+            'security',
+            groupId,
+          );
+          return { ok: true, blocked: 'bypass' };
+        }
+        if (hasViolations) {
+          await appendLog(
+            spaceId,
+            `Неудачная постановка (зоны не в норме): ${keyName}`,
+            name ?? readerId,
+            'security',
+            groupId,
+          );
+          return { ok: true, blocked: 'zone_state' };
+        }
+      }
+    } else {
+      const zones = await query('SELECT name, status, config FROM devices WHERE space_id = $1 AND type = $2', [
         spaceId,
-        `Неудачная постановка (зоны не в норме): ${keyName}`,
-        name ?? readerId,
-        'security',
-      );
-      return { ok: true, blocked: 'zone_state' };
+        'zone',
+      ]);
+      const hasBypass = zones.rows.some((zone) => zone.config?.bypass);
+      const hasViolations = zones.rows.some((zone) => zone.status !== 'Норма');
+      if (hasBypass) {
+        await appendLog(
+          spaceId,
+          `Неудачная постановка (обход зоны активен): ${keyName}`,
+          name ?? readerId,
+          'security',
+        );
+        return { ok: true, blocked: 'bypass' };
+      }
+      if (hasViolations) {
+        await appendLog(
+          spaceId,
+          `Неудачная постановка (зоны не в норме): ${keyName}`,
+          name ?? readerId,
+          'security',
+        );
+        return { ok: true, blocked: 'zone_state' };
+      }
     }
   }
 
@@ -2508,8 +2980,8 @@ const handleReaderScan = async ({ readerId, payload, ts }) => {
   const inputLevel = Number(config?.inputLevel ?? 6);
   const outputLevel = Number(config?.outputLevel ?? 6);
   await query(
-    'INSERT INTO reader_sessions (reader_id, space_id, input_side, input_level, action, key_name, reader_name, expires_at) VALUES ($1,$2,$3,$4,$5,$6,$7,NOW() + INTERVAL \'1 second\')',
-    [readerId, spaceId, inputSide, inputLevel, action, keyName, name ?? readerId],
+    'INSERT INTO reader_sessions (reader_id, space_id, input_side, input_level, action, key_name, reader_name, groups, expires_at) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,NOW() + INTERVAL \'1 second\')',
+    [readerId, spaceId, inputSide, inputLevel, action, keyName, name ?? readerId, JSON.stringify(targetGroupIds)],
   );
 
   await pulseReaderOutput(readerId, outputLevel, MIN_INTERVAL_MS).catch(() => null);
@@ -2653,6 +3125,53 @@ app.post('/api/spaces/:id/arm', requireAuth, async (req, res) => {
     res.status(403).json({ error: 'forbidden' });
     return;
   }
+  const groupMode = await getSpaceGroupMode(req.params.id);
+  if (groupMode) {
+    const groups = await loadGroups(req.params.id);
+    if (!groups.length) return res.status(400).json({ error: 'no_groups' });
+    for (const group of groups) {
+      const zones = await query(
+        'SELECT name, status, config FROM devices WHERE space_id = $1 AND type = $2 AND group_id = $3',
+        [req.params.id, 'zone', group.id],
+      );
+      const hasBypass = zones.rows.some((zone) => zone.config?.bypass);
+      const hasViolations = zones.rows.some((zone) => zone.status !== 'Норма');
+      if (hasBypass || hasViolations) {
+        const reason = hasBypass ? 'обход зоны активен' : 'зоны не в норме';
+        await appendLog(
+          req.params.id,
+          `Неудачная постановка (${reason}): ${group.name}`,
+          req.user.minecraft_nickname ?? 'UI',
+          'security',
+          group.id,
+        );
+        continue;
+      }
+      const delaySeconds = getExitDelaySeconds(zones.rows);
+      const spaceRow = await query('SELECT hub_id FROM spaces WHERE id = $1', [req.params.id]);
+      if (delaySeconds > 0) {
+        await startPendingArm(
+          req.params.id,
+          spaceRow.rows[0]?.hub_id,
+          delaySeconds,
+          req.user.minecraft_nickname ?? 'UI',
+          `Постановка группы ${group.name}`,
+          group.id,
+          true,
+        );
+      } else {
+        await updateGroupStatus(
+          req.params.id,
+          group.id,
+          'armed',
+          req.user.minecraft_nickname ?? 'UI',
+          `Постановка группы ${group.name}`,
+        );
+      }
+    }
+    res.json({ ok: true });
+    return;
+  }
   const updated = await updateStatus(req.params.id, 'armed', req.user.minecraft_nickname ?? 'UI');
   if (!updated) return res.status(404).json({ error: 'space_not_found' });
   res.json(updated);
@@ -2664,6 +3183,21 @@ app.post('/api/spaces/:id/disarm', requireAuth, async (req, res) => {
   const allowed = await ensureSpaceRole(req.user.id, req.params.id, roleFilter);
   if (!allowed) {
     res.status(403).json({ error: 'forbidden' });
+    return;
+  }
+  const groupMode = await getSpaceGroupMode(req.params.id);
+  if (groupMode) {
+    const groups = await loadGroups(req.params.id);
+    for (const group of groups) {
+      await updateGroupStatus(
+        req.params.id,
+        group.id,
+        'disarmed',
+        req.user.minecraft_nickname ?? 'UI',
+        `Снятие с охраны группы ${group.name}`,
+      );
+    }
+    res.json({ ok: true });
     return;
   }
   const space = await updateStatus(req.params.id, 'disarmed', req.user.minecraft_nickname ?? 'UI');
@@ -2818,7 +3352,7 @@ app.post('/api/hub/events', requireWebhookToken, async (req, res) => {
 
     if (!isExtensionEvent) {
       const sessions = await query(
-        `SELECT id, input_side, input_level, action, key_name, reader_name
+        `SELECT id, input_side, input_level, action, key_name, reader_name, groups
          FROM reader_sessions
          WHERE space_id = $1 AND expires_at >= NOW()
          ORDER BY id DESC
@@ -2828,7 +3362,85 @@ app.post('/api/hub/events', requireWebhookToken, async (req, res) => {
       if (sessions.rows.length) {
         const session = sessions.rows[0];
         if (session.input_side === normalizedSide && Number(session.input_level) === inputLevel) {
-          if (session.action === 'arm') {
+          const groupMode = await getSpaceGroupMode(spaceId);
+          if (groupMode) {
+            const groups = await loadGroups(spaceId);
+            const groupMap = new Map(groups.map((group) => [group.id, group]));
+            const targetGroupIds = Array.isArray(session.groups)
+              ? session.groups.map((group) => Number(group)).filter((group) => groupMap.has(group))
+              : [];
+            if (!targetGroupIds.length) {
+              await query('DELETE FROM reader_sessions WHERE id = $1', [session.id]);
+              if (!res.headersSent) res.json({ ok: true });
+              return;
+            }
+            if (session.action === 'arm') {
+              const zones = await query(
+                'SELECT name, status, config, group_id FROM devices WHERE space_id = $1 AND type = $2 AND group_id = ANY($3::int[])',
+                [spaceId, 'zone', targetGroupIds],
+              );
+              const byGroup = targetGroupIds.reduce((acc, groupId) => {
+                acc.set(groupId, zones.rows.filter((zone) => zone.group_id === groupId));
+                return acc;
+              }, new Map());
+              for (const groupId of targetGroupIds) {
+                const groupZones = byGroup.get(groupId) ?? [];
+                const hasBypass = groupZones.some((zone) => zone.config?.bypass);
+                const hasViolations = groupZones.some((zone) => zone.status !== 'Норма');
+                if (hasBypass) {
+                  await appendLog(
+                    spaceId,
+                    `Неудачная постановка (обход зоны активен): ${session.key_name}`,
+                    session.reader_name,
+                    'security',
+                    groupId,
+                  );
+                  continue;
+                }
+                if (hasViolations) {
+                  await appendLog(
+                    spaceId,
+                    `Неудачная постановка (зоны не в норме): ${session.key_name}`,
+                    session.reader_name,
+                    'security',
+                    groupId,
+                  );
+                  continue;
+                }
+                const delaySeconds = getExitDelaySeconds(groupZones);
+                const spaceRow = await query('SELECT hub_id FROM spaces WHERE id = $1', [spaceId]);
+                if (delaySeconds > 0) {
+                  await startPendingArm(
+                    spaceId,
+                    spaceRow.rows[0]?.hub_id,
+                    delaySeconds,
+                    session.reader_name,
+                    `Постановка на охрану ключом: ${session.key_name}`,
+                    groupId,
+                    true,
+                  );
+                } else {
+                  await updateGroupStatus(
+                    spaceId,
+                    groupId,
+                    'armed',
+                    session.reader_name,
+                    `Постановка на охрану ключом: ${session.key_name}`,
+                  );
+                }
+              }
+            } else {
+              for (const groupId of targetGroupIds) {
+                await updateGroupStatus(
+                  spaceId,
+                  groupId,
+                  'disarmed',
+                  session.reader_name,
+                  `Снятие с охраны ключом: ${session.key_name}`,
+                );
+              }
+            }
+          } else if (session.action === 'arm') {
             const zones = await query('SELECT name, status, config FROM devices WHERE space_id = $1 AND type = $2', [
               spaceId,
               'zone',
@@ -2882,9 +3494,13 @@ app.post('/api/hub/events', requireWebhookToken, async (req, res) => {
       }
     }
 
+    const spaceRowForGroups = await query('SELECT status, hub_id, issues, group_mode FROM spaces WHERE id = $1', [spaceId]);
+    const groupMode = spaceRowForGroups.rows[0]?.group_mode ?? false;
+    const groups = groupMode ? await loadGroups(spaceId) : [];
+    const groupMap = new Map(groups.map((group) => [group.id, group]));
     const zones = isExtensionEvent
       ? await query(
-        `SELECT id, name, status, config
+        `SELECT id, name, status, config, group_id
          FROM devices
          WHERE space_id = $1
            AND type = $2
@@ -2894,7 +3510,7 @@ app.post('/api/hub/events', requireWebhookToken, async (req, res) => {
         [spaceId, 'zone', normalizedSide, 'hub_extension', normalizedExtensionId],
       )
       : await query(
-        `SELECT id, name, status, config
+        `SELECT id, name, status, config, group_id
          FROM devices
          WHERE space_id = $1
            AND type = $2
@@ -2904,6 +3520,12 @@ app.post('/api/hub/events', requireWebhookToken, async (req, res) => {
       );
 
     for (const zone of zones.rows) {
+      if (groupMode && !zone.group_id) {
+        continue;
+      }
+      const groupId = zone.group_id ?? null;
+      const groupKey = groupMode ? getGroupKey(spaceId, groupId) : getGroupKey(spaceId, null);
+      const groupStatus = groupMode ? groupMap.get(groupId)?.armed : null;
       const config = zone.config ?? {};
       const normalLevel = Number(config.normalLevel ?? 15);
       const isNormal = inputLevel === normalLevel;
@@ -2911,74 +3533,88 @@ app.post('/api/hub/events', requireWebhookToken, async (req, res) => {
       const newStatus = isNormal ? 'Норма' : 'Нарушение';
       await query('UPDATE devices SET status = $1 WHERE id = $2', [newStatus, zone.id]);
 
-      const spaceRow = await query('SELECT status, hub_id, issues FROM spaces WHERE id = $1', [spaceId]);
-      const status = spaceRow.rows[0]?.status ?? 'disarmed';
+      const status = spaceRowForGroups.rows[0]?.status ?? 'disarmed';
       const hasActiveIssues = Boolean(
-        spaceRow.rows[0]?.issues || spaceAlarmState.get(spaceId) || alarmSinceArmed.get(spaceId),
+        spaceRowForGroups.rows[0]?.issues || spaceAlarmState.get(groupKey) || alarmSinceArmed.get(groupKey),
       );
       const zoneType = config.zoneType ?? 'instant';
       const bypass = Boolean(config.bypass);
       const silent = Boolean(config.silent);
-      const shouldCheck = zoneType === '24h' || status === 'armed';
+      const shouldCheck = zoneType === '24h' || (groupMode ? groupStatus : status === 'armed');
 
       if (shouldCheck && !bypass && !isNormal) {
-        if (entryDelayFailed.get(spaceId)) {
-          await appendLog(spaceId, `Тревога шлейфа: ${zone.name}`, 'Zone', 'alarm');
-          zoneAlarmState.set(`${spaceId}:${zone.id}`, true);
-          spaceAlarmState.set(spaceId, true);
-          alarmSinceArmed.set(spaceId, true);
+        if (entryDelayFailed.get(groupKey)) {
+          await appendLog(spaceId, `Тревога шлейфа: ${zone.name}`, 'Zone', 'alarm', groupId);
+          zoneAlarmState.set(`${spaceId}:${groupId ?? 'space'}:${zone.id}`, true);
+          spaceAlarmState.set(groupKey, true);
+          alarmSinceArmed.set(groupKey, true);
           if (!silent) {
-            await startSirenTimers(spaceId, spaceRow.rows[0]?.hub_id);
+            await startSirenTimers(spaceId, spaceRowForGroups.rows[0]?.hub_id, groupId, groupMode);
           }
           await query('UPDATE spaces SET issues = true WHERE id = $1', [spaceId]);
           continue;
         }
-        if (zoneType === 'delayed' && status === 'armed' && entryDelayTimers.has(spaceId)) {
+        if (zoneType === 'delayed' && (groupMode ? groupStatus : status === 'armed') && entryDelayTimers.has(groupKey)) {
           continue;
         }
-        if (zoneType === 'delayed' && status === 'armed' && !entryDelayTimers.has(spaceId)) {
+        if (zoneType === 'delayed' && (groupMode ? groupStatus : status === 'armed') && !entryDelayTimers.has(groupKey)) {
           if (hasActiveIssues) {
-            await appendLog(spaceId, `Тревога шлейфа: ${zone.name}`, 'Zone', 'alarm');
-            zoneAlarmState.set(`${spaceId}:${zone.id}`, true);
-            spaceAlarmState.set(spaceId, true);
-            alarmSinceArmed.set(spaceId, true);
+            await appendLog(spaceId, `Тревога шлейфа: ${zone.name}`, 'Zone', 'alarm', groupId);
+            zoneAlarmState.set(`${spaceId}:${groupId ?? 'space'}:${zone.id}`, true);
+            spaceAlarmState.set(groupKey, true);
+            alarmSinceArmed.set(groupKey, true);
             if (!silent) {
-              await startSirenTimers(spaceId, spaceRow.rows[0]?.hub_id);
+              await startSirenTimers(spaceId, spaceRowForGroups.rows[0]?.hub_id, groupId, groupMode);
             }
             await query('UPDATE spaces SET issues = true WHERE id = $1', [spaceId]);
             continue;
           }
           const delaySeconds = clampDelaySeconds(config.delaySeconds ?? 30) ?? 0;
-          await startEntryDelay(spaceId, spaceRow.rows[0]?.hub_id, delaySeconds, zone.name, zone.id);
+          await startEntryDelay(spaceId, spaceRowForGroups.rows[0]?.hub_id, delaySeconds, zone.name, zone.id, groupId, groupMode);
           continue;
         }
-        if (zoneType === 'pass' && entryDelayTimers.has(spaceId)) {
+        if (zoneType === 'pass' && entryDelayTimers.has(groupKey)) {
           continue;
         }
-        await appendLog(spaceId, `Тревога шлейфа: ${zone.name}`, 'Zone', 'alarm');
-        zoneAlarmState.set(`${spaceId}:${zone.id}`, true);
-        spaceAlarmState.set(spaceId, true);
-        alarmSinceArmed.set(spaceId, true);
+        await appendLog(spaceId, `Тревога шлейфа: ${zone.name}`, 'Zone', 'alarm', groupId);
+        zoneAlarmState.set(`${spaceId}:${groupId ?? 'space'}:${zone.id}`, true);
+        spaceAlarmState.set(groupKey, true);
+        alarmSinceArmed.set(groupKey, true);
         if (!silent) {
-          await startSirenTimers(spaceId, spaceRow.rows[0]?.hub_id);
+          await startSirenTimers(spaceId, spaceRowForGroups.rows[0]?.hub_id, groupId, groupMode);
         }
         await query('UPDATE spaces SET issues = true WHERE id = $1', [spaceId]);
       }
 
-      if (isNormal && currentStatus === 'Нарушение' && zoneAlarmState.get(`${spaceId}:${zone.id}`)) {
-        await appendLog(spaceId, `Восстановление шлейфа: ${zone.name}`, 'Zone', 'restore');
-        zoneAlarmState.delete(`${spaceId}:${zone.id}`);
+      if (isNormal && currentStatus === 'Нарушение' && zoneAlarmState.get(`${spaceId}:${groupId ?? 'space'}:${zone.id}`)) {
+        await appendLog(spaceId, `Восстановление шлейфа: ${zone.name}`, 'Zone', 'restore', groupId);
+        zoneAlarmState.delete(`${spaceId}:${groupId ?? 'space'}:${zone.id}`);
       }
     }
 
     const hasIssues = await evaluateZoneIssues(spaceId);
     if (!hasIssues) {
       const spaceRow = await query('SELECT hub_id FROM spaces WHERE id = $1', [spaceId]);
-      spaceAlarmState.set(spaceId, false);
-      const sirens = await query('SELECT config FROM devices WHERE space_id = $1 AND type = $2', [spaceId, 'siren']);
-      const maxDurationMs = getMaxSirenDuration(sirens.rows);
-      if (!maxDurationMs) {
-        await stopSirenTimers(spaceId, spaceRow.rows[0]?.hub_id);
+      if (groupMode) {
+        for (const group of groups) {
+          const groupKey = getGroupKey(spaceId, group.id);
+          spaceAlarmState.set(groupKey, false);
+          const sirens = await query(
+            'SELECT config FROM devices WHERE space_id = $1 AND type = $2 AND group_id = $3',
+            [spaceId, 'siren', group.id],
+          );
+          const maxDurationMs = getMaxSirenDuration(sirens.rows);
+          if (!maxDurationMs) {
+            await stopSirenTimers(spaceId, spaceRow.rows[0]?.hub_id, group.id, true);
+          }
+        }
+      } else {
+        spaceAlarmState.set(getGroupKey(spaceId, null), false);
+        const sirens = await query('SELECT config FROM devices WHERE space_id = $1 AND type = $2', [spaceId, 'siren']);
+        const maxDurationMs = getMaxSirenDuration(sirens.rows);
+        if (!maxDurationMs) {
+          await stopSirenTimers(spaceId, spaceRow.rows[0]?.hub_id);
+        }
       }
     }
   }

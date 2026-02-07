@@ -40,7 +40,7 @@ const seed = async () => {
   await query(schema.toString());
   try {
     await query(
-      'TRUNCATE reader_sessions, keys, devices, logs, user_spaces, sessions, users, spaces, hubs RESTART IDENTITY CASCADE',
+      'TRUNCATE reader_sessions, keys, devices, logs, groups, user_spaces, sessions, users, spaces, hubs RESTART IDENTITY CASCADE',
     );
   } catch (error) {
     if (error?.code !== '42P01') {
@@ -100,14 +100,15 @@ const seed = async () => {
   for (const space of spaces) {
     await query('INSERT INTO hubs (id, space_id) VALUES ($1,$2)', [space.hub_id.replace('HUB-', ''), space.id]);
     await query(
-      `INSERT INTO spaces (id, hub_id, name, address, status, hub_online, issues, server, city, timezone, company, contacts, notes, photos)
-       VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14)`,
+      `INSERT INTO spaces (id, hub_id, name, address, status, group_mode, hub_online, issues, server, city, timezone, company, contacts, notes, photos)
+       VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15)`,
       [
         space.id,
         space.hub_id.replace('HUB-', ''),
         space.name,
         space.address,
         space.status,
+        space.group_mode ?? false,
         space.hub_online,
         space.issues,
         space.server ?? '—',
@@ -122,10 +123,11 @@ const seed = async () => {
 
     for (const device of space.devices) {
       await query(
-        'INSERT INTO devices (id, space_id, name, room, status, type, side, config) VALUES ($1,$2,$3,$4,$5,$6,$7,$8)',
+        'INSERT INTO devices (id, space_id, group_id, name, room, status, type, side, config) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9)',
         [
           device.id,
           space.id,
+          device.group_id ?? null,
           device.name,
           device.room,
           device.status,

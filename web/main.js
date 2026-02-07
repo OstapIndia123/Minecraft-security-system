@@ -632,11 +632,12 @@ const renderLogs = (logs) => {
     row.className = `log-row ${isAlarm ? 'log-row--alarm' : ''} ${shouldFlash ? 'log-row--alarm-flash' : ''} ${isRestore ? 'log-row--restore' : ''} ${isHub ? 'log-row--hub' : ''} ${(isHubOffline || isExtensionOffline) ? 'log-row--hub-offline' : ''}`;
     const safeText = escapeHtml(translatedText);
     const text = isHub ? safeText.replace(/\n/g, '<br />') : safeText;
+    const groupLabel = log.groupName ? `<span class="log-group">${escapeHtml(log.groupName)}</span>` : '';
     const timeLabel = escapeHtml(formatLogTime(logTimestamp) ?? log.time);
     const spaceLabel = escapeHtml(log.spaceName);
     row.innerHTML = `
       <span>${timeLabel}</span>
-      <span>${text}</span>
+      <span>${groupLabel}${text}</span>
       <span class="muted">${spaceLabel}</span>
     `;
     logTable.appendChild(row);

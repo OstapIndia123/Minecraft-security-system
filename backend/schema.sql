@@ -2,6 +2,7 @@ DROP TABLE IF EXISTS reader_sessions CASCADE;
 DROP TABLE IF EXISTS keys CASCADE;
 DROP TABLE IF EXISTS devices CASCADE;
 DROP TABLE IF EXISTS logs CASCADE;
+DROP TABLE IF EXISTS groups CASCADE;
 DROP TABLE IF EXISTS user_spaces CASCADE;
 DROP TABLE IF EXISTS sessions CASCADE;
 DROP TABLE IF EXISTS users CASCADE;
@@ -46,6 +47,7 @@ CREATE TABLE spaces (
   name TEXT NOT NULL,
   address TEXT NOT NULL,
   status TEXT NOT NULL,
+  group_mode BOOLEAN NOT NULL DEFAULT false,
   hub_online BOOLEAN DEFAULT NULL,
   issues BOOLEAN NOT NULL DEFAULT false,
   server TEXT NOT NULL DEFAULT '—',
@@ -64,9 +66,19 @@ CREATE TABLE user_spaces (
   PRIMARY KEY (user_id, space_id, role)
 );
 
+CREATE TABLE groups (
+  id SERIAL PRIMARY KEY,
+  space_id TEXT NOT NULL REFERENCES spaces(id) ON DELETE CASCADE,
+  name TEXT NOT NULL,
+  armed BOOLEAN NOT NULL DEFAULT false
+);
+
+CREATE UNIQUE INDEX groups_space_name_uniq ON groups (space_id, name);
+
 CREATE TABLE devices (
   id TEXT PRIMARY KEY,
   space_id TEXT NOT NULL REFERENCES spaces(id) ON DELETE CASCADE,
+  group_id INT REFERENCES groups(id) ON DELETE SET NULL,
   name TEXT NOT NULL,
   room TEXT NOT NULL,
   status TEXT NOT NULL,
@@ -92,6 +104,7 @@ CREATE TABLE reader_sessions (
   action TEXT NOT NULL,
   key_name TEXT NOT NULL,
   reader_name TEXT NOT NULL,
+  groups JSONB NOT NULL DEFAULT '[]'::jsonb,
   expires_at TIMESTAMP NOT NULL,
   created_at TIMESTAMP NOT NULL DEFAULT NOW()
 );
@@ -99,6 +112,7 @@ CREATE TABLE reader_sessions (
 CREATE TABLE logs (
   id SERIAL PRIMARY KEY,
   space_id TEXT NOT NULL REFERENCES spaces(id) ON DELETE CASCADE,
+  group_id INT REFERENCES groups(id) ON DELETE SET NULL,
   time TEXT NOT NULL,
   text TEXT NOT NULL,
   who TEXT NOT NULL,

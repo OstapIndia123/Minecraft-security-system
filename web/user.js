@@ -11,6 +11,7 @@ const state = {
   logsOffset: 0,
   logsLimit: 200,
   logsHasMore: true,
+  groups: [],
 };
 
 const detectBrowserLanguage = () => {
@@ -57,6 +58,9 @@ const actionModalForm = document.getElementById('actionModalForm');
 const actionModalConfirm = document.getElementById('actionModalConfirm');
 const actionModalCancel = document.getElementById('actionModalCancel');
 const actionModalClose = document.getElementById('closeActionModal');
+const groupManageModal = document.getElementById('groupManageModal');
+const groupManageList = document.getElementById('groupManageList');
+const closeGroupManage = document.getElementById('closeGroupManage');
 
 const translations = {
   ru: {
@@ -72,12 +76,18 @@ const translations = {
     'user.log.filters.system': 'Система',
     'user.actions.arm': 'Под охрану',
     'user.actions.disarm': 'С охраны',
+    'user.actions.manage': 'Управление',
+    'user.groups.manageTitle': 'Управление группами',
+    'user.groups.status.armed': 'Под охраной',
+    'user.groups.status.disarmed': 'Снято с охраны',
+    'user.groups.empty': 'Группы не созданы',
     'user.empty.devices': 'Нет устройств',
     'user.empty.logs': 'Нет событий',
     'user.object.hubOffline': 'Хаб не в сети',
     'log.actions.more': 'Показать ещё',
     'status.armed': 'Под охраной',
     'status.disarmed': 'Снято с охраны',
+    'status.partial': 'Под охраной (частично)',
     'status.night': 'Ночной режим',
     'profile.title': 'Профиль',
     'profile.nickname': 'Игровой ник',
@@ -101,12 +111,18 @@ const translations = {
     'user.log.filters.system': 'System',
     'user.actions.arm': 'Arm',
     'user.actions.disarm': 'Disarm',
+    'user.actions.manage': 'Manage',
+    'user.groups.manageTitle': 'Group control',
+    'user.groups.status.armed': 'Armed',
+    'user.groups.status.disarmed': 'Disarmed',
+    'user.groups.empty': 'No groups created',
     'user.empty.devices': 'No devices',
     'user.empty.logs': 'No events',
     'user.object.hubOffline': 'Hub offline',
     'log.actions.more': 'Show more',
     'status.armed': 'Armed',
     'status.disarmed': 'Disarmed',
+    'status.partial': 'Armed (partial)',
     'status.night': 'Night mode',
     'profile.title': 'Profile',
     'profile.nickname': 'Game nickname',
@@ -122,6 +138,7 @@ const translations = {
 const statusTone = {
   armed: 'status--armed',
   disarmed: 'status--disarmed',
+  partial: 'status--armed',
   night: 'status--night',
 };
 
@@ -139,6 +156,14 @@ const applyTranslations = () => {
 };
 
 const t = (key) => translations[state.language]?.[key] ?? translations.ru[key] ?? key;
+
+const getSpaceDisplayStatus = (space) => {
+  if (space.groupMode) {
+    return { label: t('status.partial'), tone: statusTone.partial };
+  }
+  const key = space.status;
+  return { label: t(`status.${key}`) ?? key, tone: statusTone[key] ?? '' };
+};
 
 const getAuthToken = () => localStorage.getItem('authToken');
 
@@ -505,11 +530,22 @@ const renderSpaces = (spaces) => {
 
 const renderStatus = (space) => {
   spaceIdEl.textContent = space.id;
-  spaceStateEl.textContent = t(`status.${space.status}`) ?? space.status;
-  spaceStateEl.className = `status-card__state ${statusTone[space.status] ?? ''}`;
+  const statusInfo = getSpaceDisplayStatus(space);
+  spaceStateEl.textContent = statusInfo.label;
+  spaceStateEl.className = `status-card__state ${statusInfo.tone}`;
   const serverLabel = space.server ?? '—';
   const cityLabel = space.city ?? '—';
   spaceMetaEl.textContent = `${space.address ?? '—'} • ${serverLabel} • ${cityLabel}`;
+};
+
+const updateStatusActions = (space) => {
+  const manageButton = document.querySelector('.status-actions [data-action="manage"]');
+  const armButton = document.querySelector('.status-actions [data-action="arm"]');
+  const disarmButton = document.querySelector('.status-actions [data-action="disarm"]');
+  const isGroupMode = Boolean(space.groupMode);
+  manageButton?.classList.toggle('hidden', !isGroupMode);
+  armButton?.classList.toggle('hidden', isGroupMode);
+  disarmButton?.classList.toggle('hidden', isGroupMode);
 };
 
 const renderDevices = (devices) => {
@@ -624,10 +660,11 @@ const renderLogs = (logs) => {
     const timestamp = log.createdAtMs ?? (log.createdAt ? new Date(`${log.createdAt}Z`).getTime() : null);
     const timeLabel = escapeHtml(formatLogTime(timestamp) ?? log.time);
     const text = escapeHtml(translated);
+    const groupLabel = log.groupName ? `<span class="log-group">${escapeHtml(log.groupName)}</span>` : '';
     const whoLabel = escapeHtml(log.who);
     row.innerHTML = `
       <span>${timeLabel}</span>
-      <span>${text}</span>
+      <span>${groupLabel}${text}</span>
       <span class="muted">${whoLabel}</span>
     `;
     logTable.appendChild(row);
@@ -635,10 +672,54 @@ const renderLogs = (logs) => {
   logMoreButton?.classList.toggle('hidden', !state.logsHasMore);
 };
 
+const renderGroupManageList = () => {
+  if (!groupManageList) return;
+  if (!state.groups.length) {
+    groupManageList.innerHTML = `<div class="empty-state">${t('user.groups.empty')}</div>`;
+    return;
+  }
+  groupManageList.innerHTML = '';
+  state.groups.forEach((group) => {
+    const card = document.createElement('div');
+    card.className = 'group-card';
+    card.innerHTML = `
+      <div>
+        <div class="group-card__title">${escapeHtml(group.name)}</div>
+        <div class="group-card__meta">${group.armed ? t('user.groups.status.armed') : t('user.groups.status.disarmed')}</div>
+      </div>
+      <div class="group-card__actions">
+        <button class="button button--ghost" data-action="arm">${t('user.actions.arm')}</button>
+        <button class="button button--ghost" data-action="disarm">${t('user.actions.disarm')}</button>
+      </div>
+    `;
+    card.querySelector('[data-action="arm"]')?.addEventListener('click', async () => {
+      if (!state.selectedSpaceId) return;
+      await apiFetch(`/api/spaces/${state.selectedSpaceId}/groups/${group.id}/arm`, { method: 'POST' });
+      await loadSpace(state.selectedSpaceId);
+    });
+    card.querySelector('[data-action="disarm"]')?.addEventListener('click', async () => {
+      if (!state.selectedSpaceId) return;
+      await apiFetch(`/api/spaces/${state.selectedSpaceId}/groups/${group.id}/disarm`, { method: 'POST' });
+      await loadSpace(state.selectedSpaceId);
+    });
+    groupManageList.appendChild(card);
+  });
+};
+
+const loadGroupsForSpace = async (spaceId) => {
+  const resp = await apiFetch(`/api/spaces/${spaceId}/groups`);
+  state.groups = resp.groups ?? [];
+  const cached = spacesCache.find((space) => space.id === spaceId);
+  if (cached) cached.groups = state.groups;
+  return state.groups;
+};
+
 const loadSpace = async (spaceId, { refreshLogs = true } = {}) => {
   const space = await apiFetch(`/api/spaces/${spaceId}`);
   renderStatus(space);
+  updateStatusActions(space);
   renderDevices(space.devices ?? []);
+  await loadGroupsForSpace(spaceId);
   if (refreshLogs) {
     await loadLogs(true);
   }
@@ -705,6 +786,11 @@ const refreshUserData = async () => {
 chipActions.forEach((chip) => {
   chip.addEventListener('click', async () => {
     if (!state.selectedSpaceId) return;
+    if (chip.dataset.action === 'manage') {
+      renderGroupManageList();
+      groupManageModal?.classList.add('modal--open');
+      return;
+    }
     if (chip.dataset.action === 'arm') {
       await apiFetch(`/api/spaces/${state.selectedSpaceId}/arm`, { method: 'POST' });
     } else {
@@ -713,6 +799,16 @@ chipActions.forEach((chip) => {
     await loadSpace(state.selectedSpaceId);
   });
 });
+
+if (groupManageModal) {
+  const closeGroupModal = () => groupManageModal.classList.remove('modal--open');
+  closeGroupManage?.addEventListener('click', closeGroupModal);
+  groupManageModal.addEventListener('click', (event) => {
+    if (event.target === groupManageModal) {
+      closeGroupModal();
+    }
+  });
+}
 
 tabs.forEach((tab) => {
   tab.addEventListener('click', () => {

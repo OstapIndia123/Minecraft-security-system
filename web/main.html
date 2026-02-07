@@ -130,6 +130,7 @@
           <div class="status-actions">
             <button class="chip chip--danger" data-action="arm" data-i18n="engineer.actions.arm">Под охрану</button>
             <button class="chip chip--success" data-action="disarm" data-i18n="engineer.actions.disarm">С охраны</button>
+            <button class="chip chip--alert hidden" data-action="manage" data-i18n="engineer.actions.manage">Управление</button>
           </div>
         </section>
 
@@ -141,8 +142,9 @@
             <button class="tab" data-tab="photos" data-i18n="engineer.tabs.photos">Фото</button>
             <button class="tab" data-tab="notes" data-i18n="engineer.tabs.notes">Примечания</button>
             <button class="tab" data-tab="users" data-i18n="engineer.tabs.users">Пользователи</button>
-            <button class="tab" data-tab="installers" data-i18n="engineer.tabs.installers">Инженеры монтажа</button>
             <button class="tab" data-tab="log" data-i18n="engineer.tabs.log">Лог</button>
+            <button class="tab" data-tab="groups" data-i18n="engineer.tabs.groups">Группы</button>
+            <button class="tab" data-tab="installers" data-i18n="engineer.tabs.installers">Инженеры монтажа</button>
           </div>
 
           <div class="panel panel--active" id="equipment">
@@ -248,20 +250,6 @@
             </div>
           </div>
 
-          <div class="panel" id="installers">
-            <div class="panel__header">
-              <h2 data-i18n="engineer.installers.title">Инженеры монтажа</h2>
-            </div>
-            <div class="members-panel">
-              <div class="members-list" id="installersList"></div>
-              <form class="form-grid" id="installersForm">
-                <input type="text" name="identifier" data-i18n-placeholder="engineer.installers.email" placeholder="Никнейм" maxlength="16" required />
-                <button class="button button--primary" type="submit" data-i18n="engineer.installers.add">Добавить инженера</button>
-              </form>
-              <p class="muted" data-i18n="engineer.installers.note">Покинуть объект можно только если есть хотя бы ещё один инженер монтажа.</p>
-            </div>
-          </div>
-
           <div class="panel" id="log">
             <div class="panel__header">
               <h2 data-i18n="engineer.log.title">Лог событий</h2>
@@ -276,6 +264,38 @@
             <div class="log-table" id="logTable"></div>
             <div class="panel__footer panel__footer--center">
               <button class="button button--ghost" id="logMore" data-i18n="log.actions.more">Показать ещё</button>
+            </div>
+          </div>
+
+          <div class="panel" id="groups">
+            <div class="panel__header">
+              <h2 data-i18n="engineer.groups.title">Группы</h2>
+            </div>
+            <div class="members-panel">
+              <label class="toggle-row">
+                <span data-i18n="engineer.groups.mode">Включить режим групп</span>
+                <input type="checkbox" id="groupModeToggle" />
+              </label>
+              <div class="groups-list" id="groupsList"></div>
+              <form class="form-grid" id="groupCreateForm">
+                <input type="text" name="name" data-i18n-placeholder="engineer.groups.name" placeholder="Название группы" maxlength="32" required />
+                <button class="button button--primary" type="submit" data-i18n="engineer.groups.add">Создать группу</button>
+              </form>
+              <p class="muted" data-i18n="engineer.groups.note">Устройства без группы не работают при включённом режиме.</p>
+            </div>
+          </div>
+
+          <div class="panel" id="installers">
+            <div class="panel__header">
+              <h2 data-i18n="engineer.installers.title">Инженеры монтажа</h2>
+            </div>
+            <div class="members-panel">
+              <div class="members-list" id="installersList"></div>
+              <form class="form-grid" id="installersForm">
+                <input type="text" name="identifier" data-i18n-placeholder="engineer.installers.email" placeholder="Никнейм" maxlength="16" required />
+                <button class="button button--primary" type="submit" data-i18n="engineer.installers.add">Добавить инженера</button>
+              </form>
+              <p class="muted" data-i18n="engineer.installers.note">Покинуть объект можно только если есть хотя бы ещё один инженер монтажа.</p>
             </div>
           </div>
         </section>
@@ -315,6 +335,9 @@
             <option value="reader" data-i18n="engineer.deviceModal.type.reader">Считыватель</option>
             <option value="hub_extension" data-i18n="engineer.deviceModal.type.extension">Модуль расширения</option>
             <option value="key" data-i18n="engineer.deviceModal.type.key">Ключ</option>
+          </select>
+          <select name="groupId" id="deviceGroupSelect" class="hidden">
+            <option value="" data-i18n="engineer.deviceModal.group.none">Без группы</option>
           </select>
           <input type="text" name="side" data-i18n-placeholder="engineer.deviceModal.side" placeholder="Сторона (N/S/E/W/U/D)" maxlength="16" required />
 
@@ -372,6 +395,9 @@
           <div class="form-inline hidden" id="keyFields">
             <input type="text" name="keyName" data-i18n-placeholder="engineer.deviceModal.key.name" placeholder="Имя ключа" maxlength="60" />
             <input type="text" name="readerId" data-i18n-placeholder="engineer.deviceModal.key.readerId" placeholder="ID считывателя" maxlength="80" />
+            <select name="keyGroup" id="keyGroupSelect">
+              <option value="all" data-i18n="engineer.deviceModal.key.groupAll">Все группы</option>
+            </select>
             <button type="button" class="button button--ghost" id="readKey" data-i18n="engineer.deviceModal.key.read">Считать ключ</button>
             <button type="button" class="button button--ghost" id="generateKey" data-i18n="engineer.deviceModal.key.generate">Сгенерировать</button>
           </div>
@@ -402,6 +428,16 @@
           <button class="button button--ghost" id="actionModalCancel" type="button" data-i18n="common.cancel">Отмена</button>
           <button class="button button--primary" id="actionModalConfirm" type="button" data-i18n="common.confirm">Подтвердить</button>
         </div>
+      </div>
+    </div>
+
+    <div class="modal" id="groupManageModal" aria-hidden="true">
+      <div class="modal__content">
+        <div class="modal__header">
+          <h3 data-i18n="engineer.groups.manageTitle">Управление группами</h3>
+          <button class="ghost-button" id="closeGroupManage" aria-label="Закрыть" data-i18n-aria-label="common.close">✕</button>
+        </div>
+        <div class="groups-list" id="groupManageList"></div>
       </div>
     </div>
 

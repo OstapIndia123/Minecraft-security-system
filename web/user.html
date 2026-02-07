@@ -108,6 +108,7 @@
           <div class="status-actions">
             <button class="chip chip--danger" data-action="arm" data-i18n="user.actions.arm">Под охрану</button>
             <button class="chip chip--success" data-action="disarm" data-i18n="user.actions.disarm">С охраны</button>
+            <button class="chip chip--alert hidden" data-action="manage" data-i18n="user.actions.manage">Управление</button>
           </div>
         </section>
 
@@ -160,6 +161,16 @@
           <button class="button button--ghost" id="actionModalCancel" type="button">Отмена</button>
           <button class="button button--primary" id="actionModalConfirm" type="button">Подтвердить</button>
         </div>
+      </div>
+    </div>
+
+    <div class="modal" id="groupManageModal" aria-hidden="true">
+      <div class="modal__content">
+        <div class="modal__header">
+          <h3 data-i18n="user.groups.manageTitle">Управление группами</h3>
+          <button class="ghost-button" id="closeGroupManage" aria-label="Закрыть" data-i18n-aria-label="common.close">✕</button>
+        </div>
+        <div class="groups-list" id="groupManageList"></div>
       </div>
     </div>
 
