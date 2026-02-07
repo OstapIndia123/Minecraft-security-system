@@ -107,6 +107,7 @@ const translations = {
     'status.armed': 'Под охраной',
     'status.disarmed': 'Снято с охраны',
     'status.night': 'Ночной режим',
+    'status.partial': 'Частично под охраной',
     'profile.title': 'Профиль',
     'profile.nickname': 'Игровой ник',
     'profile.nickname.change': 'Сменить',
@@ -140,6 +141,7 @@ const translations = {
     'status.armed': 'Armed',
     'status.disarmed': 'Disarmed',
     'status.night': 'Night mode',
+    'status.partial': 'Partially armed',
     'profile.title': 'Profile',
     'profile.nickname': 'Game nickname',
     'profile.nickname.change': 'Change',
@@ -172,6 +174,22 @@ const applyTranslations = () => {
 
 const t = (key) => translations[state.language]?.[key] ?? translations.ru[key] ?? key;
 
+const statusMap = {
+  armed: 'Под охраной',
+  disarmed: 'Снято с охраны',
+  night: 'Ночной режим',
+  partial: 'Частично под охраной',
+};
+
+const getStatusLabel = (status) => {
+  const key = `status.${status}`;
+  const translated = t(key);
+  if (!translated || translated === key) {
+    return statusMap[status] ?? status;
+  }
+  return translated;
+};
+
 const loadProfileSettings = () => {
   const raw = localStorage.getItem('profileSettings');
   if (!raw) {
@@ -196,6 +214,7 @@ const statusTone = {
   armed: 'status--armed',
   disarmed: 'status--disarmed',
   night: 'status--night',
+  partial: 'status--partial',
 };
 
 const syncProfileSettings = async () => {
@@ -521,7 +540,7 @@ const renderObjects = (spaces) => {
       <div class="object-card__title">${escapeHtml(space.name)}</div>
       <div class="object-card__meta">${t('pcn.object.hubId')} ${escapeHtml(space.hubId ?? '—')}</div>
       ${hubOfflineLabel}
-      <div class="object-card__status ${statusTone[space.status] ?? ''}">${t(`status.${space.status}`) ?? space.status}</div>
+      <div class="object-card__status ${statusTone[space.status] ?? ''}">${getStatusLabel(space.status)}</div>
       <div class="object-card__meta">${escapeHtml(space.server ?? '—')}</div>
       <div class="object-card__meta">${escapeHtml(space.address)}</div>
     `;

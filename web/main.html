@@ -123,7 +123,10 @@
 
         <section class="status-panel">
           <div class="status-card">
-            <div class="status-card__id" id="spaceId">—</div>
+            <div class="status-card__id">
+              <span id="spaceName">—</span>
+              <span class="status-card__subid" id="spaceId">—</span>
+            </div>
             <div class="status-card__state" id="spaceState">—</div>
             <div class="status-card__meta" id="spaceMeta">—</div>
           </div>
@@ -316,6 +319,9 @@
         <form class="form-grid" id="deviceForm">
           <input type="text" name="name" data-i18n-placeholder="engineer.deviceModal.name" placeholder="Имя устройства" maxlength="60" required />
           <input type="text" name="room" data-i18n-placeholder="engineer.deviceModal.room" placeholder="Комната" maxlength="60" required />
+          <select name="groupId" id="deviceGroupSelect" class="hidden">
+            <option value="" data-i18n="engineer.groups.none">Без группы</option>
+          </select>
           <select name="type" id="deviceType" required>
             <option value="zone" data-i18n="engineer.deviceModal.type.zone">Шлейф/зона</option>
             <option value="output-light" data-i18n="engineer.deviceModal.type.outputLight">Постановочный светодиод</option>

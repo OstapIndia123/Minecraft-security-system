@@ -3,6 +3,7 @@ DROP TABLE IF EXISTS groups CASCADE;
 DROP TABLE IF EXISTS keys CASCADE;
 DROP TABLE IF EXISTS devices CASCADE;
 DROP TABLE IF EXISTS logs CASCADE;
+DROP TABLE IF EXISTS user_group_access CASCADE;
 DROP TABLE IF EXISTS user_spaces CASCADE;
 DROP TABLE IF EXISTS sessions CASCADE;
 DROP TABLE IF EXISTS users CASCADE;
@@ -74,6 +75,13 @@ CREATE TABLE user_spaces (
   PRIMARY KEY (user_id, space_id, role)
 );
 
+CREATE TABLE user_group_access (
+  user_id INT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+  space_id TEXT NOT NULL REFERENCES spaces(id) ON DELETE CASCADE,
+  group_id INT NOT NULL REFERENCES groups(id) ON DELETE CASCADE,
+  PRIMARY KEY (user_id, space_id, group_id)
+);
+
 CREATE TABLE devices (
   id TEXT PRIMARY KEY,
   space_id TEXT NOT NULL REFERENCES spaces(id) ON DELETE CASCADE,
@@ -113,5 +121,6 @@ CREATE TABLE logs (
   text TEXT NOT NULL,
   who TEXT NOT NULL,
   type TEXT NOT NULL,
+  group_id INT REFERENCES groups(id) ON DELETE SET NULL,
   created_at TIMESTAMP NOT NULL DEFAULT NOW()
 );
