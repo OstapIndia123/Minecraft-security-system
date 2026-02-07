@@ -528,6 +528,9 @@ const renderStatus = (space) => {
 };
 
 const renderDevices = (devices) => {
+  const space = currentSpace ?? spacesCache.find((item) => item.id === state.selectedSpaceId);
+  const allowedGroups = new Set((space?.groups ?? []).map((group) => group.id));
+
   deviceList.innerHTML = '';
   if (!devices.length) {
     deviceList.innerHTML = `<div class="empty-state">${t('user.empty.devices')}</div>`;
@@ -539,9 +542,10 @@ const renderDevices = (devices) => {
     const statusText = device.type === 'zone' || device.type === 'hub' ? (device.status ?? '—') : '';
     const button = document.createElement('button');
     button.className = `device-item ${device.id === state.selectedDeviceId ? 'device-item--active' : ''}`;
+    const displayName = device.type === 'key' ? 'Ключ: *****' : device.name;
     button.innerHTML = `
       <div>
-        <div class="device-item__title">${escapeHtml(device.name)}</div>
+        <div class="device-item__title">${escapeHtml(displayName)}</div>
         <div class="device-item__meta">${escapeHtml(device.room ?? '—')}</div>
       </div>
       <span class="device-item__status">${escapeHtml(statusText)}</span>
@@ -549,9 +553,12 @@ const renderDevices = (devices) => {
     button.addEventListener('click', () => {
       state.selectedDeviceId = device.id;
       renderDevices(devices);
+      const keyGroups = device.config?.groups ?? [];
+      const hasGroupAccess = keyGroups.some((groupId) => allowedGroups.has(groupId));
+      const detailTitle = device.type === 'key' && !hasGroupAccess ? 'Ключ: *****' : device.name;
       deviceDetails.innerHTML = `
         <div class="detail-card">
-          <h3>${escapeHtml(device.name)}</h3>
+          <h3>${escapeHtml(detailTitle)}</h3>
           <p>Тип: ${escapeHtml(device.type)}</p>
           <p>Сторона: ${escapeHtml(device.side ?? '—')}</p>
         </div>
@@ -618,6 +625,11 @@ const translateLogText = (text) => {
   return text;
 };
 
+const maskKeyNames = (text) => {
+  if (!text) return text;
+  return text.replace(/KEY-[A-Za-z0-9-]+/g, 'KEY-******');
+};
+
 const filterLogs = (logs) => {
   const withoutHubEvents = logs.filter((log) => log.type !== 'hub_raw' && log.type !== 'hub');
   if (state.logFilter === 'all') {
@@ -640,7 +652,7 @@ const renderLogs = (logs) => {
   }
   filtered.forEach((log) => {
     const row = document.createElement('div');
-    const translated = translateLogText(log.text);
+    const translated = maskKeyNames(translateLogText(log.text));
     const isHubOffline = log.text === 'Хаб не в сети' || translated === 'Hub offline';
     const isExtensionOffline = log.text === 'Модуль расширения не в сети' || translated === 'Hub extension offline';
     row.className = `log-row ${log.type === 'alarm' ? 'log-row--alarm' : ''} ${(isHubOffline || isExtensionOffline) ? 'log-row--hub-offline' : ''}`;
