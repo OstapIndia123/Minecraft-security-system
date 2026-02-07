@@ -86,6 +86,7 @@ const translations = {
     'profile.language': 'Язык',
     'profile.switchPro': 'Перейти на PRO',
     'profile.logout': 'Выйти',
+    'user.pageTitle': 'Minecraft Security System — Режим пользователя',
   },
   'en-US': {
     'user.title': 'User mode',
@@ -114,6 +115,7 @@ const translations = {
     'profile.language': 'Language',
     'profile.switchPro': 'Go to PRO',
     'profile.logout': 'Sign out',
+    'user.pageTitle': 'Minecraft Security System — User mode',
   },
 };
 
@@ -131,6 +133,9 @@ const applyTranslations = () => {
       node.textContent = dict[key];
     }
   });
+  if (dict['user.pageTitle']) {
+    document.title = dict['user.pageTitle'];
+  }
 };
 
 const t = (key) => translations[state.language]?.[key] ?? translations.ru[key] ?? key;

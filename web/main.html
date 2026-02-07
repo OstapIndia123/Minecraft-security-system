@@ -15,7 +15,7 @@
             <span class="brand__logo">PRO</span>
             <span class="brand__title">Security</span>
           </div>
-          <button class="ghost-button" id="backToMain" aria-label="Назад">
+          <button class="ghost-button" id="backToMain" aria-label="Назад" data-i18n-aria-label="common.back">
             <span class="icon">⟵</span>
           </button>
         </div>
@@ -285,16 +285,16 @@
     <div class="modal" id="spaceModal" aria-hidden="true">
       <div class="modal__content">
         <div class="modal__header">
-          <h3>Создать пространство</h3>
-          <button class="ghost-button" id="closeModal" aria-label="Закрыть">✕</button>
+          <h3 data-i18n="engineer.spaceModal.title">Создать пространство</h3>
+          <button class="ghost-button" id="closeModal" aria-label="Закрыть" data-i18n-aria-label="common.close">✕</button>
         </div>
         <form class="form-grid" id="spaceForm">
-          <input type="text" name="hubId" placeholder="ID хаба" maxlength="40" required />
-          <input type="text" name="name" placeholder="Название" maxlength="16" required />
-          <input type="text" name="address" placeholder="Координаты" maxlength="15" />
-          <input type="text" name="server" placeholder="Сервер" maxlength="16" />
-          <input type="text" name="city" placeholder="Город" maxlength="60" />
-          <button class="button button--primary" type="submit">Создать</button>
+          <input type="text" name="hubId" data-i18n-placeholder="engineer.spaceModal.hubId" placeholder="ID хаба" maxlength="40" required />
+          <input type="text" name="name" data-i18n-placeholder="engineer.spaceModal.name" placeholder="Название" maxlength="16" required />
+          <input type="text" name="address" data-i18n-placeholder="engineer.spaceModal.address" placeholder="Координаты" maxlength="15" />
+          <input type="text" name="server" data-i18n-placeholder="engineer.spaceModal.server" placeholder="Сервер" maxlength="16" />
+          <input type="text" name="city" data-i18n-placeholder="engineer.spaceModal.city" placeholder="Город" maxlength="60" />
+          <button class="button button--primary" type="submit" data-i18n="engineer.spaceModal.submit">Создать</button>
         </form>
       </div>
     </div>
@@ -302,81 +302,81 @@
     <div class="modal" id="deviceModal" aria-hidden="true">
       <div class="modal__content">
         <div class="modal__header">
-          <h3>Добавить устройство</h3>
-          <button class="ghost-button" id="closeDeviceModal" aria-label="Закрыть">✕</button>
+          <h3 data-i18n="engineer.deviceModal.title">Добавить устройство</h3>
+          <button class="ghost-button" id="closeDeviceModal" aria-label="Закрыть" data-i18n-aria-label="common.close">✕</button>
         </div>
         <form class="form-grid" id="deviceForm">
-          <input type="text" name="name" placeholder="Имя устройства" maxlength="60" required />
-          <input type="text" name="room" placeholder="Комната" maxlength="60" required />
+          <input type="text" name="name" data-i18n-placeholder="engineer.deviceModal.name" placeholder="Имя устройства" maxlength="60" required />
+          <input type="text" name="room" data-i18n-placeholder="engineer.deviceModal.room" placeholder="Комната" maxlength="60" required />
           <select name="type" id="deviceType" required>
-            <option value="zone">Шлейф/зона</option>
-            <option value="output-light">Постановочный светодиод</option>
-            <option value="siren">Сирена</option>
-            <option value="reader">Считыватель</option>
-            <option value="hub_extension">Модуль расширения</option>
-            <option value="key">Ключ</option>
+            <option value="zone" data-i18n="engineer.deviceModal.type.zone">Шлейф/зона</option>
+            <option value="output-light" data-i18n="engineer.deviceModal.type.outputLight">Постановочный светодиод</option>
+            <option value="siren" data-i18n="engineer.deviceModal.type.siren">Сирена</option>
+            <option value="reader" data-i18n="engineer.deviceModal.type.reader">Считыватель</option>
+            <option value="hub_extension" data-i18n="engineer.deviceModal.type.extension">Модуль расширения</option>
+            <option value="key" data-i18n="engineer.deviceModal.type.key">Ключ</option>
           </select>
-          <input type="text" name="side" placeholder="Сторона (N/S/E/W/U/D)" maxlength="16" required />
+          <input type="text" name="side" data-i18n-placeholder="engineer.deviceModal.side" placeholder="Сторона (N/S/E/W/U/D)" maxlength="16" required />
 
           <div class="form-inline" id="bindingFields">
             <select name="bindTarget" id="bindTarget">
-              <option value="hub">К хабу</option>
-              <option value="hub_extension">К модулю расширения</option>
+              <option value="hub" data-i18n="engineer.deviceModal.bindTarget.hub">К хабу</option>
+              <option value="hub_extension" data-i18n="engineer.deviceModal.bindTarget.extension">К модулю расширения</option>
             </select>
             <select name="bindExtensionId" id="bindExtensionId">
-              <option value="">Нет модулей расширения</option>
+              <option value="" data-i18n="engineer.deviceModal.bindExtension.empty">Нет модулей расширения</option>
             </select>
           </div>
 
           <div class="form-inline hidden" id="extensionFields">
-            <input type="text" name="extensionId" placeholder="ID модуля (HUB_EXT-...)" maxlength="80" />
-            <input type="text" name="hubSide" placeholder="Сторона хаба (N/S/E/W/U/D)" maxlength="16" />
-            <input type="text" name="extensionSide" placeholder="Сторона модуля (N/S/E/W/U/D)" maxlength="16" />
+            <input type="text" name="extensionId" data-i18n-placeholder="engineer.deviceModal.extension.id" placeholder="ID модуля (HUB_EXT-...)" maxlength="80" />
+            <input type="text" name="hubSide" data-i18n-placeholder="engineer.deviceModal.extension.hubSide" placeholder="Сторона хаба (N/S/E/W/U/D)" maxlength="16" />
+            <input type="text" name="extensionSide" data-i18n-placeholder="engineer.deviceModal.extension.extensionSide" placeholder="Сторона модуля (N/S/E/W/U/D)" maxlength="16" />
           </div>
 
           <div class="form-inline" id="zoneFields">
             <select name="zoneType">
-              <option value="instant">Нормальная</option>
-              <option value="delayed">Задержанная</option>
-              <option value="pass">Проходная</option>
-              <option value="24h">24-часовая</option>
+              <option value="instant" data-i18n="engineer.deviceModal.zoneType.instant">Нормальная</option>
+              <option value="delayed" data-i18n="engineer.deviceModal.zoneType.delayed">Задержанная</option>
+              <option value="pass" data-i18n="engineer.deviceModal.zoneType.pass">Проходная</option>
+              <option value="24h" data-i18n="engineer.deviceModal.zoneType.24h">24-часовая</option>
             </select>
             <select name="bypass">
-              <option value="false">Обход: нет</option>
-              <option value="true">Обход: да</option>
+              <option value="false" data-i18n="engineer.deviceModal.bypass.false">Обход: нет</option>
+              <option value="true" data-i18n="engineer.deviceModal.bypass.true">Обход: да</option>
             </select>
             <select name="silent">
-              <option value="false">Тихая: нет</option>
-              <option value="true">Тихая: да</option>
+              <option value="false" data-i18n="engineer.deviceModal.silent.false">Тихая: нет</option>
+              <option value="true" data-i18n="engineer.deviceModal.silent.true">Тихая: да</option>
             </select>
-            <input type="number" name="delaySeconds" class="hidden" placeholder="Задержка (сек)" min="1" max="120" />
-            <input type="number" name="normalLevel" placeholder="Норма уровня" min="0" max="15" />
+            <input type="number" name="delaySeconds" class="hidden" data-i18n-placeholder="engineer.deviceModal.delaySeconds" placeholder="Задержка (сек)" min="1" max="120" />
+            <input type="number" name="normalLevel" data-i18n-placeholder="engineer.deviceModal.normalLevel" placeholder="Норма уровня" min="0" max="15" />
           </div>
 
           <div class="form-inline hidden" id="lightFields">
-            <input type="number" name="outputLevel" placeholder="Уровень сигнала" min="0" max="15" />
+            <input type="number" name="outputLevel" data-i18n-placeholder="engineer.deviceModal.outputLevel" placeholder="Уровень сигнала" min="0" max="15" />
           </div>
 
           <div class="form-inline hidden" id="sirenFields">
-            <input type="number" name="outputLevel" placeholder="Уровень сигнала" min="0" max="15" />
-            <input type="number" name="intervalMs" placeholder="Интервал (мс)" min="300" max="60000" />
-            <input type="number" name="alarmDuration" placeholder="Время тревоги (сек)" min="1" max="120" />
+            <input type="number" name="outputLevel" data-i18n-placeholder="engineer.deviceModal.outputLevel" placeholder="Уровень сигнала" min="0" max="15" />
+            <input type="number" name="intervalMs" data-i18n-placeholder="engineer.deviceModal.intervalMs" placeholder="Интервал (мс)" min="300" max="60000" />
+            <input type="number" name="alarmDuration" data-i18n-placeholder="engineer.deviceModal.alarmDuration" placeholder="Время тревоги (сек)" min="1" max="120" />
           </div>
 
           <div class="form-inline hidden" id="readerFields">
-            <input type="text" name="id" placeholder="ID считывателя" maxlength="80" />
-            <input type="number" name="outputLevel" placeholder="Выходной уровень" min="0" max="15" />
-            <input type="number" name="inputLevel" placeholder="Входной уровень" min="0" max="15" />
+            <input type="text" name="id" data-i18n-placeholder="engineer.deviceModal.reader.id" placeholder="ID считывателя" maxlength="80" />
+            <input type="number" name="outputLevel" data-i18n-placeholder="engineer.deviceModal.reader.outputLevel" placeholder="Выходной уровень" min="0" max="15" />
+            <input type="number" name="inputLevel" data-i18n-placeholder="engineer.deviceModal.reader.inputLevel" placeholder="Входной уровень" min="0" max="15" />
           </div>
 
           <div class="form-inline hidden" id="keyFields">
-            <input type="text" name="keyName" placeholder="Имя ключа" maxlength="60" />
-            <input type="text" name="readerId" placeholder="ID считывателя" maxlength="80" />
-            <button type="button" class="button button--ghost" id="readKey">Считать ключ</button>
-            <button type="button" class="button button--ghost" id="generateKey">Сгенерировать</button>
+            <input type="text" name="keyName" data-i18n-placeholder="engineer.deviceModal.key.name" placeholder="Имя ключа" maxlength="60" />
+            <input type="text" name="readerId" data-i18n-placeholder="engineer.deviceModal.key.readerId" placeholder="ID считывателя" maxlength="80" />
+            <button type="button" class="button button--ghost" id="readKey" data-i18n="engineer.deviceModal.key.read">Считать ключ</button>
+            <button type="button" class="button button--ghost" id="generateKey" data-i18n="engineer.deviceModal.key.generate">Сгенерировать</button>
           </div>
 
-          <button class="button button--primary" type="submit">Добавить</button>
+          <button class="button button--primary" type="submit" data-i18n="engineer.deviceModal.submit">Добавить</button>
         </form>
       </div>
     </div>
@@ -386,21 +386,21 @@
     <div class="modal modal--loading" id="loadingModal" aria-hidden="true">
       <div class="modal__content modal__content--small">
         <div class="spinner"></div>
-        <p>Выполняется действие...</p>
+        <p data-i18n="common.loading">Выполняется действие...</p>
       </div>
     </div>
 
     <div class="modal" id="actionModal" aria-hidden="true">
       <div class="modal__content">
         <div class="modal__header">
-          <h3 id="actionModalTitle">Подтвердите действие</h3>
-          <button class="ghost-button" id="closeActionModal" aria-label="Закрыть">✕</button>
+          <h3 id="actionModalTitle" data-i18n="common.actionConfirmTitle">Подтвердите действие</h3>
+          <button class="ghost-button" id="closeActionModal" aria-label="Закрыть" data-i18n-aria-label="common.close">✕</button>
         </div>
         <p id="actionModalMessage"></p>
         <form class="form-grid hidden" id="actionModalForm"></form>
         <div class="modal__actions">
-          <button class="button button--ghost" id="actionModalCancel" type="button">Отмена</button>
-          <button class="button button--primary" id="actionModalConfirm" type="button">Подтвердить</button>
+          <button class="button button--ghost" id="actionModalCancel" type="button" data-i18n="common.cancel">Отмена</button>
+          <button class="button button--primary" id="actionModalConfirm" type="button" data-i18n="common.confirm">Подтвердить</button>
         </div>
       </div>
     </div>
@@ -408,11 +408,11 @@
     <div class="modal modal--alert" id="guardModal" aria-hidden="true">
       <div class="modal__content">
         <div class="modal__header">
-          <h3>Действие недоступно</h3>
-          <button class="ghost-button" id="closeGuardModal" aria-label="Закрыть">✕</button>
+          <h3 data-i18n="common.guardTitle">Действие недоступно</h3>
+          <button class="ghost-button" id="closeGuardModal" aria-label="Закрыть" data-i18n-aria-label="common.close">✕</button>
         </div>
-        <p>Невозможно выполнить действие: объект под охраной.</p>
-        <button class="button button--primary" id="guardModalOk">Понятно</button>
+        <p data-i18n="common.guardMessage">Невозможно выполнить действие: объект под охраной.</p>
+        <button class="button button--primary" id="guardModalOk" data-i18n="common.ok">Понятно</button>
       </div>
     </div>
 

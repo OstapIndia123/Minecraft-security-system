@@ -20,6 +20,7 @@ const translations = {
     'auth.errors.nickname_too_long': 'Ник должен быть не длиннее 16 символов.',
     'auth.errors.nickname_cooldown': 'Сменить ник можно раз в 7 дней.',
     'auth.errors.invalid_nickname': 'Введите корректный ник.',
+    'auth.pageTitle': 'Minecraft Security System — Вход',
   },
   'en-US': {
     'auth.actions.discordOnly': 'Sign in with Discord',
@@ -36,6 +37,7 @@ const translations = {
     'auth.errors.nickname_too_long': 'Nickname must be 16 characters or fewer.',
     'auth.errors.nickname_cooldown': 'You can change your nickname once every 7 days.',
     'auth.errors.invalid_nickname': 'Please enter a valid nickname.',
+    'auth.pageTitle': 'Minecraft Security System — Sign in',
   },
 };
 
@@ -60,6 +62,9 @@ const applyTranslations = () => {
       node.setAttribute('placeholder', dict[key]);
     }
   });
+  if (dict['auth.pageTitle']) {
+    document.title = dict['auth.pageTitle'];
+  }
 };
 
 const syncLanguageFromProfile = () => {
