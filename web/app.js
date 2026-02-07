@@ -196,6 +196,15 @@ const statusMap = {
   partial: 'Частично под охраной',
 };
 
+const getStatusLabel = (status) => {
+  const key = `status.${status}`;
+  const translated = t(key);
+  if (!translated || translated === key) {
+    return statusMap[status] ?? status;
+  }
+  return translated;
+};
+
 const statusTone = {
   armed: 'status--armed',
   disarmed: 'status--disarmed',
@@ -1313,7 +1322,7 @@ const renderObjectList = () => {
       <div class="object-card__title">${escapeHtml(space.name)}</div>
       <div class="object-card__meta">${t('engineer.object.hubId')} ${escapeHtml(space.hubId ?? '—')}</div>
       ${hubOfflineLabel}
-      <div class="object-card__status ${statusTone[space.status] ?? ''}">${t(`status.${space.status}`) ?? statusMap[space.status] ?? space.status}</div>
+      <div class="object-card__status ${statusTone[space.status] ?? ''}">${getStatusLabel(space.status)}</div>
       <div class="object-card__meta">${t('engineer.object.server')}: ${escapeHtml(space.server ?? '—')}</div>
       <div class="object-card__meta">${escapeHtml(space.address)}</div>
     `;
@@ -1332,7 +1341,7 @@ const renderObjectList = () => {
 
 const renderSpaceHeader = (space) => {
   spaceIdEl.textContent = space.id;
-  spaceStateEl.textContent = t(`status.${space.status}`) ?? statusMap[space.status] ?? space.status;
+  spaceStateEl.textContent = getStatusLabel(space.status);
   spaceStateEl.className = `status-card__state ${statusTone[space.status] ?? ''}`;
   spaceMetaEl.textContent = `${t('engineer.object.coordsLabel')}: ${space.address} • ${space.server ?? '—'} • ${space.city}`;
   hubLabel.textContent = space.hubId ? `Hub ${space.hubId}` : t('engineer.hub.unbound');

@@ -518,7 +518,9 @@ const renderSpaces = (spaces) => {
 
 const renderStatus = (space) => {
   spaceIdEl.textContent = space.id;
-  spaceStateEl.textContent = t(`status.${space.status}`) ?? space.status;
+  const statusKey = `status.${space.status}`;
+  const statusLabel = t(statusKey);
+  spaceStateEl.textContent = (!statusLabel || statusLabel === statusKey) ? space.status : statusLabel;
   spaceStateEl.className = `status-card__state ${statusTone[space.status] ?? ''}`;
   const serverLabel = space.server ?? '—';
   const cityLabel = space.city ?? '—';
@@ -779,8 +781,10 @@ const renderStatusActions = (space) => {
 document.addEventListener('click', (event) => {
   const btn = event.target.closest('#openGroupsManage');
   if (!btn) return;
-  if (!currentSpace?.groupsEnabled) return;
-  renderUserGroupsModal(currentSpace);
+  const space = currentSpace
+    ?? spacesCache.find((item) => item.id === state.selectedSpaceId);
+  if (!space?.groupsEnabled) return;
+  renderUserGroupsModal(space);
   openGroupsManage();
 });
 
