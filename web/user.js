@@ -767,13 +767,6 @@ const renderStatusActions = (space) => {
   if (!actionsContainer) return;
   if (space.groupsEnabled) {
     actionsContainer.innerHTML = `<button class="chip chip--info" id="openGroupsManage">${t('user.groups.manage')}</button>`;
-    const btn = document.getElementById('openGroupsManage');
-    if (btn) {
-      btn.addEventListener('click', () => {
-        renderUserGroupsModal(space);
-        openGroupsManage();
-      });
-    }
   } else {
     actionsContainer.innerHTML = `
       <button class="chip chip--danger" data-action="arm">${t('user.actions.arm')}</button>
@@ -782,6 +775,14 @@ const renderStatusActions = (space) => {
     rebindUserChipActions();
   }
 };
+
+document.addEventListener('click', (event) => {
+  const btn = event.target.closest('#openGroupsManage');
+  if (!btn) return;
+  if (!currentSpace?.groupsEnabled) return;
+  renderUserGroupsModal(currentSpace);
+  openGroupsManage();
+});
 
 const rebindUserChipActions = () => {
   document.querySelectorAll('.status-actions .chip[data-action]').forEach((chip) => {

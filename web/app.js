@@ -2288,13 +2288,6 @@ const renderStatusActions = (space) => {
   if (!actionsContainer) return;
   if (space.groupsEnabled) {
     actionsContainer.innerHTML = `<button class="chip chip--info" id="openGroupsManage">${t('engineer.groups.manage')}</button>`;
-    const btn = document.getElementById('openGroupsManage');
-    if (btn) {
-      btn.addEventListener('click', () => {
-        renderGroupsManageModal(space);
-        openGroupsManage();
-      });
-    }
   } else {
     actionsContainer.innerHTML = `
       <button class="chip chip--danger" data-action="arm">${t('engineer.actions.arm')}</button>
@@ -2303,6 +2296,15 @@ const renderStatusActions = (space) => {
     rebindChipActions();
   }
 };
+
+document.addEventListener('click', (event) => {
+  const btn = event.target.closest('#openGroupsManage');
+  if (!btn) return;
+  const space = spaces.find((item) => item.id === state.selectedSpaceId);
+  if (!space || !space.groupsEnabled) return;
+  renderGroupsManageModal(space);
+  openGroupsManage();
+});
 
 const updateDeviceGroupSelect = (space) => {
   if (!deviceGroupSelect) return;
