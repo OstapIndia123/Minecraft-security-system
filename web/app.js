@@ -1362,7 +1362,10 @@ const renderObjectList = () => {
 };
 
 const renderSpaceHeader = (space) => {
-  spaceIdEl.textContent = space.id;
+  spaceIdEl.innerHTML = `
+    <span>${escapeHtml(space.name)}</span>
+    <span class="status-card__subid">${escapeHtml(space.id)}</span>
+  `;
   spaceStateEl.textContent = getStatusLabel(space.status);
   spaceStateEl.className = `status-card__state ${statusTone[space.status] ?? ''}`;
   spaceMetaEl.textContent = `${t('engineer.object.coordsLabel')}: ${space.address} • ${space.server ?? '—'} • ${space.city}`;

@@ -517,7 +517,7 @@ const renderSpaces = (spaces) => {
 };
 
 const renderStatus = (space) => {
-  spaceIdEl.textContent = space.id;
+  spaceIdEl.textContent = space.name ?? space.id;
   const statusKey = `status.${space.status}`;
   const statusLabel = t(statusKey);
   spaceStateEl.textContent = (!statusLabel || statusLabel === statusKey) ? space.status : statusLabel;
