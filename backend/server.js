@@ -949,7 +949,8 @@ const handleExpiredReaderSessions = async () => {
   if (!expired.rows.length) return;
 
   for (const session of expired.rows) {
-    const message = session.action === 'arm'
+    const isArmAction = session.action === 'arm' || session.action === 'group_arm';
+    const message = isArmAction
       ? `Неудачная постановка (нет подтверждения от хаба): ${session.key_name}`
       : `Неудачное снятие (нет подтверждения от хаба): ${session.key_name}`;
     await appendLog(session.space_id, message, session.reader_name, 'security');
@@ -2553,54 +2554,34 @@ const handleReaderScan = async ({ readerId, payload, ts }) => {
   const hubId = spaceDataRow.rows[0]?.hub_id;
 
   if (groupsEnabled && keyGroups.length > 0) {
-    // Groups mode: arm/disarm specific groups
-    const groupRows = await query('SELECT id, name, status FROM groups WHERE space_id = $1 AND id = ANY($2)', [spaceId, keyGroups]);
+    const groupRows = await query(
+      'SELECT id, name, status FROM groups WHERE space_id = $1 AND id = ANY($2)',
+      [spaceId, keyGroups],
+    );
     if (!groupRows.rows.length) {
       return { ok: true, ignored: true };
     }
+
     const anyArmed = groupRows.rows.some((g) => g.status === 'armed');
-    // If any target group is armed → disarm all, else → arm all
-    if (anyArmed) {
-      for (const group of groupRows.rows) {
-        if (group.status !== 'armed') continue;
-        const gId = group.id;
-        const sk = stateKey(spaceId, gId);
-        await query("UPDATE groups SET status = 'disarmed' WHERE id = $1 AND space_id = $2", [gId, spaceId]);
-        await stopSirenTimers(spaceId, hubId, gId);
-        spaceAlarmState.set(sk, false);
-        alarmSinceArmed.delete(sk);
-        entryDelayFailed.delete(sk);
-        await clearEntryDelay(spaceId, hubId, gId);
-        await clearPendingArm(spaceId, hubId, gId);
-        await applyLightOutputs(spaceId, hubId, 'disarmed', gId);
-        await appendLog(spaceId, `Снятие группы '${group.name}' ключом: ${keyName}`, name ?? readerId, 'security');
-      }
-      const computedStatus = await computeSpaceStatusFromGroups(spaceId);
-      await query('UPDATE spaces SET status = $1 WHERE id = $2', [computedStatus, spaceId]);
-    } else {
-      for (const group of groupRows.rows) {
-        if (group.status === 'armed') continue;
-        const gId = group.id;
-        const zones = await query(
-          "SELECT name, status, config FROM devices WHERE space_id = $1 AND type = 'zone' AND (config->>'groupId')::int = $2",
-          [spaceId, gId],
-        );
-        const hasBypass = zones.rows.some((z) => z.config?.bypass);
-        const hasViolations = zones.rows.some((z) => z.status !== 'Норма');
-        if (hasBypass || hasViolations) {
-          await appendLog(spaceId, `Неудачная постановка группы '${group.name}' ключом: ${keyName}`, name ?? readerId, 'security');
-          continue;
-        }
-        await query("UPDATE groups SET status = 'armed' WHERE id = $1 AND space_id = $2", [gId, spaceId]);
-        await applyLightOutputs(spaceId, hubId, 'armed', gId);
-        const sk = stateKey(spaceId, gId);
-        alarmSinceArmed.set(sk, false);
-        await appendLog(spaceId, `Постановка группы '${group.name}' ключом: ${keyName}`, name ?? readerId, 'security');
-      }
-      const computedStatus = await computeSpaceStatusFromGroups(spaceId);
-      await query('UPDATE spaces SET status = $1 WHERE id = $2', [computedStatus, spaceId]);
-    }
-    return { ok: true };
+    const action = anyArmed ? 'group_disarm' : 'group_arm';
+    const inputSide = config?.inputSide ?? 'up';
+    const inputLevel = Number(config?.inputLevel ?? 6);
+    const outputLevel = Number(config?.outputLevel ?? 6);
+
+    await query(
+      'INSERT INTO reader_sessions (reader_id, space_id, input_side, input_level, action, key_name, reader_name, expires_at) VALUES ($1,$2,$3,$4,$5,$6,$7,NOW() + INTERVAL \'1 second\')',
+      [readerId, spaceId, inputSide, inputLevel, action, keyName, name ?? readerId],
+    );
+
+    await pulseReaderOutput(readerId, outputLevel, MIN_INTERVAL_MS).catch(() => null);
+
+    return {
+      ok: true,
+      output: {
+        readerId,
+        level: outputLevel,
+      },
+    };
   }
 
   const action = spaceStatus === 'armed' ? 'disarm' : 'arm';
@@ -3128,7 +3109,7 @@ app.post('/api/hub/events', requireWebhookToken, async (req, res) => {
 
     if (!isExtensionEvent) {
       const sessions = await query(
-        `SELECT id, input_side, input_level, action, key_name, reader_name
+        `SELECT id, reader_id, input_side, input_level, action, key_name, reader_name
          FROM reader_sessions
          WHERE space_id = $1 AND expires_at >= NOW()
          ORDER BY id DESC
@@ -3138,7 +3119,69 @@ app.post('/api/hub/events', requireWebhookToken, async (req, res) => {
       if (sessions.rows.length) {
         const session = sessions.rows[0];
         if (session.input_side === normalizedSide && Number(session.input_level) === inputLevel) {
-          if (session.action === 'arm') {
+          if (session.action === 'group_arm' || session.action === 'group_disarm') {
+            const key = await query(
+              'SELECT name, groups FROM keys WHERE space_id = $1 AND (reader_id IS NULL OR reader_id = $2)',
+              [spaceId, session.reader_id],
+            );
+            const matchedKey = key.rows.find((row) => session.key_name.includes(row.name));
+            const keyGroups = matchedKey?.groups ?? [];
+            if (!matchedKey || !keyGroups.length) {
+              await query('DELETE FROM reader_sessions WHERE id = $1', [session.id]);
+              return;
+            }
+            const groupRows = await query(
+              'SELECT id, name, status FROM groups WHERE space_id = $1 AND id = ANY($2)',
+              [spaceId, keyGroups],
+            );
+            if (!groupRows.rows.length) {
+              await query('DELETE FROM reader_sessions WHERE id = $1', [session.id]);
+              return;
+            }
+
+            if (session.action === 'group_disarm') {
+              for (const group of groupRows.rows) {
+                if (group.status !== 'armed') continue;
+                const gId = group.id;
+                const sk = stateKey(spaceId, gId);
+                await query("UPDATE groups SET status = 'disarmed' WHERE id = $1 AND space_id = $2", [gId, spaceId]);
+                const spaceRow = await query('SELECT hub_id FROM spaces WHERE id = $1', [spaceId]);
+                await stopSirenTimers(spaceId, spaceRow.rows[0]?.hub_id, gId);
+                spaceAlarmState.set(sk, false);
+                alarmSinceArmed.delete(sk);
+                entryDelayFailed.delete(sk);
+                await clearEntryDelay(spaceId, spaceRow.rows[0]?.hub_id, gId);
+                await clearPendingArm(spaceId, spaceRow.rows[0]?.hub_id, gId);
+                await applyLightOutputs(spaceId, spaceRow.rows[0]?.hub_id, 'disarmed', gId);
+                await appendLog(spaceId, `Снятие группы '${group.name}' ключом: ${session.key_name}`, session.reader_name, 'security');
+              }
+            } else {
+              for (const group of groupRows.rows) {
+                if (group.status === 'armed') continue;
+                const gId = group.id;
+                const zones = await query(
+                  "SELECT name, status, config FROM devices WHERE space_id = $1 AND type = 'zone' AND (config->>'groupId')::int = $2",
+                  [spaceId, gId],
+                );
+                const hasBypass = zones.rows.some((z) => z.config?.bypass);
+                const hasViolations = zones.rows.some((z) => z.status !== 'Норма');
+                if (hasBypass || hasViolations) {
+                  await appendLog(spaceId, `Неудачная постановка группы '${group.name}' ключом: ${session.key_name}`, session.reader_name, 'security');
+                  continue;
+                }
+                await query("UPDATE groups SET status = 'armed' WHERE id = $1 AND space_id = $2", [gId, spaceId]);
+                const spaceRow = await query('SELECT hub_id FROM spaces WHERE id = $1', [spaceId]);
+                await applyLightOutputs(spaceId, spaceRow.rows[0]?.hub_id, 'armed', gId);
+                const sk = stateKey(spaceId, gId);
+                alarmSinceArmed.set(sk, false);
+                await appendLog(spaceId, `Постановка группы '${group.name}' ключом: ${session.key_name}`, session.reader_name, 'security');
+              }
+            }
+
+            const computedStatus = await computeSpaceStatusFromGroups(spaceId);
+            await query('UPDATE spaces SET status = $1 WHERE id = $2', [computedStatus, spaceId]);
+            await evaluateZoneIssues(spaceId);
+          } else if (session.action === 'arm') {
             const zones = await query('SELECT name, status, config FROM devices WHERE space_id = $1 AND type = $2', [
               spaceId,
               'zone',
