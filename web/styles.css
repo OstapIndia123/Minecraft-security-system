@@ -970,6 +970,12 @@ body {
   color: var(--muted);
 }
 
+.member-card__actions {
+  display: flex;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
 .member-card__title {
   color: var(--text);
   font-weight: 600;
@@ -1083,6 +1089,18 @@ body {
   padding: 20px;
   width: min(560px, 90vw);
   border: 1px solid #2a2a2a;
+}
+
+.checkbox-field {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  font-size: 14px;
+}
+
+.checkbox-field input[type="checkbox"] {
+  width: 16px;
+  height: 16px;
 }
 
 .modal__content--small {
