@@ -916,8 +916,11 @@ const init = async () => {
   await initProfileMenu();
   await loadSpaces();
   setInterval(() => {
+    if (state.selectedSpaceId) loadLogs(true).catch(() => null);
+  }, 3000);
+  setInterval(() => {
     refreshUserData().catch(() => null);
-  }, 5000);
+  }, 15000);
 };
 
 init().catch(() => null);
