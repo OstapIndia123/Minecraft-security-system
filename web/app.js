@@ -412,7 +412,7 @@ const translations = {
     'engineer.deviceModal.key.read': 'Считать ключ',
     'engineer.deviceModal.key.generate': 'Сгенерировать',
     'engineer.deviceModal.submit': 'Добавить',
-    'page.title.engineer': 'Minecraft Security System — Демо интерфейс',
+    'page.title.engineer': 'Minecraft Security System — Режим инженера',
     'page.title.admin': 'Minecraft Security System — Админ-панель',
   },
   'en-US': {
@@ -608,7 +608,7 @@ const translations = {
     'engineer.deviceModal.key.read': 'Read key',
     'engineer.deviceModal.key.generate': 'Generate',
     'engineer.deviceModal.submit': 'Add',
-    'page.title.engineer': 'Minecraft Security System — Demo',
+    'page.title.engineer': 'Minecraft Security System — Engineer mode',
     'page.title.admin': 'Minecraft Security System — Admin panel',
   },
 };
