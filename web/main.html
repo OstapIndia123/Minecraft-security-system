@@ -330,7 +330,14 @@
             <option value="hub_extension" data-i18n="engineer.deviceModal.type.extension">Модуль расширения</option>
             <option value="key" data-i18n="engineer.deviceModal.type.key">Ключ</option>
           </select>
-          <input type="text" name="side" data-i18n-placeholder="engineer.deviceModal.side" placeholder="Сторона (N/S/E/W/U/D)" maxlength="16" required />
+          <select name="side" data-i18n-placeholder="engineer.deviceModal.side" required>
+            <option value="north">north</option>
+            <option value="south">south</option>
+            <option value="west">west</option>
+            <option value="east">east</option>
+            <option value="up">up</option>
+            <option value="down">down</option>
+          </select>
 
           <div class="form-inline" id="bindingFields">
             <select name="bindTarget" id="bindTarget">
@@ -344,8 +351,22 @@
 
           <div class="form-inline hidden" id="extensionFields">
             <input type="text" name="extensionId" data-i18n-placeholder="engineer.deviceModal.extension.id" placeholder="ID модуля (HUB_EXT-...)" maxlength="80" />
-            <input type="text" name="hubSide" data-i18n-placeholder="engineer.deviceModal.extension.hubSide" placeholder="Сторона хаба (N/S/E/W/U/D)" maxlength="16" />
-            <input type="text" name="extensionSide" data-i18n-placeholder="engineer.deviceModal.extension.extensionSide" placeholder="Сторона модуля (N/S/E/W/U/D)" maxlength="16" />
+            <select name="hubSide" data-i18n-placeholder="engineer.deviceModal.extension.hubSide">
+              <option value="north">north</option>
+              <option value="south">south</option>
+              <option value="west">west</option>
+              <option value="east">east</option>
+              <option value="up">up</option>
+              <option value="down">down</option>
+            </select>
+            <select name="extensionSide" data-i18n-placeholder="engineer.deviceModal.extension.extensionSide">
+              <option value="north">north</option>
+              <option value="south">south</option>
+              <option value="west">west</option>
+              <option value="east">east</option>
+              <option value="up">up</option>
+              <option value="down">down</option>
+            </select>
           </div>
 
           <div class="form-inline" id="zoneFields">

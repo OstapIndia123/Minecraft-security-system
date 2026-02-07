@@ -151,7 +151,7 @@ const zoneFields = document.getElementById('zoneFields');
 const keyFields = document.getElementById('keyFields');
 const generateKey = document.getElementById('generateKey');
 const readKeyButton = document.getElementById('readKey');
-const sideInput = deviceForm?.querySelector('input[name="side"]');
+const sideInput = deviceForm?.querySelector('select[name="side"]');
 const deviceNameInput = deviceForm?.querySelector('input[name="name"]');
 const deviceRoomInput = deviceForm?.querySelector('input[name="room"]');
 const bindTargetInput = deviceForm?.querySelector('select[name="bindTarget"]');
@@ -1490,12 +1490,20 @@ const renderDeviceDetails = (device) => {
       </div>
     `
     : '';
+  const sideOptions = (value) => ['north', 'south', 'west', 'east', 'up', 'down']
+    .map((side) => `<option value="${side}" ${value === side ? 'selected' : ''}>${side}</option>`)
+    .join('');
+
   const baseFields = device.type !== 'key'
     ? `
       <input type="text" name="name" value="${safeName}" placeholder="Имя" required />
       <input type="text" name="room" value="${safeRoom}" placeholder="Комната" required />
-      ${device.side && !isHubExtensionType(device.type)
-        ? `<input type="text" name="side" value="${safeSide}" placeholder="Сторона (N/S/E/W/U/D)" />`
+      ${!isHubExtensionType(device.type)
+        ? `
+          <select name="side">
+            ${sideOptions(device.side ?? '')}
+          </select>
+        `
         : ''}
     `
     : (() => {
@@ -1532,16 +1540,20 @@ const renderDeviceDetails = (device) => {
   })();
 
   const configFields = (() => {
-    if (isHubExtensionType(device.type)) {
-      const safeExtensionId = escapeHtml(device.config?.extensionId ?? '');
-      const safeHubSide = escapeHtml(device.config?.hubSide ?? '');
-      const safeExtensionSide = escapeHtml(device.config?.extensionSide ?? '');
-      return `
-        <input type="text" name="extensionId" value="${safeExtensionId}" placeholder="ID модуля (HUB_EXT-...)" required />
-        <input type="text" name="hubSide" value="${safeHubSide}" placeholder="Сторона хаба (N/S/E/W/U/D)" required />
-        <input type="text" name="extensionSide" value="${safeExtensionSide}" placeholder="Сторона модуля (N/S/E/W/U/D)" required />
-      `;
-    }
+  if (isHubExtensionType(device.type)) {
+    const safeExtensionId = escapeHtml(device.config?.extensionId ?? '');
+    const safeHubSide = escapeHtml(device.config?.hubSide ?? '');
+    const safeExtensionSide = escapeHtml(device.config?.extensionSide ?? '');
+    return `
+      <input type="text" name="extensionId" value="${safeExtensionId}" placeholder="ID модуля (HUB_EXT-...)" required />
+      <select name="hubSide" required>
+        ${sideOptions(safeHubSide)}
+      </select>
+      <select name="extensionSide" required>
+        ${sideOptions(safeExtensionSide)}
+      </select>
+    `;
+  }
     if (device.type === 'zone') {
       const bindTarget = device.config?.bindTarget === 'hub_extension' ? 'hub_extension' : 'hub';
       const bindExtensionId = device.config?.extensionId ?? '';
@@ -3020,7 +3032,7 @@ if (deviceType) {
         bindExtensionInput.value = '';
       }
     }
-    extensionFields?.querySelectorAll('input').forEach((input) => {
+    extensionFields?.querySelectorAll('input, select').forEach((input) => {
       input.disabled = !isExtension;
       input.required = isExtension;
     });
