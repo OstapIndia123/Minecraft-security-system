@@ -113,12 +113,12 @@ const translations = {
     'profile.nickname.change': 'Сменить',
     'profile.timezone': 'Часовой пояс',
     'profile.language': 'Язык',
-    'profile.switchUser': 'Перейти на обычный',
+    'profile.switchUser': 'Перейти на пользователя',
     'profile.logout': 'Выйти',
     'pcn.pageTitle': 'Minecraft Security System — Режим ПЦН',
   },
   'en-US': {
-    'pcn.title': 'PCN Mode',
+    'pcn.title': 'MONITOR Mode',
     'pcn.subtitle': 'Objects and global event log',
     'pcn.objects.title': 'Objects',
     'pcn.logs.title': 'Global event log',
@@ -149,7 +149,7 @@ const translations = {
     'profile.language': 'Language',
     'profile.switchUser': 'Go to user',
     'profile.logout': 'Sign out',
-    'pcn.pageTitle': 'Minecraft Security System — PCN mode',
+    'pcn.pageTitle': 'Minecraft Security System — MONITOR mode',
   },
 };
 
