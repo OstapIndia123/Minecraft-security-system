@@ -192,12 +192,14 @@ const statusMap = {
   armed: 'Под охраной',
   disarmed: 'Снято с охраны',
   night: 'Ночной режим',
+  partial: 'Частично под охраной',
 };
 
 const statusTone = {
   armed: 'status--armed',
   disarmed: 'status--disarmed',
   night: 'status--night',
+  partial: 'status--partial',
 };
 
 const chipActions = document.querySelectorAll('.status-actions .chip');
@@ -306,6 +308,24 @@ const translations = {
     'status.armed': 'Под охраной',
     'status.disarmed': 'Снято с охраны',
     'status.night': 'Ночной режим',
+    'status.partial': 'Частично под охраной',
+    'engineer.tabs.groups': 'Группы',
+    'engineer.groups.title': 'Группы охраны',
+    'engineer.groups.enable': 'Включить режим групп',
+    'engineer.groups.name': 'Название группы',
+    'engineer.groups.add': 'Создать',
+    'engineer.groups.manage': 'Управление',
+    'engineer.groups.manageTitle': 'Управление группами',
+    'engineer.groups.arm': 'Под охрану',
+    'engineer.groups.disarm': 'С охраны',
+    'engineer.groups.delete': 'Удалить',
+    'engineer.groups.rename': 'Переименовать',
+    'engineer.groups.devices': 'Устройства',
+    'engineer.groups.noDevices': 'Нет устройств',
+    'engineer.groups.ungrouped': 'Без группы',
+    'engineer.groups.noGroups': 'Нет групп',
+    'engineer.groups.groupId': 'Группа',
+    'engineer.groups.none': 'Без группы',
     'profile.title': 'Профиль',
     'profile.nickname': 'Игровой ник',
     'profile.nickname.change': 'Сменить',
@@ -474,6 +494,24 @@ const translations = {
     'status.armed': 'Armed',
     'status.disarmed': 'Disarmed',
     'status.night': 'Night',
+    'status.partial': 'Partially armed',
+    'engineer.tabs.groups': 'Groups',
+    'engineer.groups.title': 'Security groups',
+    'engineer.groups.enable': 'Enable groups mode',
+    'engineer.groups.name': 'Group name',
+    'engineer.groups.add': 'Create',
+    'engineer.groups.manage': 'Manage',
+    'engineer.groups.manageTitle': 'Manage groups',
+    'engineer.groups.arm': 'Arm',
+    'engineer.groups.disarm': 'Disarm',
+    'engineer.groups.delete': 'Delete',
+    'engineer.groups.rename': 'Rename',
+    'engineer.groups.devices': 'Devices',
+    'engineer.groups.noDevices': 'No devices',
+    'engineer.groups.ungrouped': 'Ungrouped',
+    'engineer.groups.noGroups': 'No groups',
+    'engineer.groups.groupId': 'Group',
+    'engineer.groups.none': 'No group',
     'profile.title': 'Profile',
     'profile.nickname': 'Game nickname',
     'profile.nickname.change': 'Change',
@@ -1425,10 +1463,38 @@ const renderDeviceDetails = (device) => {
         ? `<input type="text" name="side" value="${safeSide}" placeholder="Сторона (N/S/E/W/U/D)" />`
         : ''}
     `
-    : `
-      <input type="text" name="name" value="${escapeHtml(device.name.replace('Ключ: ', ''))}" placeholder="Имя ключа" required />
-      <input type="text" name="readerId" value="${safeReaderId}" placeholder="ID считывателя" />
+    : (() => {
+      let keyFields = `
+        <input type="text" name="name" value="${escapeHtml(device.name.replace('Ключ: ', ''))}" placeholder="Имя ключа" required />
+        <input type="text" name="readerId" value="${safeReaderId}" placeholder="ID считывателя" />
+      `;
+      if (space?.groupsEnabled) {
+        const groups = space.groups ?? [];
+        const keyGroups = device.config?.groups ?? [];
+        if (groups.length) {
+          keyFields += `<div class="group-checkboxes"><span style="font-size:12px;color:#888">${t('engineer.groups.groupId')}:</span>`;
+          for (const g of groups) {
+            const checked = keyGroups.includes(g.id) ? 'checked' : '';
+            keyFields += `<label><input type="checkbox" name="keyGroup" value="${g.id}" ${checked} /> ${escapeHtml(g.name)}</label>`;
+          }
+          keyFields += '</div>';
+        }
+      }
+      return keyFields;
+    })();
+
+  const groupIdField = (() => {
+    if (!space?.groupsEnabled) return '';
+    if (device.type !== 'zone' && device.type !== 'siren' && device.type !== 'output-light') return '';
+    const groups = space.groups ?? [];
+    const currentGroupId = device.config?.groupId ?? '';
+    return `
+      <select name="groupId">
+        <option value="" ${!currentGroupId ? 'selected' : ''}>${t('engineer.groups.none')}</option>
+        ${groups.map((g) => `<option value="${g.id}" ${currentGroupId === g.id ? 'selected' : ''}>${escapeHtml(g.name)}</option>`).join('')}
+      </select>
     `;
+  })();
 
   const configFields = (() => {
     if (isHubExtensionType(device.type)) {
@@ -1551,6 +1617,7 @@ const renderDeviceDetails = (device) => {
     ${device.type !== 'hub' ? `
       <form class="form-grid device-edit" id="deviceEditForm">
         ${baseFields}
+        ${groupIdField}
         ${configFields}
         <button class="button button--primary" type="submit">Сохранить</button>
       </form>
@@ -1642,11 +1709,14 @@ const renderDeviceDetails = (device) => {
       try {
         showLoading();
         if (device.type === 'key') {
+          const keyGroupCheckboxes = editForm.querySelectorAll('input[name="keyGroup"]:checked');
+          const selectedGroups = Array.from(keyGroupCheckboxes).map((cb) => Number(cb.value));
           await apiFetch(`/api/spaces/${space.id}/keys/${device.config.keyId}`, {
             method: 'PATCH',
             body: JSON.stringify({
               name: payload.name,
               readerId: payload.readerId || null,
+              groups: selectedGroups,
             }),
           });
         } else {
@@ -2080,6 +2150,17 @@ const translateLogText = (text) => {
     { pattern: /^Обновлён ключ: (.+)$/, replacement: 'Key updated: $1' },
     { pattern: /^Пользователь покинул пространство: (.+)$/, replacement: 'User left space: $1' },
     { pattern: /^Пользователь удалён из пространства: (.+)$/, replacement: 'User removed from space: $1' },
+    { pattern: /^Группа '(.+)' поставлена под охрану$/, replacement: "Group '$1' armed" },
+    { pattern: /^Группа '(.+)' снята с охраны$/, replacement: "Group '$1' disarmed" },
+    { pattern: /^Постановка группы '(.+)' ключом: (.+)$/, replacement: "Group '$1' armed by key: $2" },
+    { pattern: /^Снятие группы '(.+)' ключом: (.+)$/, replacement: "Group '$1' disarmed by key: $2" },
+    { pattern: /^Добавлена группа: (.+)$/, replacement: 'Group added: $1' },
+    { pattern: /^Удалена группа: (.+)$/, replacement: 'Group removed: $1' },
+    { pattern: /^Переименована группа: (.+)$/, replacement: 'Group renamed: $1' },
+    { pattern: /^Режим групп включён$/, replacement: 'Groups mode enabled' },
+    { pattern: /^Режим групп отключён$/, replacement: 'Groups mode disabled' },
+    { pattern: /^Тревога шлейфа: (.+) \[(.+)\]$/, replacement: 'Zone alarm: $1 [$2]' },
+    { pattern: /^Восстановление шлейфа: (.+) \[(.+)\]$/, replacement: 'Zone restored: $1 [$2]' },
   ];
   for (const entry of translations) {
     if (entry.pattern.test(text)) {
@@ -2165,6 +2246,302 @@ const renderAll = () => {
   renderNotes(space);
   renderPhotos(space);
   renderLogs(space);
+  renderGroups(space);
+  renderStatusActions(space);
+};
+
+const groupsManageModal = document.getElementById('groupsManageModal');
+const groupsManageList = document.getElementById('groupsManageList');
+const closeGroupsManageModal = document.getElementById('closeGroupsManageModal');
+const groupsManageClose = document.getElementById('groupsManageClose');
+
+if (closeGroupsManageModal) {
+  closeGroupsManageModal.addEventListener('click', () => {
+    groupsManageModal.setAttribute('aria-hidden', 'true');
+  });
+}
+if (groupsManageClose) {
+  groupsManageClose.addEventListener('click', () => {
+    groupsManageModal.setAttribute('aria-hidden', 'true');
+  });
+}
+
+const renderStatusActions = (space) => {
+  const actionsContainer = document.querySelector('.status-actions');
+  if (!actionsContainer) return;
+  if (space.groupsEnabled) {
+    actionsContainer.innerHTML = `<button class="chip chip--info" id="openGroupsManage">${t('engineer.groups.manage')}</button>`;
+    const btn = document.getElementById('openGroupsManage');
+    if (btn) {
+      btn.addEventListener('click', () => {
+        renderGroupsManageModal(space);
+        groupsManageModal?.setAttribute('aria-hidden', 'false');
+      });
+    }
+  } else {
+    actionsContainer.innerHTML = `
+      <button class="chip chip--danger" data-action="arm">${t('engineer.actions.arm')}</button>
+      <button class="chip chip--success" data-action="disarm">${t('engineer.actions.disarm')}</button>
+    `;
+    rebindChipActions();
+  }
+};
+
+const rebindChipActions = () => {
+  document.querySelectorAll('.status-actions .chip[data-action]').forEach((chip) => {
+    chip.addEventListener('click', async () => {
+      const action = chip.dataset.action;
+      const space = spaces.find((item) => item.id === state.selectedSpaceId);
+      if (!space) return;
+      try {
+        showLoading();
+        if (action === 'arm') {
+          const updated = await apiFetch(`/api/spaces/${space.id}/arm`, { method: 'POST' });
+          Object.assign(space, updated);
+          showToast(updated.pendingArm ? 'Запущена постановка под охрану.' : 'Объект поставлен под охрану.');
+        }
+        if (action === 'disarm') {
+          const updated = await apiFetch(`/api/spaces/${space.id}/disarm`, { method: 'POST' });
+          Object.assign(space, updated);
+          showToast('Объект снят с охраны.');
+        }
+        await loadLogs(space.id);
+        renderAll();
+      } catch (error) {
+        console.error(error);
+        showToast('Ошибка обновления статуса.');
+      } finally {
+        hideLoading();
+      }
+    });
+  });
+};
+
+const renderGroups = (space) => {
+  const container = document.getElementById('groupsContent');
+  if (!container) return;
+  const groups = space.groups ?? [];
+  const devices = (space.devices ?? []).filter((d) => d.type !== 'hub' && d.type !== 'key');
+
+  const toggleChecked = space.groupsEnabled ? 'checked' : '';
+  let html = `
+    <label class="toggle-switch">
+      <input type="checkbox" id="groupsModeToggle" ${toggleChecked} />
+      <span>${t('engineer.groups.enable')}</span>
+    </label>
+  `;
+
+  if (space.groupsEnabled) {
+    if (groups.length) {
+      html += '<div class="groups-list">';
+      for (const group of groups) {
+        const groupDevices = devices.filter((d) => d.config?.groupId === group.id);
+        const statusLabel = t(`status.${group.status}`) ?? group.status;
+        const statusClass = statusTone[group.status] ?? '';
+        html += `
+          <div class="group-card">
+            <div class="group-card__header">
+              <span class="group-card__title">${escapeHtml(group.name)}</span>
+              <span class="group-card__status ${statusClass}">${escapeHtml(statusLabel)}</span>
+            </div>
+            <div class="group-card__devices">
+              ${groupDevices.length
+                ? groupDevices.map((d) => `<span class="tag">${escapeHtml(d.name)}</span>`).join('')
+                : `<span class="muted">${t('engineer.groups.noDevices')}</span>`}
+            </div>
+            <div class="group-card__actions">
+              <button class="button button--ghost" data-group-rename="${group.id}">${t('engineer.groups.rename')}</button>
+              <button class="button button--ghost button--danger" data-group-delete="${group.id}">${t('engineer.groups.delete')}</button>
+            </div>
+          </div>
+        `;
+      }
+      html += '</div>';
+    } else {
+      html += `<div class="empty-state" style="margin-top:12px">${t('engineer.groups.noGroups')}</div>`;
+    }
+
+    const ungroupedDevices = devices.filter((d) => !d.config?.groupId);
+    if (ungroupedDevices.length) {
+      html += `
+        <div class="group-card group-card--muted" style="margin-top:12px">
+          <div class="group-card__header">
+            <span class="group-card__title">${t('engineer.groups.ungrouped')}</span>
+          </div>
+          <div class="group-card__devices">
+            ${ungroupedDevices.map((d) => `<span class="tag tag--muted">${escapeHtml(d.name)}</span>`).join('')}
+          </div>
+        </div>
+      `;
+    }
+
+    html += `
+      <div class="groups-form">
+        <input type="text" id="groupNameInput" placeholder="${t('engineer.groups.name')}" maxlength="60" />
+        <button class="button button--primary" id="createGroupBtn">${t('engineer.groups.add')}</button>
+      </div>
+    `;
+  }
+
+  container.innerHTML = html;
+
+  // Bind toggle
+  const toggle = document.getElementById('groupsModeToggle');
+  if (toggle) {
+    toggle.addEventListener('change', async () => {
+      try {
+        showLoading();
+        await apiFetch(`/api/spaces/${space.id}/groups-mode`, {
+          method: 'PATCH',
+          body: JSON.stringify({ enabled: toggle.checked }),
+        });
+        await refreshAll();
+      } catch (error) {
+        console.error(error);
+        toggle.checked = !toggle.checked;
+        handleApiError(error, 'Не удалось переключить режим групп.');
+      } finally {
+        hideLoading();
+      }
+    });
+  }
+
+  // Bind create group
+  const createBtn = document.getElementById('createGroupBtn');
+  const nameInput = document.getElementById('groupNameInput');
+  if (createBtn && nameInput) {
+    createBtn.addEventListener('click', async () => {
+      const name = nameInput.value.trim();
+      if (!name) return;
+      try {
+        showLoading();
+        await apiFetch(`/api/spaces/${space.id}/groups`, {
+          method: 'POST',
+          body: JSON.stringify({ name }),
+        });
+        await refreshAll();
+        showToast('Группа создана.');
+      } catch (error) {
+        console.error(error);
+        handleApiError(error, 'Не удалось создать группу.');
+      } finally {
+        hideLoading();
+      }
+    });
+  }
+
+  // Bind rename buttons
+  container.querySelectorAll('[data-group-rename]').forEach((btn) => {
+    btn.addEventListener('click', async () => {
+      if (!ensureEditable()) return;
+      const groupId = btn.dataset.groupRename;
+      const group = groups.find((g) => String(g.id) === String(groupId));
+      const newName = prompt(t('engineer.groups.name'), group?.name ?? '');
+      if (!newName || !newName.trim()) return;
+      try {
+        showLoading();
+        await apiFetch(`/api/spaces/${space.id}/groups/${groupId}`, {
+          method: 'PATCH',
+          body: JSON.stringify({ name: newName.trim() }),
+        });
+        await refreshAll();
+        showToast('Группа переименована.');
+      } catch (error) {
+        console.error(error);
+        handleApiError(error, 'Не удалось переименовать группу.');
+      } finally {
+        hideLoading();
+      }
+    });
+  });
+
+  // Bind delete buttons
+  container.querySelectorAll('[data-group-delete]').forEach((btn) => {
+    btn.addEventListener('click', async () => {
+      if (!ensureEditable()) return;
+      const groupId = btn.dataset.groupDelete;
+      try {
+        if (!await confirmAction('Удалить группу?', 'Удаление группы')) return;
+        showLoading();
+        await apiFetch(`/api/spaces/${space.id}/groups/${groupId}`, { method: 'DELETE' });
+        await refreshAll();
+        showToast('Группа удалена.');
+      } catch (error) {
+        console.error(error);
+        handleApiError(error, 'Не удалось удалить группу.');
+      } finally {
+        hideLoading();
+      }
+    });
+  });
+};
+
+const renderGroupsManageModal = (space) => {
+  if (!groupsManageList) return;
+  const groups = space.groups ?? [];
+  if (!groups.length) {
+    groupsManageList.innerHTML = `<div class="empty-state">${t('engineer.groups.noGroups')}</div>`;
+    return;
+  }
+  groupsManageList.innerHTML = groups.map((group) => {
+    const statusLabel = t(`status.${group.status}`) ?? group.status;
+    const statusClass = statusTone[group.status] ?? '';
+    return `
+      <div class="group-manage-item">
+        <div class="group-manage-item__info">
+          <span class="group-manage-item__name">${escapeHtml(group.name)}</span>
+          <span class="group-manage-item__status ${statusClass}">${escapeHtml(statusLabel)}</span>
+        </div>
+        <div class="group-manage-item__actions">
+          ${group.status === 'armed'
+            ? `<button class="button button--ghost" data-group-disarm="${group.id}">${t('engineer.groups.disarm')}</button>`
+            : `<button class="button button--primary" data-group-arm="${group.id}">${t('engineer.groups.arm')}</button>`}
+        </div>
+      </div>
+    `;
+  }).join('');
+
+  // Bind arm buttons
+  groupsManageList.querySelectorAll('[data-group-arm]').forEach((btn) => {
+    btn.addEventListener('click', async () => {
+      const groupId = btn.dataset.groupArm;
+      try {
+        showLoading();
+        const updated = await apiFetch(`/api/spaces/${space.id}/groups/${groupId}/arm`, { method: 'POST' });
+        Object.assign(space, updated);
+        await loadLogs(space.id);
+        renderAll();
+        renderGroupsManageModal(space);
+        showToast('Группа поставлена под охрану.');
+      } catch (error) {
+        console.error(error);
+        handleApiError(error, 'Не удалось поставить группу под охрану.');
+      } finally {
+        hideLoading();
+      }
+    });
+  });
+
+  // Bind disarm buttons
+  groupsManageList.querySelectorAll('[data-group-disarm]').forEach((btn) => {
+    btn.addEventListener('click', async () => {
+      const groupId = btn.dataset.groupDisarm;
+      try {
+        showLoading();
+        const updated = await apiFetch(`/api/spaces/${space.id}/groups/${groupId}/disarm`, { method: 'POST' });
+        Object.assign(space, updated);
+        await loadLogs(space.id);
+        renderAll();
+        renderGroupsManageModal(space);
+        showToast('Группа снята с охраны.');
+      } catch (error) {
+        console.error(error);
+        handleApiError(error, 'Не удалось снять группу с охраны.');
+      } finally {
+        hideLoading();
+      }
+    });
+  });
 };
 
 chipActions.forEach((chip) => {

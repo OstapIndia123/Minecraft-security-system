@@ -142,6 +142,7 @@
             <button class="tab" data-tab="notes" data-i18n="engineer.tabs.notes">Примечания</button>
             <button class="tab" data-tab="users" data-i18n="engineer.tabs.users">Пользователи</button>
             <button class="tab" data-tab="installers" data-i18n="engineer.tabs.installers">Инженеры монтажа</button>
+            <button class="tab" data-tab="groups" data-i18n="engineer.tabs.groups">Группы</button>
             <button class="tab" data-tab="log" data-i18n="engineer.tabs.log">Лог</button>
           </div>
 
@@ -260,6 +261,13 @@
               </form>
               <p class="muted" data-i18n="engineer.installers.note">Покинуть объект можно только если есть хотя бы ещё один инженер монтажа.</p>
             </div>
+          </div>
+
+          <div class="panel" id="groups">
+            <div class="panel__header">
+              <h2 data-i18n="engineer.groups.title">Группы охраны</h2>
+            </div>
+            <div id="groupsContent"></div>
           </div>
 
           <div class="panel" id="log">
@@ -401,6 +409,19 @@
         <div class="modal__actions">
           <button class="button button--ghost" id="actionModalCancel" type="button" data-i18n="common.cancel">Отмена</button>
           <button class="button button--primary" id="actionModalConfirm" type="button" data-i18n="common.confirm">Подтвердить</button>
+        </div>
+      </div>
+    </div>
+
+    <div class="modal" id="groupsManageModal" aria-hidden="true">
+      <div class="modal__content">
+        <div class="modal__header">
+          <h3 id="groupsManageTitle" data-i18n="engineer.groups.manageTitle">Управление группами</h3>
+          <button class="ghost-button" id="closeGroupsManageModal" aria-label="Закрыть">✕</button>
+        </div>
+        <div id="groupsManageList" class="group-manage-list"></div>
+        <div class="modal__actions">
+          <button class="button button--ghost" id="groupsManageClose" type="button" data-i18n="common.close">Закрыть</button>
         </div>
       </div>
     </div>
