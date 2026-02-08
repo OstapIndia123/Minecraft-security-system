@@ -194,6 +194,8 @@ const translations = {
     'status.disarmed': 'Снято с охраны',
     'status.night': 'Ночной режим',
     'status.partial': 'Частично под охраной',
+    'status.online': 'В сети',
+    'status.offline': 'Не в сети',
     'user.groups.manage': 'Управление',
     'user.groups.manageTitle': 'Управление группами',
     'user.groups.arm': 'Под охрану',
@@ -236,6 +238,8 @@ const translations = {
     'status.disarmed': 'Disarmed',
     'status.night': 'Night mode',
     'status.partial': 'Partially armed',
+    'status.online': 'Online',
+    'status.offline': 'Offline',
     'user.groups.manage': 'Manage',
     'user.groups.manageTitle': 'Manage groups',
     'user.groups.arm': 'Arm',
@@ -266,12 +270,23 @@ const statusTone = {
   partial: 'status--partial',
 };
 
+const normalizeStatusValue = (status) => {
+  if (!status) return status;
+  const raw = String(status).trim();
+  const aliases = {
+    'Не в сети': 'offline',
+    'В сети': 'online',
+  };
+  return aliases[raw] ?? raw;
+};
+
 const getStatusLabel = (status) => {
   if (!status) return '—';
-  const key = `status.${status}`;
+  const normalized = normalizeStatusValue(status);
+  const key = `status.${normalized}`;
   const translated = t(key);
   if (!translated || translated === key) {
-    return status;
+    return normalized;
   }
   return translated;
 };
@@ -773,6 +788,7 @@ const renderDevices = (devices) => {
 
 const translateLogText = (text) => {
   if (state.language !== 'en-US' || !text) return text;
+  const normalizedText = String(text).replace(/&#39;/g, "'");
   const translations = [
     { pattern: /^Создано пространство$/, replacement: 'Space created' },
     { pattern: /^Обновлена информация об объекте$/, replacement: 'Space details updated' },
@@ -820,11 +836,11 @@ const translateLogText = (text) => {
     { pattern: /^Восстановление шлейфа: (.+) \[(.+)\]$/, replacement: 'Zone restored: $1 [$2]' },
   ];
   for (const entry of translations) {
-    if (entry.pattern.test(text)) {
-      return text.replace(entry.pattern, entry.replacement);
+    if (entry.pattern.test(normalizedText)) {
+      return normalizedText.replace(entry.pattern, entry.replacement);
     }
   }
-  return text;
+  return normalizedText;
 };
 
 const maskKeyNames = (text) => {

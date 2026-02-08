@@ -123,6 +123,8 @@ const translations = {
     'status.disarmed': 'Снято с охраны',
     'status.night': 'Ночной режим',
     'status.partial': 'Частично под охраной',
+    'status.online': 'В сети',
+    'status.offline': 'Не в сети',
     'profile.title': 'Профиль',
     'profile.nickname': 'Игровой ник',
     'profile.nickname.change': 'Сменить',
@@ -157,6 +159,8 @@ const translations = {
     'status.disarmed': 'Disarmed',
     'status.night': 'Night mode',
     'status.partial': 'Partially armed',
+    'status.online': 'Online',
+    'status.offline': 'Offline',
     'profile.title': 'Profile',
     'profile.nickname': 'Game nickname',
     'profile.nickname.change': 'Change',
@@ -194,13 +198,26 @@ const statusMap = {
   disarmed: 'Снято с охраны',
   night: 'Ночной режим',
   partial: 'Частично под охраной',
+  online: 'В сети',
+  offline: 'Не в сети',
+};
+
+const normalizeStatusValue = (status) => {
+  if (!status) return status;
+  const raw = String(status).trim();
+  const aliases = {
+    'Не в сети': 'offline',
+    'В сети': 'online',
+  };
+  return aliases[raw] ?? raw;
 };
 
 const getStatusLabel = (status) => {
-  const key = `status.${status}`;
+  const normalized = normalizeStatusValue(status);
+  const key = `status.${normalized}`;
   const translated = t(key);
   if (!translated || translated === key) {
-    return statusMap[status] ?? status;
+    return statusMap[normalized] ?? status;
   }
   return translated;
 };
@@ -608,6 +625,7 @@ const renderObjects = (spaces) => {
 
 const translateLogText = (text) => {
   if (state.language !== 'en-US' || !text) return text;
+  const normalizedText = String(text).replace(/&#39;/g, "'");
   const translations = [
     { pattern: /^Создано пространство$/, replacement: 'Space created' },
     { pattern: /^Обновлена информация об объекте$/, replacement: 'Space details updated' },
@@ -653,11 +671,11 @@ const translateLogText = (text) => {
     { pattern: /^Режим групп отключён$/, replacement: 'Groups mode disabled' },
   ];
   for (const entry of translations) {
-    if (entry.pattern.test(text)) {
-      return text.replace(entry.pattern, entry.replacement);
+    if (entry.pattern.test(normalizedText)) {
+      return normalizedText.replace(entry.pattern, entry.replacement);
     }
   }
-  return text;
+  return normalizedText;
 };
 
 const renderLogs = (logs) => {
@@ -784,7 +802,9 @@ logFilters.forEach((button) => {
 });
 
 if (refreshBtn) {
-  refreshBtn.addEventListener('click', () => {
+  refreshBtn.addEventListener('click', (event) => {
+    event.preventDefault();
+    event.stopPropagation();
     runRefreshAnimation(refreshBtn, refresh).catch(() => null);
   });
 }

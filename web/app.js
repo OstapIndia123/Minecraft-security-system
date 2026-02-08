@@ -321,23 +321,37 @@ const statusMap = {
   disarmed: 'Снято с охраны',
   night: 'Ночной режим',
   partial: 'Частично под охраной',
+  online: 'В сети',
+  offline: 'Не в сети',
+};
+
+const normalizeStatusValue = (status) => {
+  if (!status) return status;
+  const raw = String(status).trim();
+  const aliases = {
+    'Не в сети': 'offline',
+    'В сети': 'online',
+  };
+  return aliases[raw] ?? raw;
 };
 
 const getStatusLabel = (status) => {
-  const key = `status.${status}`;
+  const normalized = normalizeStatusValue(status);
+  const key = `status.${normalized}`;
   const translated = t(key);
   if (!translated || translated === key) {
-    return statusMap[status] ?? status;
+    return statusMap[normalized] ?? status;
   }
   return translated;
 };
 
 const getDeviceStatusLabel = (status) => {
   if (!status) return '—';
-  const key = `status.${status}`;
+  const normalized = normalizeStatusValue(status);
+  const key = `status.${normalized}`;
   const translated = t(key);
   if (!translated || translated === key) {
-    return statusMap[status] ?? status;
+    return statusMap[normalized] ?? status;
   }
   return translated;
 };
@@ -459,6 +473,8 @@ const translations = {
     'status.disarmed': 'Снято с охраны',
     'status.night': 'Ночной режим',
     'status.partial': 'Частично под охраной',
+    'status.online': 'В сети',
+    'status.offline': 'Не в сети',
     'engineer.tabs.groups': 'Группы',
     'engineer.groups.title': 'Группы охраны',
     'engineer.groups.enable': 'Включить режим групп',
@@ -766,6 +782,8 @@ const translations = {
     'status.disarmed': 'Disarmed',
     'status.night': 'Night',
     'status.partial': 'Partially armed',
+    'status.online': 'Online',
+    'status.offline': 'Offline',
     'engineer.tabs.groups': 'Groups',
     'engineer.groups.title': 'Security groups',
     'engineer.groups.enable': 'Enable groups mode',
@@ -2555,6 +2573,7 @@ const renderPhotos = (space) => {
 
 const translateLogText = (text) => {
   if (state.language !== 'en-US' || !text) return text;
+  const normalizedText = String(text).replace(/&#39;/g, "'");
   const translations = [
     { pattern: /^Создано пространство$/, replacement: 'Space created' },
     { pattern: /^Обновлена информация об объекте$/, replacement: 'Space details updated' },
@@ -2602,11 +2621,11 @@ const translateLogText = (text) => {
     { pattern: /^Восстановление шлейфа: (.+) \[(.+)\]$/, replacement: 'Zone restored: $1 [$2]' },
   ];
   for (const entry of translations) {
-    if (entry.pattern.test(text)) {
-      return text.replace(entry.pattern, entry.replacement);
+    if (entry.pattern.test(normalizedText)) {
+      return normalizedText.replace(entry.pattern, entry.replacement);
     }
   }
-  return text;
+  return normalizedText;
 };
 
 const renderLogs = (space) => {
