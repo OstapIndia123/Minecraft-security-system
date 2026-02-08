@@ -331,6 +331,7 @@
             <option value="key" data-i18n="engineer.deviceModal.type.key">Ключ</option>
           </select>
           <select name="side" data-i18n-placeholder="engineer.deviceModal.side" required>
+            <option value="" disabled selected hidden data-i18n="engineer.deviceModal.side">Сторона (N/S/E/W/U/D)</option>
             <option value="north">north</option>
             <option value="south">south</option>
             <option value="west">west</option>
@@ -352,6 +353,7 @@
           <div class="form-inline hidden" id="extensionFields">
             <input type="text" name="extensionId" data-i18n-placeholder="engineer.deviceModal.extension.id" placeholder="ID модуля (HUB_EXT-...)" maxlength="80" />
             <select name="hubSide" data-i18n-placeholder="engineer.deviceModal.extension.hubSide">
+              <option value="" disabled selected hidden data-i18n="engineer.deviceModal.extension.hubSide">Сторона хаба (N/S/E/W/U/D)</option>
               <option value="north">north</option>
               <option value="south">south</option>
               <option value="west">west</option>
@@ -360,6 +362,7 @@
               <option value="down">down</option>
             </select>
             <select name="extensionSide" data-i18n-placeholder="engineer.deviceModal.extension.extensionSide">
+              <option value="" disabled selected hidden data-i18n="engineer.deviceModal.extension.extensionSide">Сторона модуля (N/S/E/W/U/D)</option>
               <option value="north">north</option>
               <option value="south">south</option>
               <option value="west">west</option>
