@@ -2607,7 +2607,7 @@ app.patch('/api/spaces/:id/photos/:index', requireAuth, requireInstaller, async 
   res.json({ ok: true });
 });
 
-async function applyLightOutputs(spaceId, hubId, status, groupId = null) {
+async function applyLightOutputs(spaceId, hubId, status, groupId = null, { force = false } = {}) {
   const outputs = groupId
     ? await query("SELECT side, config FROM devices WHERE space_id = $1 AND type = $2 AND (config->>'groupId')::int = $3", [spaceId, 'output-light', groupId])
     : await query('SELECT side, config FROM devices WHERE space_id = $1 AND type = $2', [spaceId, 'output-light']);
@@ -2616,7 +2616,7 @@ async function applyLightOutputs(spaceId, hubId, status, groupId = null) {
       const level = Number(output.config?.level ?? 15);
       const targetId = resolveDeviceTargetId(output.config, hubId);
       if (!targetId) return null;
-      return sendHubOutputChecked(spaceId, targetId, output.side, status === 'armed' ? level : 0).catch(() => null);
+      return sendHubOutputChecked(spaceId, targetId, output.side, status === 'armed' ? level : 0, { force }).catch(() => null);
     }),
   );
 }
@@ -3110,7 +3110,7 @@ app.post('/api/spaces/:id/groups/:groupId/disarm', requireAuth, async (req, res)
   await clearPendingArm(spaceId, hubId, gId);
   await stopBlinkingLights(spaceId, hubId, 'entry-delay', gId);
   await stopBlinkingLights(spaceId, hubId, 'exit-delay', gId);
-  await applyLightOutputs(spaceId, hubId, 'disarmed', gId);
+  await applyLightOutputs(spaceId, hubId, 'disarmed', gId, { force: true });
   const computedStatus = await computeSpaceStatusFromGroups(spaceId);
   await query('UPDATE spaces SET status = $1 WHERE id = $2', [computedStatus, spaceId]);
   await evaluateZoneIssues(spaceId);
@@ -3332,7 +3332,7 @@ app.post('/api/hub/events', requireWebhookToken, async (req, res) => {
                 await clearPendingArm(spaceId, hubId, gId);
                 await stopBlinkingLights(spaceId, hubId, 'entry-delay', gId);
                 await stopBlinkingLights(spaceId, hubId, 'exit-delay', gId);
-                await applyLightOutputs(spaceId, hubId, 'disarmed', gId);
+                await applyLightOutputs(spaceId, hubId, 'disarmed', gId, { force: true });
                 await appendLog(spaceId, `Снятие группы '${group.name}' ключом: ${session.key_name}`, session.reader_name, 'security', gId);
               }
             } else {
@@ -3434,7 +3434,7 @@ app.post('/api/hub/events', requireWebhookToken, async (req, res) => {
                 await clearPendingArm(spaceId, hubId, gId);
                 await stopBlinkingLights(spaceId, hubId, 'entry-delay', gId);
                 await stopBlinkingLights(spaceId, hubId, 'exit-delay', gId);
-                await applyLightOutputs(spaceId, hubId, 'disarmed', gId);
+                await applyLightOutputs(spaceId, hubId, 'disarmed', gId, { force: true });
               }
             }
             await updateStatus(
