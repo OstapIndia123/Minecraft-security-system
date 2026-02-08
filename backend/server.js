@@ -3176,17 +3176,19 @@ app.post('/api/hub/events', requireWebhookToken, async (req, res) => {
     }
     extensionDevice = extensionResult.rows[0];
     const extensionSide = normalizeSideValue(extensionDevice?.config?.extensionSide);
-    const mirrorExtensionSide = extensionSide ? mirrorOutputSide(extensionSide) : null;
     const eventSide = normalizeSideValue(payload?.side);
     const eventLevel = Number(payload?.level);
+    const matchesExtensionSide = Boolean(
+      eventSide
+      && extensionSide
+      && (eventSide === extensionSide || mirrorOutputSide(eventSide) === extensionSide),
+    );
     const isTestSetOutput = Boolean(
       type === 'SET_OUTPUT'
-      && eventSide
-      && extensionSide
-      && (eventSide === extensionSide || eventSide === mirrorExtensionSide)
+      && matchesExtensionSide
       && (eventLevel === 0 || eventLevel === 15),
     );
-    const shouldIgnoreTestSetOutput = isTestSetOutput && eventSide !== extensionSide;
+    const shouldIgnoreTestSetOutput = isTestSetOutput;
     const isTestSideEvent = Boolean(
       type !== 'SET_OUTPUT'
       && eventSide
