@@ -1767,11 +1767,12 @@ const renderDevices = (space) => {
     const statusText = device.type === 'zone' || device.type === 'hub' || isHubExtensionType(device.type)
       ? getDeviceStatusLabel(device.status)
       : '';
+    const displayName = device.type === 'hub' ? t('engineer.object.label.hub') : device.name;
     const item = document.createElement('button');
     item.className = `device-item ${device.id === state.selectedDeviceId ? 'device-item--active' : ''}`;
     item.innerHTML = `
       <div>
-        <div class="device-item__title">${escapeHtml(device.name)}</div>
+        <div class="device-item__title">${escapeHtml(displayName)}</div>
         <div class="device-item__meta">${escapeHtml(device.room)}</div>
       </div>
       <span class="device-item__status">${escapeHtml(statusText)}</span>
@@ -1844,7 +1845,8 @@ const updateCreateExtensionOptions = async () => {
 const renderDeviceDetails = (device) => {
   const canDelete = device.type !== 'hub';
   const deleteLabel = device.type === 'key' ? t('device.deleteKey') : t('device.deleteDevice');
-  const safeName = escapeHtml(device.name);
+  const displayName = device.type === 'hub' ? t('engineer.object.label.hub') : device.name;
+  const safeName = escapeHtml(displayName);
   const safeRoom = escapeHtml(device.room);
   const safeSide = escapeHtml(device.side ?? '');
   const statusLabel = getDeviceStatusLabel(device.status);
@@ -1864,9 +1866,14 @@ const renderDeviceDetails = (device) => {
     `
     : '';
   const sideOptionValues = ['north', 'south', 'west', 'east', 'up', 'down'];
-  const sideOptions = (value) => sideOptionValues
-    .map((side) => `<option value="${side}" ${value === side ? 'selected' : ''}>${side}</option>`)
-    .join('');
+  const sideOptions = (value, placeholderText) => {
+    const safePlaceholder = escapeHtml(placeholderText);
+    const placeholderOption = `<option value="" disabled ${value ? '' : 'selected'} hidden>${safePlaceholder}</option>`;
+    const options = sideOptionValues
+      .map((side) => `<option value="${side}" ${value === side ? 'selected' : ''}>${side}</option>`)
+      .join('');
+    return `${placeholderOption}${options}`;
+  };
 
   const baseFields = device.type !== 'key'
     ? `
@@ -1875,7 +1882,7 @@ const renderDeviceDetails = (device) => {
       ${!isHubExtensionType(device.type)
         ? `
           <select name="side" required>
-            ${sideOptions(device.side ?? '')}
+            ${sideOptions(device.side ?? '', t('engineer.deviceModal.side'))}
           </select>
         `
         : ''}
@@ -1921,10 +1928,10 @@ const renderDeviceDetails = (device) => {
     return `
       <input type="text" name="extensionId" value="${safeExtensionId}" placeholder="ID модуля (HUB_EXT-...)" required />
       <select name="hubSide" required>
-        ${sideOptions(safeHubSide)}
+        ${sideOptions(safeHubSide, t('engineer.deviceModal.extension.hubSide'))}
       </select>
       <select name="extensionSide" required>
-        ${sideOptions(safeExtensionSide)}
+        ${sideOptions(safeExtensionSide, t('engineer.deviceModal.extension.extensionSide'))}
       </select>
     `;
   }

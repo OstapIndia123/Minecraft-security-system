@@ -189,6 +189,7 @@ const translations = {
     'user.empty.devices': 'Нет устройств',
     'user.empty.logs': 'Нет событий',
     'user.object.hubOffline': 'Хаб не в сети',
+    'user.object.label.hub': 'Хаб',
     'log.actions.more': 'Показать ещё',
     'status.armed': 'Под охраной',
     'status.disarmed': 'Снято с охраны',
@@ -234,6 +235,7 @@ const translations = {
     'user.empty.devices': 'No devices',
     'user.empty.logs': 'No events',
     'user.object.hubOffline': 'Hub offline',
+    'user.object.label.hub': 'Hub',
     'log.actions.more': 'Show more',
     'status.armed': 'Armed',
     'status.disarmed': 'Disarmed',
@@ -757,7 +759,8 @@ const renderDevices = (devices) => {
       : '';
     const button = document.createElement('button');
     button.className = `device-item ${device.id === state.selectedDeviceId ? 'device-item--active' : ''}`;
-    const displayName = device.type === 'key' ? t('device.keyMasked') : device.name;
+    const baseName = device.type === 'hub' ? t('user.object.label.hub') : device.name;
+    const displayName = device.type === 'key' ? t('device.keyMasked') : baseName;
     const deviceTypeToken = getDeviceTypeToken(device.type);
     button.innerHTML = `
       <div class="device-item__content">
@@ -774,7 +777,8 @@ const renderDevices = (devices) => {
       renderDevices(devices);
       const keyGroups = device.config?.groups ?? [];
       const hasGroupAccess = keyGroups.some((groupId) => allowedGroups.has(groupId));
-      const detailTitle = device.type === 'key' && !hasGroupAccess ? t('device.keyMasked') : device.name;
+      const baseDetailTitle = device.type === 'hub' ? t('user.object.label.hub') : device.name;
+      const detailTitle = device.type === 'key' && !hasGroupAccess ? t('device.keyMasked') : baseDetailTitle;
       deviceDetails.innerHTML = `
         <div class="device-details__header">
           <div class="device-avatar" data-type="${deviceTypeToken}">${deviceIcon(device.type)}</div>
