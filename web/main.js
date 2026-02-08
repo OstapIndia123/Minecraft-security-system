@@ -125,6 +125,7 @@ const translations = {
     'status.partial': 'Частично под охраной',
     'status.online': 'В сети',
     'status.offline': 'Не в сети',
+    'status.normal': 'Норма',
     'profile.title': 'Профиль',
     'profile.nickname': 'Игровой ник',
     'profile.nickname.change': 'Сменить',
@@ -161,6 +162,7 @@ const translations = {
     'status.partial': 'Partially armed',
     'status.online': 'Online',
     'status.offline': 'Offline',
+    'status.normal': 'Normal',
     'profile.title': 'Profile',
     'profile.nickname': 'Game nickname',
     'profile.nickname.change': 'Change',
@@ -200,16 +202,22 @@ const statusMap = {
   partial: 'Частично под охраной',
   online: 'В сети',
   offline: 'Не в сети',
+  normal: 'Норма',
 };
 
 const normalizeStatusValue = (status) => {
   if (!status) return status;
   const raw = String(status).trim();
+  const lower = raw.toLowerCase();
   const aliases = {
-    'Не в сети': 'offline',
-    'В сети': 'online',
+    'не в сети': 'offline',
+    'в сети': 'online',
+    'норма': 'normal',
+    online: 'online',
+    offline: 'offline',
+    normal: 'normal',
   };
-  return aliases[raw] ?? raw;
+  return aliases[lower] ?? (statusMap[lower] ? lower : raw);
 };
 
 const getStatusLabel = (status) => {
@@ -660,6 +668,7 @@ const translateLogText = (text) => {
     { pattern: /^Обновлён ключ: (.+)$/, replacement: 'Key updated: $1' },
     { pattern: /^Пользователь покинул пространство: (.+)$/, replacement: 'User left space: $1' },
     { pattern: /^Пользователь удалён из пространства: (.+)$/, replacement: 'User removed from space: $1' },
+    { pattern: /^Пользователь (.+) получил доступ$/, replacement: 'User $1 gained access' },
     { pattern: /^Группа '(.+)' поставлена под охрану$/, replacement: "Group '$1' armed" },
     { pattern: /^Группа '(.+)' снята с охраны$/, replacement: "Group '$1' disarmed" },
     { pattern: /^Постановка группы '(.+)' ключом: (.+)$/, replacement: "Group '$1' armed by key: $2" },

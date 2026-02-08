@@ -196,6 +196,7 @@ const translations = {
     'status.partial': 'Частично под охраной',
     'status.online': 'В сети',
     'status.offline': 'Не в сети',
+    'status.normal': 'Норма',
     'user.groups.manage': 'Управление',
     'user.groups.manageTitle': 'Управление группами',
     'user.groups.arm': 'Под охрану',
@@ -240,6 +241,7 @@ const translations = {
     'status.partial': 'Partially armed',
     'status.online': 'Online',
     'status.offline': 'Offline',
+    'status.normal': 'Normal',
     'user.groups.manage': 'Manage',
     'user.groups.manageTitle': 'Manage groups',
     'user.groups.arm': 'Arm',
@@ -270,14 +272,29 @@ const statusTone = {
   partial: 'status--partial',
 };
 
+const statusKeys = new Set([
+  'armed',
+  'disarmed',
+  'night',
+  'partial',
+  'online',
+  'offline',
+  'normal',
+]);
+
 const normalizeStatusValue = (status) => {
   if (!status) return status;
   const raw = String(status).trim();
+  const lower = raw.toLowerCase();
   const aliases = {
-    'Не в сети': 'offline',
-    'В сети': 'online',
+    'не в сети': 'offline',
+    'в сети': 'online',
+    'норма': 'normal',
+    online: 'online',
+    offline: 'offline',
+    normal: 'normal',
   };
-  return aliases[raw] ?? raw;
+  return aliases[lower] ?? (statusKeys.has(lower) ? lower : raw);
 };
 
 const getStatusLabel = (status) => {
@@ -823,6 +840,7 @@ const translateLogText = (text) => {
     { pattern: /^Обновлён ключ: (.+)$/, replacement: 'Key updated: $1' },
     { pattern: /^Пользователь покинул пространство: (.+)$/, replacement: 'User left space: $1' },
     { pattern: /^Пользователь удалён из пространства: (.+)$/, replacement: 'User removed from space: $1' },
+    { pattern: /^Пользователь (.+) получил доступ$/, replacement: 'User $1 gained access' },
     { pattern: /^Группа '(.+)' поставлена под охрану$/, replacement: "Group '$1' armed" },
     { pattern: /^Группа '(.+)' снята с охраны$/, replacement: "Group '$1' disarmed" },
     { pattern: /^Постановка группы '(.+)' ключом: (.+)$/, replacement: "Group '$1' armed by key: $2" },
