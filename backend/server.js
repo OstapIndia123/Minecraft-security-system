@@ -945,8 +945,8 @@ const startPendingArm = async (spaceId, hubId, delaySeconds, who, logMessage, gr
       ? await query("SELECT status, config FROM devices WHERE space_id = $1 AND type = $2 AND (config->>'groupId')::int = $3", [spaceId, 'zone', groupId])
       : await query('SELECT status, config FROM devices WHERE space_id = $1 AND type = $2', [spaceId, 'zone']);
     const hasViolations = zonesQuery.rows.some((zone) => {
-      const zoneType = zone.config?.zoneType;
-      if (zoneType !== 'delayed' && zoneType !== 'pass') return false;
+      const zoneType = zone.config?.zoneType ?? 'instant';
+      if (zoneType === 'delayed' || zoneType === 'pass') return false;
       return zone.status !== 'Норма';
     });
     if (hasViolations) {
@@ -3120,6 +3120,8 @@ app.post('/api/spaces/:id/groups/:groupId/disarm', requireAuth, async (req, res)
   entryDelayFailed.delete(sk);
   await clearEntryDelay(spaceId, hubId, gId);
   await clearPendingArm(spaceId, hubId, gId);
+  await stopBlinkingLights(spaceId, hubId, 'entry-delay', gId);
+  await stopBlinkingLights(spaceId, hubId, 'exit-delay', gId);
   await applyLightOutputs(spaceId, hubId, 'disarmed', gId);
   const computedStatus = await computeSpaceStatusFromGroups(spaceId);
   await query('UPDATE spaces SET status = $1 WHERE id = $2', [computedStatus, spaceId]);
@@ -3331,13 +3333,16 @@ app.post('/api/hub/events', requireWebhookToken, async (req, res) => {
                 const sk = stateKey(spaceId, gId);
                 await query("UPDATE groups SET status = 'disarmed' WHERE id = $1 AND space_id = $2", [gId, spaceId]);
                 const spaceRow = await query('SELECT hub_id FROM spaces WHERE id = $1', [spaceId]);
-                await stopSirenTimers(spaceId, spaceRow.rows[0]?.hub_id, gId);
+                const hubId = spaceRow.rows[0]?.hub_id;
+                await stopSirenTimers(spaceId, hubId, gId);
                 spaceAlarmState.set(sk, false);
                 alarmSinceArmed.delete(sk);
                 entryDelayFailed.delete(sk);
-                await clearEntryDelay(spaceId, spaceRow.rows[0]?.hub_id, gId);
-                await clearPendingArm(spaceId, spaceRow.rows[0]?.hub_id, gId);
-                await applyLightOutputs(spaceId, spaceRow.rows[0]?.hub_id, 'disarmed', gId);
+                await clearEntryDelay(spaceId, hubId, gId);
+                await clearPendingArm(spaceId, hubId, gId);
+                await stopBlinkingLights(spaceId, hubId, 'entry-delay', gId);
+                await stopBlinkingLights(spaceId, hubId, 'exit-delay', gId);
+                await applyLightOutputs(spaceId, hubId, 'disarmed', gId);
                 await appendLog(spaceId, `Снятие группы '${group.name}' ключом: ${session.key_name}`, session.reader_name, 'security', gId);
               }
             } else {

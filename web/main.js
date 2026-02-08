@@ -13,6 +13,7 @@ const state = {
   logsOffset: 0,
   logsLimit: 200,
   logsHasMore: true,
+  lastLogTimestamp: null,
 };
 
 const detectBrowserLanguage = () => {
@@ -25,6 +26,7 @@ const logFlashActive = new Map();
 const NICKNAME_COOLDOWN_MS = 7 * 24 * 60 * 60 * 1000;
 const SPACE_CREATE_COOLDOWN_MS = 15 * 60 * 1000;
 const ALARM_SOUND_PATH = '/alarm.mp3';
+const alarmAckKey = (spaceId) => `pcn:alarm:${spaceId}`;
 
 const escapeHtml = (value) => String(value ?? '')
   .replace(/&/g, '&amp;')
@@ -544,6 +546,32 @@ const hasActiveAlarmFlash = (space) => {
   return false;
 };
 
+const markUnackedAlarm = (spaceId, timestamp) => {
+  if (!spaceId || !timestamp) return;
+  localStorage.setItem(alarmAckKey(spaceId), String(timestamp));
+};
+
+const clearUnackedAlarm = (spaceId) => {
+  if (!spaceId) return;
+  localStorage.removeItem(alarmAckKey(spaceId));
+};
+
+const hasUnackedAlarm = (spaceId) => Boolean(spaceId && localStorage.getItem(alarmAckKey(spaceId)));
+
+const registerAlarmFlashes = (logs, flashSince) => {
+  if (!flashSince) return;
+  logs.forEach((log) => {
+    if (log.type !== 'alarm') return;
+    const logTimestamp = getLogTimestamp(log);
+    if (!logTimestamp || logTimestamp <= flashSince) return;
+    const flashKey = `logFlash:${log.spaceName}:${logTimestamp ?? log.time}:${log.text}`;
+    if (localStorage.getItem(flashKey)) return;
+    localStorage.setItem(flashKey, String(Date.now()));
+    logFlashActive.set(flashKey, Date.now() + FLASH_DURATION_MS);
+    markUnackedAlarm(log.spaceId ?? log.space_id, logTimestamp);
+  });
+};
+
 const getAlarmStateBySpace = (logs) => {
   const alarmMap = new Map();
   const restoreMap = new Map();
@@ -608,12 +636,15 @@ const renderObjects = (spaces) => {
 
   filtered.forEach((space) => {
     const card = document.createElement('button');
-    const isAlarmActive = isAlarmActiveForSpace(space, alarmState);
-    const shouldFlash = isAlarmActive || hasActiveAlarmFlash(space);
+    const hasUnacked = hasUnackedAlarm(space.id);
+    const isAlarmActive = hasUnacked || isAlarmActiveForSpace(space, alarmState);
+    const shouldFlash = hasActiveAlarmFlash(space);
     const hubOfflineLabel = space.hubOnline === false
       ? `<div class="object-card__hub-offline">${t('pcn.object.hubOffline')}</div>`
       : '';
-    card.className = `object-card ${shouldFlash ? 'object-card--alarm object-card--alarm-flash' : ''}`;
+    const alarmClass = isAlarmActive ? 'object-card--alarm' : '';
+    const flashClass = shouldFlash ? 'object-card--alarm-flash' : '';
+    card.className = `object-card ${alarmClass} ${flashClass}`;
     card.innerHTML = `
       <div class="object-card__title">${escapeHtml(space.name)}</div>
       ${hubOfflineLabel}
@@ -622,13 +653,14 @@ const renderObjects = (spaces) => {
       <div class="object-card__meta">${escapeHtml(space.address)}</div>
     `;
     card.addEventListener('click', () => {
+      clearUnackedAlarm(space.id);
       const url = new URL('main.html', window.location.href);
       url.searchParams.set('spaceId', space.id);
       window.location.href = url.toString();
     });
     grid.appendChild(card);
   });
-  setAlarmSoundActive(filtered.some((space) => isAlarmActiveForSpace(space, alarmState))).catch(() => null);
+  setAlarmSoundActive(filtered.some((space) => hasUnackedAlarm(space.id) || isAlarmActiveForSpace(space, alarmState))).catch(() => null);
 };
 
 const translateLogText = (text) => {
@@ -723,11 +755,6 @@ const renderLogs = (logs) => {
     const isRestore = log.type === 'restore';
     const isHub = log.type === 'hub_raw';
     const flashKey = `logFlash:${log.spaceName}:${logTimestamp ?? log.time}:${log.text}`;
-    const hasSeen = localStorage.getItem(flashKey);
-    if (isAlarm && logTimestamp && !hasSeen) {
-      localStorage.setItem(flashKey, String(Date.now()));
-      logFlashActive.set(flashKey, Date.now() + FLASH_DURATION_MS);
-    }
     const shouldFlash = logFlashActive.get(flashKey) > Date.now();
     if (!shouldFlash) {
       logFlashActive.delete(flashKey);
@@ -770,11 +797,18 @@ const fetchLogsChunked = async (baseUrl, totalLimit) => {
 };
 
 const loadLogs = async (reset = false) => {
+  let flashSince = null;
   if (reset) {
+    const previousTimestamp = state.lastLogTimestamp;
     const { logs, hasMore } = await fetchLogsChunked('/api/logs', state.logsLimit);
     state.logs = logs;
     state.logsOffset = logs.length;
     state.logsHasMore = hasMore;
+    const newestTimestamp = getLogTimestamp(logs[0]) ?? null;
+    state.lastLogTimestamp = newestTimestamp ?? state.lastLogTimestamp;
+    if (previousTimestamp) {
+      flashSince = previousTimestamp;
+    }
   } else {
     const resp = await apiFetch(`/api/logs?limit=200&offset=${state.logsOffset}`);
     const logs = resp.logs ?? [];
@@ -783,6 +817,7 @@ const loadLogs = async (reset = false) => {
     state.logsLimit = state.logsOffset;
     state.logsHasMore = Boolean(resp.hasMore);
   }
+  registerAlarmFlashes(state.logs, flashSince);
   renderLogs(state.logs);
 };
 

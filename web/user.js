@@ -11,6 +11,7 @@ const state = {
   logsOffset: 0,
   logsLimit: 200,
   logsHasMore: true,
+  lastLogTimestamp: null,
 };
 
 const detectBrowserLanguage = () => {
@@ -881,7 +882,7 @@ const filterLogs = (logs) => {
   return withoutHubEvents.filter((log) => log.type === state.logFilter);
 };
 
-const renderLogs = (logs) => {
+const renderLogs = (logs, { flashSince } = {}) => {
   const filtered = filterLogs(logs)
     .filter((log) => !/^Событие хаба/.test(log.text ?? ''));
   logTable.innerHTML = '';
@@ -902,7 +903,7 @@ const renderLogs = (logs) => {
     const logTimestamp = getLogTimestamp(log);
     const flashKey = `logFlash:user:${state.selectedSpaceId}:${logTimestamp ?? log.time}:${log.text}`;
     const hasSeen = localStorage.getItem(flashKey);
-    if (log.type === 'alarm' && logTimestamp && !hasSeen) {
+    if (log.type === 'alarm' && logTimestamp && flashSince && logTimestamp > flashSince && !hasSeen) {
       localStorage.setItem(flashKey, String(Date.now()));
       logFlashActive.set(flashKey, Date.now() + FLASH_DURATION_MS);
     }
@@ -952,7 +953,9 @@ const fetchLogsChunked = async (baseUrl, totalLimit) => {
 
 const loadLogs = async (reset = false) => {
   if (!state.selectedSpaceId) return;
+  let flashSince = null;
   if (reset) {
+    const previousTimestamp = state.lastLogTimestamp;
     const { logs, hasMore } = await fetchLogsChunked(
       `/api/spaces/${state.selectedSpaceId}/logs`,
       state.logsLimit,
@@ -960,6 +963,11 @@ const loadLogs = async (reset = false) => {
     state.logs = logs;
     state.logsOffset = logs.length;
     state.logsHasMore = hasMore;
+    const newestTimestamp = getLogTimestamp(logs[0]) ?? null;
+    state.lastLogTimestamp = newestTimestamp ?? state.lastLogTimestamp;
+    if (previousTimestamp) {
+      flashSince = previousTimestamp;
+    }
   } else {
     const resp = await apiFetch(`/api/spaces/${state.selectedSpaceId}/logs?limit=200&offset=${state.logsOffset}`);
     const logs = resp.logs ?? [];
@@ -968,7 +976,7 @@ const loadLogs = async (reset = false) => {
     state.logsLimit = state.logsOffset;
     state.logsHasMore = Boolean(resp.hasMore);
   }
-  renderLogs(state.logs);
+  renderLogs(state.logs, { flashSince });
 };
 
 const loadSpaces = async () => {
