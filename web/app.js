@@ -332,6 +332,16 @@ const getStatusLabel = (status) => {
   return translated;
 };
 
+const getDeviceStatusLabel = (status) => {
+  if (!status) return '—';
+  const key = `status.${status}`;
+  const translated = t(key);
+  if (!translated || translated === key) {
+    return statusMap[status] ?? status;
+  }
+  return translated;
+};
+
 const statusTone = {
   armed: 'status--armed',
   disarmed: 'status--disarmed',
@@ -1679,7 +1689,6 @@ const renderObjectList = () => {
     } ${alarmFlash ? 'object-card--alarm-flash' : ''}`;
     card.innerHTML = `
       <div class="object-card__title">${escapeHtml(space.name)}</div>
-      <div class="object-card__meta">${t('engineer.object.hubId')} ${escapeHtml(space.hubId ?? '—')}</div>
       ${hubOfflineLabel}
       <div class="object-card__status ${statusTone[space.status] ?? ''}">${getStatusLabel(space.status)}</div>
       <div class="object-card__meta">${t('engineer.object.server')}: ${escapeHtml(space.server ?? '—')}</div>
@@ -1730,7 +1739,7 @@ const renderDevices = (space) => {
 
   devices.forEach((device) => {
     const statusText = device.type === 'zone' || device.type === 'hub' || isHubExtensionType(device.type)
-      ? device.status
+      ? getDeviceStatusLabel(device.status)
       : '';
     const item = document.createElement('button');
     item.className = `device-item ${device.id === state.selectedDeviceId ? 'device-item--active' : ''}`;
@@ -1812,7 +1821,8 @@ const renderDeviceDetails = (device) => {
   const safeName = escapeHtml(device.name);
   const safeRoom = escapeHtml(device.room);
   const safeSide = escapeHtml(device.side ?? '');
-  const safeStatus = escapeHtml(device.status ?? '');
+  const statusLabel = getDeviceStatusLabel(device.status);
+  const safeStatus = escapeHtml(statusLabel);
   const safeReaderId = escapeHtml(device.config?.readerId ?? '');
   const safeType = escapeHtml(device.type);
   const safeId = escapeHtml(device.id);

@@ -591,7 +591,6 @@ const renderObjects = (spaces) => {
     card.className = `object-card ${shouldFlash ? 'object-card--alarm object-card--alarm-flash' : ''}`;
     card.innerHTML = `
       <div class="object-card__title">${escapeHtml(space.name)}</div>
-      <div class="object-card__meta">${t('pcn.object.hubId')} ${escapeHtml(space.hubId ?? '—')}</div>
       ${hubOfflineLabel}
       <div class="object-card__status ${statusTone[space.status] ?? ''}">${getStatusLabel(space.status)}</div>
       <div class="object-card__meta">${escapeHtml(space.server ?? '—')}</div>
@@ -643,6 +642,15 @@ const translateLogText = (text) => {
     { pattern: /^Обновлён ключ: (.+)$/, replacement: 'Key updated: $1' },
     { pattern: /^Пользователь покинул пространство: (.+)$/, replacement: 'User left space: $1' },
     { pattern: /^Пользователь удалён из пространства: (.+)$/, replacement: 'User removed from space: $1' },
+    { pattern: /^Группа '(.+)' поставлена под охрану$/, replacement: "Group '$1' armed" },
+    { pattern: /^Группа '(.+)' снята с охраны$/, replacement: "Group '$1' disarmed" },
+    { pattern: /^Постановка группы '(.+)' ключом: (.+)$/, replacement: "Group '$1' armed by key: $2" },
+    { pattern: /^Снятие группы '(.+)' ключом: (.+)$/, replacement: "Group '$1' disarmed by key: $2" },
+    { pattern: /^Добавлена группа: (.+)$/, replacement: 'Group added: $1' },
+    { pattern: /^Удалена группа: (.+)$/, replacement: 'Group removed: $1' },
+    { pattern: /^Переименована группа: (.+)$/, replacement: 'Group renamed: $1' },
+    { pattern: /^Режим групп включён$/, replacement: 'Groups mode enabled' },
+    { pattern: /^Режим групп отключён$/, replacement: 'Groups mode disabled' },
   ];
   for (const entry of translations) {
     if (entry.pattern.test(text)) {

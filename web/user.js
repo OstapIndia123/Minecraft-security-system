@@ -266,6 +266,16 @@ const statusTone = {
   partial: 'status--partial',
 };
 
+const getStatusLabel = (status) => {
+  if (!status) return '—';
+  const key = `status.${status}`;
+  const translated = t(key);
+  if (!translated || translated === key) {
+    return status;
+  }
+  return translated;
+};
+
 const applyTranslations = () => {
   const dict = translations[state.language] ?? translations.ru;
   document.querySelectorAll('[data-i18n]').forEach((node) => {
@@ -710,7 +720,9 @@ const renderDevices = (devices) => {
   }
 
   devices.forEach((device) => {
-    const statusText = device.type === 'zone' || device.type === 'hub' ? (device.status ?? '—') : '';
+    const statusText = device.type === 'zone' || device.type === 'hub'
+      ? getStatusLabel(device.status)
+      : '';
     const button = document.createElement('button');
     button.className = `device-item ${device.id === state.selectedDeviceId ? 'device-item--active' : ''}`;
     const displayName = device.type === 'key' ? t('device.keyMasked') : device.name;
