@@ -112,7 +112,7 @@
         </section>
 
         <section class="content">
-          <div class="tabs">
+          <div class="tabs tab-bar">
             <button class="tab tab--active" data-tab="user-equipment" data-i18n="user.tabs.equipment">Оборудование</button>
             <button class="tab" data-tab="user-log" data-i18n="user.tabs.log">Лог</button>
           </div>
@@ -164,14 +164,14 @@
     <div class="modal" id="actionModal" aria-hidden="true">
       <div class="modal__content">
         <div class="modal__header">
-          <h3 id="actionModalTitle">Подтвердите действие</h3>
+          <h3 id="actionModalTitle" data-i18n="common.actionConfirmTitle">Подтвердите действие</h3>
           <button class="ghost-button" id="closeActionModal" aria-label="Закрыть">✕</button>
         </div>
         <p id="actionModalMessage"></p>
         <form class="form-grid hidden" id="actionModalForm"></form>
         <div class="modal__actions">
-          <button class="button button--ghost" id="actionModalCancel" type="button">Отмена</button>
-          <button class="button button--primary" id="actionModalConfirm" type="button">Подтвердить</button>
+          <button class="button button--ghost" id="actionModalCancel" type="button" data-i18n="common.cancel">Отмена</button>
+          <button class="button button--primary" id="actionModalConfirm" type="button" data-i18n="common.confirm">Подтвердить</button>
         </div>
       </div>
     </div>

@@ -28,6 +28,92 @@ const escapeHtml = (value) => String(value ?? '')
   .replace(/"/g, '&quot;')
   .replace(/'/g, '&#39;');
 
+const getDeviceTypeToken = (type) => {
+  const raw = String(type ?? '').trim().toLowerCase();
+  if (['hub_extension', 'hub-extension', 'hub extension', 'hubextension', 'extension'].includes(raw)) {
+    return 'hub_extension';
+  }
+  if (raw === 'output_light' || raw === 'output light') return 'output-light';
+  return raw;
+};
+
+const deviceIcon = (type) => {
+  const token = getDeviceTypeToken(type);
+  const base = 'fill=\"none\" stroke=\"currentColor\" stroke-width=\"1.7\" stroke-linecap=\"round\" stroke-linejoin=\"round\"';
+  switch (token) {
+    case 'zone':
+      return `
+        <svg viewBox=\"0 0 24 24\" ${base} aria-hidden=\"true\">
+          <circle cx=\"12\" cy=\"12\" r=\"2.5\" />
+          <path d=\"M4.5 12a7.5 7.5 0 0 1 3.2-6.1\" />
+          <path d=\"M19.5 12a7.5 7.5 0 0 0-3.2-6.1\" />
+          <path d=\"M4.5 12a7.5 7.5 0 0 0 3.2 6.1\" />
+          <path d=\"M19.5 12a7.5 7.5 0 0 1-3.2 6.1\" />
+        </svg>
+      `;
+    case 'siren':
+      return `
+        <svg viewBox=\"0 0 24 24\" ${base} aria-hidden=\"true\">
+          <path d=\"M7 16a5 5 0 0 1 10 0\" />
+          <path d=\"M6 16h12\" />
+          <path d=\"M8.5 8.5a5 5 0 0 1 7 0\" />
+          <path d=\"M12 5v2\" />
+        </svg>
+      `;
+    case 'output-light':
+      return `
+        <svg viewBox=\"0 0 24 24\" ${base} aria-hidden=\"true\">
+          <path d=\"M9 18h6\" />
+          <path d=\"M8 9a4 4 0 1 1 8 0c0 2-1.1 2.6-2 4h-4c-.9-1.4-2-2-2-4z\" />
+          <path d=\"M10 21h4\" />
+        </svg>
+      `;
+    case 'reader':
+      return `
+        <svg viewBox=\"0 0 24 24\" ${base} aria-hidden=\"true\">
+          <rect x=\"6\" y=\"3.5\" width=\"12\" height=\"17\" rx=\"2\" />
+          <path d=\"M9 8h6\" />
+          <path d=\"M9 12h6\" />
+          <path d=\"M9 16h4\" />
+        </svg>
+      `;
+    case 'key':
+      return `
+        <svg viewBox=\"0 0 24 24\" ${base} aria-hidden=\"true\">
+          <circle cx=\"8.5\" cy=\"12\" r=\"3\" />
+          <path d=\"M11.5 12h8\" />
+          <path d=\"M16 12v3\" />
+          <path d=\"M18.5 12v2\" />
+        </svg>
+      `;
+    case 'hub':
+      return `
+        <svg viewBox=\"0 0 24 24\" ${base} aria-hidden=\"true\">
+          <rect x=\"4\" y=\"4\" width=\"16\" height=\"6\" rx=\"2\" />
+          <rect x=\"4\" y=\"14\" width=\"16\" height=\"6\" rx=\"2\" />
+          <path d=\"M8 7h0\" />
+          <path d=\"M8 17h0\" />
+        </svg>
+      `;
+    case 'hub_extension':
+      return `
+        <svg viewBox=\"0 0 24 24\" ${base} aria-hidden=\"true\">
+          <path d=\"M8 7h8v4a4 4 0 0 1-8 0z\" />
+          <path d=\"M12 3v4\" />
+          <path d=\"M10 19h4\" />
+          <path d=\"M9 21h6\" />
+        </svg>
+      `;
+    default:
+      return `
+        <svg viewBox=\"0 0 24 24\" ${base} aria-hidden=\"true\">
+          <rect x=\"5\" y=\"5\" width=\"14\" height=\"14\" rx=\"3\" />
+          <path d=\"M9 12h6\" />
+        </svg>
+      `;
+  }
+};
+
 const objectList = document.getElementById('userObjectList');
 const spaceIdEl = document.getElementById('userSpaceName');
 const spaceStateEl = document.getElementById('userSpaceState');
@@ -92,6 +178,13 @@ const translations = {
     'profile.language': 'Язык',
     'profile.switchPro': 'Перейти на PRO',
     'profile.logout': 'Выйти',
+    'device.type': 'Тип',
+    'device.side': 'Сторона',
+    'device.keyMasked': 'Ключ: *****',
+    'common.close': 'Закрыть',
+    'common.cancel': 'Отмена',
+    'common.confirm': 'Подтвердить',
+    'common.actionConfirmTitle': 'Подтвердите действие',
     'user.pageTitle': 'Minecraft Security System — Режим пользователя',
   },
   'en-US': {
@@ -127,6 +220,13 @@ const translations = {
     'profile.language': 'Language',
     'profile.switchPro': 'Go to PRO',
     'profile.logout': 'Sign out',
+    'device.type': 'Type',
+    'device.side': 'Side',
+    'device.keyMasked': 'Key: *****',
+    'common.close': 'Close',
+    'common.cancel': 'Cancel',
+    'common.confirm': 'Confirm',
+    'common.actionConfirmTitle': 'Confirm action',
     'user.pageTitle': 'Minecraft Security System — User mode',
   },
 };
@@ -544,11 +644,15 @@ const renderDevices = (devices) => {
     const statusText = device.type === 'zone' || device.type === 'hub' ? (device.status ?? '—') : '';
     const button = document.createElement('button');
     button.className = `device-item ${device.id === state.selectedDeviceId ? 'device-item--active' : ''}`;
-    const displayName = device.type === 'key' ? 'Ключ: *****' : device.name;
+    const displayName = device.type === 'key' ? t('device.keyMasked') : device.name;
+    const deviceTypeToken = getDeviceTypeToken(device.type);
     button.innerHTML = `
-      <div>
-        <div class="device-item__title">${escapeHtml(displayName)}</div>
-        <div class="device-item__meta">${escapeHtml(device.room ?? '—')}</div>
+      <div class="device-item__content">
+        <div class="device-avatar" data-type="${deviceTypeToken}">${deviceIcon(device.type)}</div>
+        <div>
+          <div class="device-item__title">${escapeHtml(displayName)}</div>
+          <div class="device-item__meta">${escapeHtml(device.room ?? '—')}</div>
+        </div>
       </div>
       <span class="device-item__status">${escapeHtml(statusText)}</span>
     `;
@@ -557,12 +661,24 @@ const renderDevices = (devices) => {
       renderDevices(devices);
       const keyGroups = device.config?.groups ?? [];
       const hasGroupAccess = keyGroups.some((groupId) => allowedGroups.has(groupId));
-      const detailTitle = device.type === 'key' && !hasGroupAccess ? 'Ключ: *****' : device.name;
+      const detailTitle = device.type === 'key' && !hasGroupAccess ? t('device.keyMasked') : device.name;
       deviceDetails.innerHTML = `
-        <div class="detail-card">
-          <h3>${escapeHtml(detailTitle)}</h3>
-          <p>Тип: ${escapeHtml(device.type)}</p>
-          <p>Сторона: ${escapeHtml(device.side ?? '—')}</p>
+        <div class="device-details__header">
+          <div class="device-avatar" data-type="${deviceTypeToken}">${deviceIcon(device.type)}</div>
+          <div>
+            <div class="device-details__title">${escapeHtml(detailTitle)}</div>
+            <div class="device-details__meta">${escapeHtml(device.room ?? '—')}</div>
+          </div>
+        </div>
+        <div class="device-details__stats">
+          <div class="stat">
+            <span>${t('device.type')}</span>
+            <strong>${escapeHtml(device.type)}</strong>
+          </div>
+          <div class="stat">
+            <span>${t('device.side')}</span>
+            <strong>${escapeHtml(device.side ?? '—')}</strong>
+          </div>
         </div>
       `;
     });
@@ -614,6 +730,9 @@ const translateLogText = (text) => {
     { pattern: /^Группа '(.+)' снята с охраны$/, replacement: "Group '$1' disarmed" },
     { pattern: /^Постановка группы '(.+)' ключом: (.+)$/, replacement: "Group '$1' armed by key: $2" },
     { pattern: /^Снятие группы '(.+)' ключом: (.+)$/, replacement: "Group '$1' disarmed by key: $2" },
+    { pattern: /^Добавлена группа: (.+)$/, replacement: 'Group added: $1' },
+    { pattern: /^Удалена группа: (.+)$/, replacement: 'Group removed: $1' },
+    { pattern: /^Переименована группа: (.+)$/, replacement: 'Group renamed: $1' },
     { pattern: /^Режим групп включён$/, replacement: 'Groups mode enabled' },
     { pattern: /^Режим групп отключён$/, replacement: 'Groups mode disabled' },
     { pattern: /^Тревога шлейфа: (.+) \[(.+)\]$/, replacement: 'Zone alarm: $1 [$2]' },

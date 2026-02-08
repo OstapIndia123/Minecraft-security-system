@@ -56,6 +56,90 @@ const escapeHtml = (value) => String(value ?? '')
   .replace(/"/g, '&quot;')
   .replace(/'/g, '&#39;');
 
+const getDeviceTypeToken = (type) => {
+  const raw = String(type ?? '').trim().toLowerCase();
+  if (isHubExtensionType(raw)) return 'hub_extension';
+  if (raw === 'output_light' || raw === 'output light') return 'output-light';
+  return raw;
+};
+
+const deviceIcon = (type) => {
+  const token = getDeviceTypeToken(type);
+  const base = 'fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"';
+  switch (token) {
+    case 'zone':
+      return `
+        <svg viewBox="0 0 24 24" ${base} aria-hidden="true">
+          <circle cx="12" cy="12" r="2.5" />
+          <path d="M4.5 12a7.5 7.5 0 0 1 3.2-6.1" />
+          <path d="M19.5 12a7.5 7.5 0 0 0-3.2-6.1" />
+          <path d="M4.5 12a7.5 7.5 0 0 0 3.2 6.1" />
+          <path d="M19.5 12a7.5 7.5 0 0 1-3.2 6.1" />
+        </svg>
+      `;
+    case 'siren':
+      return `
+        <svg viewBox="0 0 24 24" ${base} aria-hidden="true">
+          <path d="M7 16a5 5 0 0 1 10 0" />
+          <path d="M6 16h12" />
+          <path d="M8.5 8.5a5 5 0 0 1 7 0" />
+          <path d="M12 5v2" />
+        </svg>
+      `;
+    case 'output-light':
+      return `
+        <svg viewBox="0 0 24 24" ${base} aria-hidden="true">
+          <path d="M9 18h6" />
+          <path d="M8 9a4 4 0 1 1 8 0c0 2-1.1 2.6-2 4h-4c-.9-1.4-2-2-2-4z" />
+          <path d="M10 21h4" />
+        </svg>
+      `;
+    case 'reader':
+      return `
+        <svg viewBox="0 0 24 24" ${base} aria-hidden="true">
+          <rect x="6" y="3.5" width="12" height="17" rx="2" />
+          <path d="M9 8h6" />
+          <path d="M9 12h6" />
+          <path d="M9 16h4" />
+        </svg>
+      `;
+    case 'key':
+      return `
+        <svg viewBox="0 0 24 24" ${base} aria-hidden="true">
+          <circle cx="8.5" cy="12" r="3" />
+          <path d="M11.5 12h8" />
+          <path d="M16 12v3" />
+          <path d="M18.5 12v2" />
+        </svg>
+      `;
+    case 'hub':
+      return `
+        <svg viewBox="0 0 24 24" ${base} aria-hidden="true">
+          <rect x="4" y="4" width="16" height="6" rx="2" />
+          <rect x="4" y="14" width="16" height="6" rx="2" />
+          <path d="M8 7h0" />
+          <path d="M8 17h0" />
+        </svg>
+      `;
+    case 'hub_extension':
+      return `
+        <svg viewBox="0 0 24 24" ${base} aria-hidden="true">
+          <path d="M8 7h8v4a4 4 0 0 1-8 0z" />
+          <path d="M12 3v4" />
+          <path d="M10 19h4" />
+          <path d="M9 21h6" />
+        </svg>
+      `;
+    default:
+      return `
+        <svg viewBox="0 0 24 24" ${base} aria-hidden="true">
+          <rect x="5" y="5" width="14" height="14" rx="3" />
+          <path d="M9 12h6" />
+        </svg>
+      `;
+  }
+};
+
 const alarmAudio = typeof Audio !== 'undefined' ? new Audio(ALARM_SOUND_PATH) : null;
 if (alarmAudio) {
   alarmAudio.loop = true;
@@ -370,12 +454,123 @@ const translations = {
     'errors.deviceTypeLimit': 'В пространство можно добавить до 6 устройств каждого типа.',
     'errors.zoneLimit': 'В пространство можно добавить до 32 зон.',
     'errors.keyLimit': 'В пространство можно добавить до 32 ключей.',
+    'errors.playerNotFound': 'Такого игрока не существует.',
+    'errors.nicknameTooLong': 'Ник должен быть не длиннее 16 символов.',
+    'errors.invalidNickname': 'Введите корректный ник.',
+    'errors.nicknameTaken': 'Такой ник уже используется.',
+    'errors.nicknameCooldown': 'Сменить ник можно раз в 7 дней.',
+    'errors.nicknameAlreadySet': 'Ник уже установлен.',
+    'errors.spaceCreateCooldownUntil': 'Создавать объекты можно не чаще, чем раз в 15 минут. Доступно после',
+    'errors.spaceCreateCooldown': 'Создавать объекты можно не чаще, чем раз в 15 минут.',
+    'errors.noteTooLong': 'Примечание должно быть до 100 символов.',
+    'errors.fieldTooLong': 'Слишком длинное значение в поле.',
+    'errors.invalidUrl': 'Некорректная ссылка.',
+    'errors.hubPending': 'Этот хаб уже ожидает регистрации.',
+    'errors.userBlocked': 'Ваш аккаунт заблокирован администратором.',
+    'errors.dbAuthFailed': 'Ошибка подключения к базе данных. Проверьте POSTGRES_PASSWORD и перезапустите Docker Compose.',
+    'errors.invalidHubId': 'Некорректный ID хаба.',
+    'errors.invalidExtensionId': 'Некорректный ID модуля расширения.',
+    'errors.extensionNotFound': 'Модуль расширения не найден.',
+    'errors.extensionIdTaken': 'Такой ID модуля расширения уже используется.',
+    'errors.dataLoadFailed': 'Не удалось загрузить данные.',
+    'errors.logLoadFailed': 'Не удалось загрузить журнал.',
+    'errors.statusUpdateFailed': 'Ошибка обновления статуса.',
+    'errors.userDeleteFailed': 'Не удалось удалить пользователя.',
+    'errors.userGroupsUpdateFailed': 'Не удалось обновить группы пользователя.',
+    'errors.spaceLeaveFailed': 'Не удалось покинуть пространство.',
+    'errors.installerDeleteFailed': 'Не удалось удалить инженера.',
+    'errors.contactDeleteFailed': 'Не удалось удалить контакт.',
+    'errors.contactUpdateFailed': 'Не удалось обновить контакт.',
+    'errors.noteDeleteFailed': 'Не удалось удалить примечание.',
+    'errors.noteUpdateFailed': 'Не удалось обновить примечание.',
+    'errors.photoDeleteFailed': 'Не удалось удалить фото.',
+    'errors.photoUpdateFailed': 'Не удалось обновить фото.',
+    'errors.groupModeToggleFailed': 'Не удалось переключить режим групп.',
+    'errors.groupCreateFailed': 'Не удалось создать группу.',
+    'errors.groupRenameFailed': 'Не удалось переименовать группу.',
+    'errors.groupDeviceUpdateFailed': 'Не удалось обновить группу устройства.',
+    'errors.groupDeleteFailed': 'Не удалось удалить группу.',
+    'errors.groupArmFailed': 'Не удалось поставить группу под охрану.',
+    'errors.groupDisarmFailed': 'Не удалось снять группу с охраны.',
+    'errors.spaceDeleteFailed': 'Не удалось удалить пространство.',
+    'errors.hubDeleteFailed': 'Не удалось удалить хаб.',
+    'errors.spaceCreateFailed': 'Не удалось создать пространство.',
+    'errors.deviceAddFailed': 'Не удалось добавить устройство.',
+    'errors.deviceDeleteFailed': 'Не удалось удалить устройство.',
+    'errors.deviceUpdateFailed': 'Не удалось обновить устройство.',
+    'errors.keyReadFailed': 'Не удалось считать ключ.',
+    'errors.contactAddFailed': 'Не удалось добавить контакт.',
+    'errors.noteAddFailed': 'Не удалось добавить примечание.',
+    'errors.userAddFailed': 'Не удалось добавить пользователя.',
+    'errors.installerAddFailed': 'Не удалось добавить инженера.',
+    'errors.photoAddFailed': 'Не удалось добавить фото.',
+    'errors.spaceUpdateFailed': 'Не удалось обновить объект.',
+    'errors.hubAttachFailed': 'Не удалось привязать хаб.',
+    'errors.nicknameUpdateFailed': 'Не удалось обновить ник.',
+    'errors.lastInstallerRequired': 'Нельзя удалить последнего инженера монтажа.',
+    'device.type': 'Тип',
+    'device.status': 'Статус',
+    'device.side': 'Сторона',
+    'device.deleteKey': 'Удалить ключ',
+    'device.deleteDevice': 'Удалить устройство',
+    'device.refreshStatus': 'Обновить статус',
+    'confirm.deleteKey': 'Удалить ключ?',
+    'confirm.deleteKeyTitle': 'Удаление ключа',
+    'confirm.deleteDevice': 'Удалить устройство?',
+    'confirm.deleteDeviceTitle': 'Удаление устройства',
+    'confirm.deleteContact': 'Удалить контактное лицо?',
+    'confirm.deleteContactTitle': 'Удаление контакта',
+    'confirm.deleteNote': 'Удалить примечание?',
+    'confirm.deleteNoteTitle': 'Удаление примечания',
+    'confirm.deletePhoto': 'Удалить фото?',
+    'confirm.deletePhotoTitle': 'Удаление фото',
+    'confirm.deleteGroup': 'Удалить группу?',
+    'confirm.deleteGroupTitle': 'Удаление группы',
+    'confirm.deleteSpace': 'Удалить объект?',
+    'confirm.deleteSpaceTitle': 'Удаление объекта',
+    'confirm.deleteHub': 'Удалить хаб из пространства?',
+    'confirm.deleteHubTitle': 'Удаление хаба',
+    'toast.deviceDeleted': 'Устройство удалено.',
+    'toast.deviceUpdated': 'Устройство обновлено.',
+    'toast.statusUpdated': 'Статус обновлён.',
+    'toast.userRoleRemoved': 'Роль пользователя удалена.',
+    'toast.groupsUpdated': 'Группы обновлены.',
+    'toast.spaceLeft': 'Вы покинули пространство.',
+    'toast.contactDeleted': 'Контакт удалён.',
+    'toast.contactUpdated': 'Контакт обновлён.',
+    'toast.noteDeleted': 'Примечание удалено.',
+    'toast.noteUpdated': 'Примечание обновлено.',
+    'toast.photoDeleted': 'Фото удалено.',
+    'toast.photoUpdated': 'Фото обновлено.',
+    'toast.armingStarted': 'Запущена постановка под охрану.',
+    'toast.spaceArmed': 'Объект поставлен под охрану.',
+    'toast.spaceDisarmed': 'Объект снят с охраны.',
+    'toast.groupCreated': 'Группа создана.',
+    'toast.groupRenamed': 'Группа переименована.',
+    'toast.deviceGroupUpdated': 'Группа для устройства обновлена.',
+    'toast.groupDeleted': 'Группа удалена.',
+    'toast.groupArmed': 'Группа поставлена под охрану.',
+    'toast.groupDisarmed': 'Группа снята с охраны.',
+    'toast.spaceSynced': 'Данные синхронизированы с хабами.',
+    'toast.spaceDeleted': 'Пространство удалено.',
+    'toast.hubRemoved': 'Хаб удалён из пространства.',
+    'toast.spaceCreated': 'Пространство создано.',
+    'toast.deviceAdded': 'Устройство добавлено.',
+    'toast.keyRead': 'Ключ считан.',
+    'toast.contactAdded': 'Контакт добавлен.',
+    'toast.noteAdded': 'Примечание добавлено.',
+    'toast.userAdded': 'Пользователь добавлен.',
+    'toast.installerAdded': 'Инженер добавлен.',
+    'toast.photoAdded': 'Фото добавлено.',
+    'toast.infoUpdated': 'Информация обновлена.',
+    'toast.hubAttached': 'Хаб привязан.',
     'common.close': 'Закрыть',
     'common.back': 'Назад',
     'common.loading': 'Выполняется действие...',
     'common.actionConfirmTitle': 'Подтвердите действие',
     'common.cancel': 'Отмена',
     'common.confirm': 'Подтвердить',
+    'common.delete': 'Удалить',
     'common.guardTitle': 'Действие недоступно',
     'common.guardMessage': 'Невозможно выполнить действие: объект под охраной.',
     'common.ok': 'Понятно',
@@ -566,12 +761,123 @@ const translations = {
     'errors.deviceTypeLimit': 'You can add up to 6 devices of each type to a space.',
     'errors.zoneLimit': 'You can add up to 32 zones to a space.',
     'errors.keyLimit': 'You can add up to 32 keys to a space.',
+    'errors.playerNotFound': 'Player not found.',
+    'errors.nicknameTooLong': 'Nickname must be 16 characters or fewer.',
+    'errors.invalidNickname': 'Please enter a valid nickname.',
+    'errors.nicknameTaken': 'That nickname is already in use.',
+    'errors.nicknameCooldown': 'You can change your nickname once every 7 days.',
+    'errors.nicknameAlreadySet': 'Nickname already set.',
+    'errors.spaceCreateCooldownUntil': 'You can create spaces no more than once every 15 minutes. Available after',
+    'errors.spaceCreateCooldown': 'You can create spaces no more than once every 15 minutes.',
+    'errors.noteTooLong': 'Notes must be 100 characters or fewer.',
+    'errors.fieldTooLong': 'Value is too long.',
+    'errors.invalidUrl': 'Invalid URL.',
+    'errors.hubPending': 'This hub is already awaiting registration.',
+    'errors.userBlocked': 'Your account has been blocked by an administrator.',
+    'errors.dbAuthFailed': 'Database connection error. Check POSTGRES_PASSWORD and restart Docker Compose.',
+    'errors.invalidHubId': 'Invalid hub ID.',
+    'errors.invalidExtensionId': 'Invalid extension module ID.',
+    'errors.extensionNotFound': 'Extension module not found.',
+    'errors.extensionIdTaken': 'That extension module ID is already in use.',
+    'errors.dataLoadFailed': 'Failed to load data.',
+    'errors.logLoadFailed': 'Failed to load logs.',
+    'errors.statusUpdateFailed': 'Failed to update status.',
+    'errors.userDeleteFailed': 'Failed to remove the user.',
+    'errors.userGroupsUpdateFailed': 'Failed to update user groups.',
+    'errors.spaceLeaveFailed': 'Failed to leave the space.',
+    'errors.installerDeleteFailed': 'Failed to remove the installer.',
+    'errors.contactDeleteFailed': 'Failed to remove the contact.',
+    'errors.contactUpdateFailed': 'Failed to update the contact.',
+    'errors.noteDeleteFailed': 'Failed to remove the note.',
+    'errors.noteUpdateFailed': 'Failed to update the note.',
+    'errors.photoDeleteFailed': 'Failed to remove the photo.',
+    'errors.photoUpdateFailed': 'Failed to update the photo.',
+    'errors.groupModeToggleFailed': 'Failed to toggle groups mode.',
+    'errors.groupCreateFailed': 'Failed to create the group.',
+    'errors.groupRenameFailed': 'Failed to rename the group.',
+    'errors.groupDeviceUpdateFailed': 'Failed to update the device group.',
+    'errors.groupDeleteFailed': 'Failed to delete the group.',
+    'errors.groupArmFailed': 'Failed to arm the group.',
+    'errors.groupDisarmFailed': 'Failed to disarm the group.',
+    'errors.spaceDeleteFailed': 'Failed to delete the space.',
+    'errors.hubDeleteFailed': 'Failed to remove the hub.',
+    'errors.spaceCreateFailed': 'Failed to create the space.',
+    'errors.deviceAddFailed': 'Failed to add the device.',
+    'errors.deviceDeleteFailed': 'Failed to delete the device.',
+    'errors.deviceUpdateFailed': 'Failed to update the device.',
+    'errors.keyReadFailed': 'Failed to read the key.',
+    'errors.contactAddFailed': 'Failed to add the contact.',
+    'errors.noteAddFailed': 'Failed to add the note.',
+    'errors.userAddFailed': 'Failed to add the user.',
+    'errors.installerAddFailed': 'Failed to add the installer.',
+    'errors.photoAddFailed': 'Failed to add the photo.',
+    'errors.spaceUpdateFailed': 'Failed to update the space.',
+    'errors.hubAttachFailed': 'Failed to attach the hub.',
+    'errors.nicknameUpdateFailed': 'Failed to update nickname.',
+    'errors.lastInstallerRequired': 'You cannot remove the last installer.',
+    'device.type': 'Type',
+    'device.status': 'Status',
+    'device.side': 'Side',
+    'device.deleteKey': 'Delete key',
+    'device.deleteDevice': 'Delete device',
+    'device.refreshStatus': 'Refresh status',
+    'confirm.deleteKey': 'Delete key?',
+    'confirm.deleteKeyTitle': 'Delete key',
+    'confirm.deleteDevice': 'Delete device?',
+    'confirm.deleteDeviceTitle': 'Delete device',
+    'confirm.deleteContact': 'Delete contact?',
+    'confirm.deleteContactTitle': 'Delete contact',
+    'confirm.deleteNote': 'Delete note?',
+    'confirm.deleteNoteTitle': 'Delete note',
+    'confirm.deletePhoto': 'Delete photo?',
+    'confirm.deletePhotoTitle': 'Delete photo',
+    'confirm.deleteGroup': 'Delete group?',
+    'confirm.deleteGroupTitle': 'Delete group',
+    'confirm.deleteSpace': 'Delete space?',
+    'confirm.deleteSpaceTitle': 'Delete space',
+    'confirm.deleteHub': 'Remove hub from space?',
+    'confirm.deleteHubTitle': 'Remove hub',
+    'toast.deviceDeleted': 'Device deleted.',
+    'toast.deviceUpdated': 'Device updated.',
+    'toast.statusUpdated': 'Status updated.',
+    'toast.userRoleRemoved': 'User role removed.',
+    'toast.groupsUpdated': 'Groups updated.',
+    'toast.spaceLeft': 'You left the space.',
+    'toast.contactDeleted': 'Contact deleted.',
+    'toast.contactUpdated': 'Contact updated.',
+    'toast.noteDeleted': 'Note deleted.',
+    'toast.noteUpdated': 'Note updated.',
+    'toast.photoDeleted': 'Photo deleted.',
+    'toast.photoUpdated': 'Photo updated.',
+    'toast.armingStarted': 'Arming started.',
+    'toast.spaceArmed': 'Space armed.',
+    'toast.spaceDisarmed': 'Space disarmed.',
+    'toast.groupCreated': 'Group created.',
+    'toast.groupRenamed': 'Group renamed.',
+    'toast.deviceGroupUpdated': 'Device group updated.',
+    'toast.groupDeleted': 'Group deleted.',
+    'toast.groupArmed': 'Group armed.',
+    'toast.groupDisarmed': 'Group disarmed.',
+    'toast.spaceSynced': 'Data synced with hubs.',
+    'toast.spaceDeleted': 'Space deleted.',
+    'toast.hubRemoved': 'Hub removed from space.',
+    'toast.spaceCreated': 'Space created.',
+    'toast.deviceAdded': 'Device added.',
+    'toast.keyRead': 'Key read.',
+    'toast.contactAdded': 'Contact added.',
+    'toast.noteAdded': 'Note added.',
+    'toast.userAdded': 'User added.',
+    'toast.installerAdded': 'Installer added.',
+    'toast.photoAdded': 'Photo added.',
+    'toast.infoUpdated': 'Information updated.',
+    'toast.hubAttached': 'Hub attached.',
     'common.close': 'Close',
     'common.back': 'Back',
     'common.loading': 'Working on it...',
     'common.actionConfirmTitle': 'Confirm action',
     'common.cancel': 'Cancel',
     'common.confirm': 'Confirm',
+    'common.delete': 'Delete',
     'common.guardTitle': 'Action unavailable',
     'common.guardMessage': 'Unable to perform the action: the space is armed.',
     'common.ok': 'OK',
@@ -987,12 +1293,12 @@ const openActionModal = ({
   actionModal.classList.add('modal--open');
 });
 
-const confirmAction = async (message, title = 'Подтвердите действие') => {
-  const result = await openActionModal({ title, message, confirmText: 'Удалить' });
+const confirmAction = async (message, title = t('common.actionConfirmTitle')) => {
+  const result = await openActionModal({ title, message, confirmText: t('common.delete') });
   return Boolean(result?.confirmed);
 };
 
-const promptAction = async ({ title, message, fields, confirmText = 'Сохранить' }) => {
+const promptAction = async ({ title, message, fields, confirmText = t('common.save') }) => {
   const result = await openActionModal({ title, message, confirmText, fields });
   return result?.confirmed ? result.values : null;
 };
@@ -1086,72 +1392,72 @@ const handleApiError = (error, fallbackMessage) => {
     return;
   }
   if (error.message === 'user_not_found') {
-    showToast('Такого игрока не существует.');
+    showToast(t('errors.playerNotFound'));
     return;
   }
   if (error.message === 'nickname_too_long') {
-    showToast('Ник должен быть не длиннее 16 символов.');
+    showToast(t('errors.nicknameTooLong'));
     return;
   }
   if (error.message === 'invalid_nickname') {
-    showToast('Введите корректный ник.');
+    showToast(t('errors.invalidNickname'));
     return;
   }
   if (error.message === 'nickname_taken') {
-    showToast('Такой ник уже используется.');
+    showToast(t('errors.nicknameTaken'));
     return;
   }
   if (error.message === 'nickname_cooldown') {
-    showToast('Сменить ник можно раз в 7 дней.');
+    showToast(t('errors.nicknameCooldown'));
     return;
   }
   if (error.message === 'space_create_cooldown' || error.status === 429) {
     const lockUntil = handleSpaceCreateCooldown(error.retryAfterMs);
     if (lockUntil) {
-      showToast(`Создавать объекты можно не чаще, чем раз в 15 минут. Доступно после ${formatLockUntil(lockUntil)}.`);
+      showToast(`${t('errors.spaceCreateCooldownUntil')} ${formatLockUntil(lockUntil)}.`);
     } else {
-      showToast('Создавать объекты можно не чаще, чем раз в 15 минут.');
+      showToast(t('errors.spaceCreateCooldown'));
     }
     return;
   }
   if (error.message === 'note_too_long') {
-    showToast('Примечание должно быть до 100 символов.');
+    showToast(t('errors.noteTooLong'));
     return;
   }
   if (error.message === 'field_too_long') {
-    showToast('Слишком длинное значение в поле.');
+    showToast(t('errors.fieldTooLong'));
     return;
   }
   if (error.message === 'invalid_url') {
-    showToast('Некорректная ссылка.');
+    showToast(t('errors.invalidUrl'));
     return;
   }
   if (error.message === 'hub_pending') {
-    showToast('Этот хаб уже ожидает регистрации.');
+    showToast(t('errors.hubPending'));
     return;
   }
   if (error.message === 'user_blocked') {
-    showToast('Ваш аккаунт заблокирован администратором.');
+    showToast(t('errors.userBlocked'));
     return;
   }
   if (error.message === 'db_auth_failed') {
-    showToast('Ошибка подключения к базе данных. Проверьте POSTGRES_PASSWORD и перезапустите Docker Compose.');
+    showToast(t('errors.dbAuthFailed'));
     return;
   }
   if (error.message === 'invalid_hub_id') {
-    showToast('Некорректный ID хаба.');
+    showToast(t('errors.invalidHubId'));
     return;
   }
   if (error.message === 'invalid_extension_id') {
-    showToast('Некорректный ID модуля расширения.');
+    showToast(t('errors.invalidExtensionId'));
     return;
   }
   if (error.message === 'extension_not_found') {
-    showToast('Модуль расширения не найден.');
+    showToast(t('errors.extensionNotFound'));
     return;
   }
   if (error.message === 'extension_id_taken') {
-    showToast('Такой ID модуля расширения уже используется.');
+    showToast(t('errors.extensionIdTaken'));
     return;
   }
   const errorMessage = error?.message ?? '';
@@ -1249,7 +1555,7 @@ const loadSpaces = async () => {
     }
   } catch (error) {
     console.error(error);
-    showToast('Не удалось загрузить данные.');
+    showToast(t('errors.dataLoadFailed'));
   }
 };
 
@@ -1291,7 +1597,7 @@ const loadLogs = async (spaceId, reset = true) => {
     space.logsHasMore = Boolean(resp.hasMore);
   } catch (error) {
     console.error(error);
-    showToast('Не удалось загрузить журнал.');
+    showToast(t('errors.logLoadFailed'));
   }
 };
 
@@ -1472,7 +1778,7 @@ const updateCreateExtensionOptions = async () => {
 
 const renderDeviceDetails = (device) => {
   const canDelete = device.type !== 'hub';
-  const deleteLabel = device.type === 'key' ? 'Удалить ключ' : 'Удалить устройство';
+  const deleteLabel = device.type === 'key' ? t('device.deleteKey') : t('device.deleteDevice');
   const safeName = escapeHtml(device.name);
   const safeRoom = escapeHtml(device.room);
   const safeSide = escapeHtml(device.side ?? '');
@@ -1480,12 +1786,13 @@ const renderDeviceDetails = (device) => {
   const safeReaderId = escapeHtml(device.config?.readerId ?? '');
   const safeType = escapeHtml(device.type);
   const safeId = escapeHtml(device.id);
+  const deviceTypeToken = getDeviceTypeToken(device.type);
   const space = spaces.find((item) => item.id === state.selectedSpaceId);
   const extensionDevices = getSpaceExtensionDevices(space);
   const statusBlock = device.type === 'zone' || device.type === 'hub' || isHubExtensionType(device.type)
     ? `
       <div class="stat">
-        <span>Статус</span>
+        <span>${t('device.status')}</span>
         <strong>${safeStatus}</strong>
       </div>
     `
@@ -1645,7 +1952,7 @@ const renderDeviceDetails = (device) => {
 
   deviceDetails.innerHTML = `
     <div class="device-details__header">
-      <div class="device-avatar">${device.type.toUpperCase()}</div>
+      <div class="device-avatar" data-type="${deviceTypeToken}">${deviceIcon(device.type)}</div>
       <div>
         <div class="device-details__title">${safeName}</div>
         <div class="device-details__meta">${safeRoom}</div>
@@ -1654,7 +1961,7 @@ const renderDeviceDetails = (device) => {
     <div class="device-details__stats">
       ${statusBlock}
       <div class="stat">
-        <span>Тип</span>
+        <span>${t('device.type')}</span>
         <strong>${safeType}</strong>
       </div>
       <div class="stat">
@@ -1671,7 +1978,7 @@ const renderDeviceDetails = (device) => {
       </form>
     ` : ''}
     ${isHubExtensionType(device.type)
-      ? '<button class="button button--ghost" id="refreshExtensionStatus">Обновить статус</button>'
+      ? `<button class="button button--ghost" id="refreshExtensionStatus">${t('device.refreshStatus')}</button>`
       : ''}
     ${canDelete ? `<button class="button button--ghost button--danger" id="deleteDevice">${deleteLabel}</button>` : ''}
   `;
@@ -1685,21 +1992,21 @@ const renderDeviceDetails = (device) => {
 
       try {
         if (device.type === 'key') {
-          if (!await confirmAction('Удалить ключ?', 'Удаление ключа')) return;
+          if (!await confirmAction(t('confirm.deleteKey'), t('confirm.deleteKeyTitle'))) return;
           showLoading();
           await apiFetch(`/api/spaces/${space.id}/keys/${device.config.keyId}`, { method: 'DELETE' });
         } else {
-          if (!await confirmAction('Удалить устройство?', 'Удаление устройства')) return;
+          if (!await confirmAction(t('confirm.deleteDevice'), t('confirm.deleteDeviceTitle'))) return;
           showLoading();
           await apiFetch(`/api/spaces/${space.id}/devices/${device.id}`, { method: 'DELETE' });
         }
         await loadSpaces();
         await loadLogs(space.id);
         renderAll();
-        showToast('Устройство удалено.');
+        showToast(t('toast.deviceDeleted'));
       } catch (error) {
         console.error(error);
-        handleApiError(error, 'Не удалось удалить устройство.');
+        handleApiError(error, t('errors.deviceDeleteFailed'));
       } finally {
         hideLoading();
       }
@@ -1774,10 +2081,10 @@ const renderDeviceDetails = (device) => {
           });
         }
         await refreshAll();
-        showToast('Устройство обновлено.');
+        showToast(t('toast.deviceUpdated'));
       } catch (error) {
         console.error(error);
-        handleApiError(error, 'Не удалось обновить устройство.');
+        handleApiError(error, t('errors.deviceUpdateFailed'));
       } finally {
         hideLoading();
       }
@@ -1794,10 +2101,10 @@ const renderDeviceDetails = (device) => {
         showLoading();
         await apiFetch(`/api/spaces/${space.id}/devices/${device.id}/refresh`, { method: 'POST' });
         await refreshAll();
-        showToast('Статус обновлён.');
+        showToast(t('toast.statusUpdated'));
       } catch (error) {
         console.error(error);
-        handleApiError(error, 'Ошибка обновления статуса.');
+        handleApiError(error, t('errors.statusUpdateFailed'));
       } finally {
         hideLoading();
       }
@@ -1882,13 +2189,13 @@ const renderMembers = (members) => {
             const roleToRemove = member.space_role ?? 'user';
             await removeMember(member.id, roleToRemove);
             if (member.is_self) {
-              showToast('Роль пользователя удалена.');
+              showToast(t('toast.userRoleRemoved'));
             }
           } catch (error) {
             if (error.message === 'last_installer') {
-              showToast('Нельзя удалить последнего инженера монтажа.');
+              showToast(t('errors.lastInstallerRequired'));
             } else {
-              handleApiError(error, 'Не удалось удалить пользователя.');
+              handleApiError(error, t('errors.userDeleteFailed'));
             }
           } finally {
             hideLoading();
@@ -1922,10 +2229,10 @@ const renderMembers = (members) => {
               body: JSON.stringify({ groups: selectedGroups }),
             });
             await loadMembers();
-            showToast('Группы обновлены.');
+            showToast(t('toast.groupsUpdated'));
           } catch (error) {
             console.error(error);
-            handleApiError(error, 'Не удалось обновить группы пользователя.');
+            handleApiError(error, t('errors.userGroupsUpdateFailed'));
           } finally {
             hideLoading();
           }
@@ -1959,15 +2266,15 @@ const renderMembers = (members) => {
             showLoading();
             if (member.is_self) {
               await leaveSpace(member.space_role);
-              showToast('Вы покинули пространство.');
+              showToast(t('toast.spaceLeft'));
             } else {
               await removeMember(member.id, member.space_role);
             }
           } catch (error) {
             if (error.message === 'last_installer') {
-              showToast('Нельзя удалить последнего инженера монтажа.');
+              showToast(t('errors.lastInstallerRequired'));
             } else {
-              handleApiError(error, member.is_self ? 'Не удалось покинуть пространство.' : 'Не удалось удалить инженера.');
+              handleApiError(error, member.is_self ? t('errors.spaceLeaveFailed') : t('errors.installerDeleteFailed'));
             }
           } finally {
             hideLoading();
@@ -2032,14 +2339,14 @@ const renderContacts = (space) => {
         const action = button.dataset.action;
         if (action === 'delete') {
           try {
-            if (!await confirmAction('Удалить контактное лицо?', 'Удаление контакта')) return;
+            if (!await confirmAction(t('confirm.deleteContact'), t('confirm.deleteContactTitle'))) return;
             showLoading();
             await apiFetch(`/api/spaces/${space.id}/contacts/${index}`, { method: 'DELETE' });
             await refreshAll();
-            showToast('Контакт удалён.');
+            showToast(t('toast.contactDeleted'));
           } catch (error) {
             console.error(error);
-            handleApiError(error, 'Не удалось удалить контакт.');
+            handleApiError(error, t('errors.contactDeleteFailed'));
           } finally {
             hideLoading();
           }
@@ -2062,10 +2369,10 @@ const renderContacts = (space) => {
               body: JSON.stringify({ name, role, phone }),
             });
             await refreshAll();
-            showToast('Контакт обновлён.');
+            showToast(t('toast.contactUpdated'));
           } catch (error) {
             console.error(error);
-            handleApiError(error, 'Не удалось обновить контакт.');
+            handleApiError(error, t('errors.contactUpdateFailed'));
           } finally {
             hideLoading();
           }
@@ -2097,14 +2404,14 @@ const renderNotes = (space) => {
         const action = button.dataset.action;
         if (action === 'delete') {
           try {
-            if (!await confirmAction('Удалить примечание?', 'Удаление примечания')) return;
+            if (!await confirmAction(t('confirm.deleteNote'), t('confirm.deleteNoteTitle'))) return;
             showLoading();
             await apiFetch(`/api/spaces/${space.id}/notes/${index}`, { method: 'DELETE' });
             await refreshAll();
-            showToast('Примечание удалено.');
+            showToast(t('toast.noteDeleted'));
           } catch (error) {
             console.error(error);
-            handleApiError(error, 'Не удалось удалить примечание.');
+            handleApiError(error, t('errors.noteDeleteFailed'));
           } finally {
             hideLoading();
           }
@@ -2125,10 +2432,10 @@ const renderNotes = (space) => {
               body: JSON.stringify({ text }),
             });
             await refreshAll();
-            showToast('Примечание обновлено.');
+            showToast(t('toast.noteUpdated'));
           } catch (error) {
             console.error(error);
-            handleApiError(error, 'Не удалось обновить примечание.');
+            handleApiError(error, t('errors.noteUpdateFailed'));
           } finally {
             hideLoading();
           }
@@ -2163,14 +2470,14 @@ const renderPhotos = (space) => {
         const action = button.dataset.action;
         if (action === 'delete') {
           try {
-            if (!await confirmAction('Удалить фото?', 'Удаление фото')) return;
+            if (!await confirmAction(t('confirm.deletePhoto'), t('confirm.deletePhotoTitle'))) return;
             showLoading();
             await apiFetch(`/api/spaces/${space.id}/photos/${index}`, { method: 'DELETE' });
             await refreshAll();
-            showToast('Фото удалено.');
+            showToast(t('toast.photoDeleted'));
           } catch (error) {
             console.error(error);
-            handleApiError(error, 'Не удалось удалить фото.');
+            handleApiError(error, t('errors.photoDeleteFailed'));
           } finally {
             hideLoading();
           }
@@ -2192,10 +2499,10 @@ const renderPhotos = (space) => {
               body: JSON.stringify({ url, label }),
             });
             await refreshAll();
-            showToast('Фото обновлено.');
+            showToast(t('toast.photoUpdated'));
           } catch (error) {
             console.error(error);
-            handleApiError(error, 'Не удалось обновить фото.');
+            handleApiError(error, t('errors.photoUpdateFailed'));
           } finally {
             hideLoading();
           }
@@ -2432,18 +2739,18 @@ const rebindChipActions = () => {
         if (action === 'arm') {
           const updated = await apiFetch(`/api/spaces/${space.id}/arm`, { method: 'POST' });
           Object.assign(space, updated);
-          showToast(updated.pendingArm ? 'Запущена постановка под охрану.' : 'Объект поставлен под охрану.');
+          showToast(updated.pendingArm ? t('toast.armingStarted') : t('toast.spaceArmed'));
         }
         if (action === 'disarm') {
           const updated = await apiFetch(`/api/spaces/${space.id}/disarm`, { method: 'POST' });
           Object.assign(space, updated);
-          showToast('Объект снят с охраны.');
+          showToast(t('toast.spaceDisarmed'));
         }
         await loadLogs(space.id);
         renderAll();
       } catch (error) {
         console.error(error);
-        showToast('Ошибка обновления статуса.');
+        showToast(t('errors.statusUpdateFailed'));
       } finally {
         hideLoading();
       }
@@ -2572,7 +2879,7 @@ const renderGroups = (space) => {
       } catch (error) {
         console.error(error);
         toggle.checked = !toggle.checked;
-        handleApiError(error, 'Не удалось переключить режим групп.');
+        handleApiError(error, t('errors.groupModeToggleFailed'));
       } finally {
         hideLoading();
       }
@@ -2593,10 +2900,10 @@ const renderGroups = (space) => {
           body: JSON.stringify({ name }),
         });
         await refreshAll();
-        showToast('Группа создана.');
+        showToast(t('toast.groupCreated'));
       } catch (error) {
         console.error(error);
-        handleApiError(error, 'Не удалось создать группу.');
+        handleApiError(error, t('errors.groupCreateFailed'));
       } finally {
         hideLoading();
       }
@@ -2632,10 +2939,10 @@ const renderGroups = (space) => {
           body: JSON.stringify({ name: newName.trim() }),
         });
         await refreshAll();
-        showToast('Группа переименована.');
+        showToast(t('toast.groupRenamed'));
       } catch (error) {
         console.error(error);
-        handleApiError(error, 'Не удалось переименовать группу.');
+        handleApiError(error, t('errors.groupRenameFailed'));
       } finally {
         hideLoading();
       }
@@ -2655,10 +2962,10 @@ const renderGroups = (space) => {
           body: JSON.stringify({ groupId: select.value }),
         });
         await refreshAll();
-        showToast('Группа для устройства обновлена.');
+        showToast(t('toast.deviceGroupUpdated'));
       } catch (error) {
         console.error(error);
-        handleApiError(error, 'Не удалось обновить группу устройства.');
+        handleApiError(error, t('errors.groupDeviceUpdateFailed'));
       } finally {
         hideLoading();
       }
@@ -2671,14 +2978,14 @@ const renderGroups = (space) => {
       if (!ensureEditable()) return;
       const groupId = btn.dataset.groupDelete;
       try {
-        if (!await confirmAction('Удалить группу?', 'Удаление группы')) return;
+        if (!await confirmAction(t('confirm.deleteGroup'), t('confirm.deleteGroupTitle'))) return;
         showLoading();
         await apiFetch(`/api/spaces/${space.id}/groups/${groupId}`, { method: 'DELETE' });
         await refreshAll();
-        showToast('Группа удалена.');
+        showToast(t('toast.groupDeleted'));
       } catch (error) {
         console.error(error);
-        handleApiError(error, 'Не удалось удалить группу.');
+        handleApiError(error, t('errors.groupDeleteFailed'));
       } finally {
         hideLoading();
       }
@@ -2722,10 +3029,10 @@ const renderGroupsManageModal = (space) => {
         await loadLogs(space.id);
         renderAll();
         renderGroupsManageModal(space);
-        showToast('Группа поставлена под охрану.');
+        showToast(t('toast.groupArmed'));
       } catch (error) {
         console.error(error);
-        handleApiError(error, 'Не удалось поставить группу под охрану.');
+        handleApiError(error, t('errors.groupArmFailed'));
       } finally {
         hideLoading();
       }
@@ -2743,10 +3050,10 @@ const renderGroupsManageModal = (space) => {
         await loadLogs(space.id);
         renderAll();
         renderGroupsManageModal(space);
-        showToast('Группа снята с охраны.');
+        showToast(t('toast.groupDisarmed'));
       } catch (error) {
         console.error(error);
-        handleApiError(error, 'Не удалось снять группу с охраны.');
+        handleApiError(error, t('errors.groupDisarmFailed'));
       } finally {
         hideLoading();
       }
@@ -2765,18 +3072,18 @@ chipActions.forEach((chip) => {
         if (action === 'arm') {
           const updated = await apiFetch(`/api/spaces/${space.id}/arm`, { method: 'POST' });
           Object.assign(space, updated);
-          showToast(updated.pendingArm ? 'Запущена постановка под охрану.' : 'Объект поставлен под охрану.');
+          showToast(updated.pendingArm ? t('toast.armingStarted') : t('toast.spaceArmed'));
         }
       if (action === 'disarm') {
         const updated = await apiFetch(`/api/spaces/${space.id}/disarm`, { method: 'POST' });
         Object.assign(space, updated);
-        showToast('Объект снят с охраны.');
+        showToast(t('toast.spaceDisarmed'));
       }
       await loadLogs(space.id);
       renderAll();
     } catch (error) {
       console.error(error);
-      showToast('Ошибка обновления статуса.');
+      showToast(t('errors.statusUpdateFailed'));
     } finally {
       hideLoading();
     }
@@ -2854,7 +3161,7 @@ const refreshAll = async () => {
 if (refreshBtn) {
   refreshBtn.addEventListener('click', async () => {
     await refreshAll();
-    showToast('Данные синхронизированы с хабами.');
+    showToast(t('toast.spaceSynced'));
   });
 }
 
@@ -2865,17 +3172,17 @@ if (deleteSpaceBtn) {
     if (!space) return;
 
     try {
-      if (!await confirmAction('Удалить объект?', 'Удаление объекта')) return;
+      if (!await confirmAction(t('confirm.deleteSpace'), t('confirm.deleteSpaceTitle'))) return;
       showLoading();
       await apiFetch(`/api/spaces/${space.id}`, { method: 'DELETE' });
       state.selectedSpaceId = null;
       state.selectedDeviceId = null;
       localStorage.removeItem('selectedSpaceId');
       await refreshAll();
-      showToast('Пространство удалено.');
+      showToast(t('toast.spaceDeleted'));
     } catch (error) {
       console.error(error);
-      handleApiError(error, 'Не удалось удалить пространство.');
+      handleApiError(error, t('errors.spaceDeleteFailed'));
     } finally {
       hideLoading();
     }
@@ -2889,14 +3196,14 @@ if (detachHubBtn) {
     if (!space) return;
 
     try {
-      if (!await confirmAction('Удалить хаб из пространства?', 'Удаление хаба')) return;
+      if (!await confirmAction(t('confirm.deleteHub'), t('confirm.deleteHubTitle'))) return;
       showLoading();
       await apiFetch(`/api/spaces/${space.id}/hub`, { method: 'DELETE' });
       await refreshAll();
-      showToast('Хаб удалён из пространства.');
+      showToast(t('toast.hubRemoved'));
     } catch (error) {
       console.error(error);
-      handleApiError(error, 'Не удалось удалить хаб.');
+      handleApiError(error, t('errors.hubDeleteFailed'));
     } finally {
       hideLoading();
     }
@@ -2934,7 +3241,7 @@ if (spaceForm) {
     const lockUntil = getSpaceCreateLockUntil();
     if (lockUntil) {
       updateSpaceCreateControls();
-      showToast(`Создавать объекты можно не чаще, чем раз в 15 минут. Доступно после ${formatLockUntil(lockUntil)}.`);
+      showToast(`${t('errors.spaceCreateCooldownUntil')} ${formatLockUntil(lockUntil)}.`);
       return;
     }
     const formData = new FormData(spaceForm);
@@ -2953,7 +3260,7 @@ if (spaceForm) {
       await loadLogs(created.id);
       renderAll();
       spaceForm.reset();
-      showToast('Пространство создано.');
+      showToast(t('toast.spaceCreated'));
       modal?.classList.remove('modal--open');
       state.lastSpaceCreateAt = new Date().toISOString();
       state.spaceCreateLockUntil = null;
@@ -2961,7 +3268,7 @@ if (spaceForm) {
       updateSpaceCreateControls();
     } catch (error) {
       console.error(error);
-      handleApiError(error, 'Не удалось создать пространство.');
+      handleApiError(error, t('errors.spaceCreateFailed'));
     } finally {
       hideLoading();
     }
@@ -3085,11 +3392,11 @@ if (deviceForm) {
       await loadLogs(space.id);
       renderAll();
       deviceForm.reset();
-      showToast('Устройство добавлено.');
+      showToast(t('toast.deviceAdded'));
       deviceModal?.classList.remove('modal--open');
     } catch (error) {
       console.error(error);
-      handleApiError(error, 'Не удалось добавить устройство.');
+      handleApiError(error, t('errors.deviceAddFailed'));
     } finally {
       hideLoading();
     }
@@ -3128,10 +3435,10 @@ if (readKeyButton && deviceForm) {
       const readerInput = deviceForm.querySelector('input[name=\"readerId\"]');
       if (keyInput) keyInput.value = scan.keyName ?? '';
       if (readerInput) readerInput.value = scan.readerId ?? '';
-      showToast('Ключ считан.');
+      showToast(t('toast.keyRead'));
     } catch (error) {
       console.error(error);
-      handleApiError(error, 'Не удалось считать ключ.');
+      handleApiError(error, t('errors.keyReadFailed'));
     } finally {
       readKeyButton.disabled = false;
       readKeyButton.textContent = 'Считать ключ';
@@ -3160,10 +3467,10 @@ if (contactForm) {
       await loadSpaces();
       renderAll();
       contactForm.reset();
-      showToast('Контакт добавлен.');
+      showToast(t('toast.contactAdded'));
     } catch (error) {
       console.error(error);
-      handleApiError(error, 'Не удалось добавить контакт.');
+      handleApiError(error, t('errors.contactAddFailed'));
     } finally {
       hideLoading();
     }
@@ -3189,10 +3496,10 @@ if (noteForm) {
       renderAll();
       noteForm.reset();
       if (noteInput) autoResize(noteInput);
-      showToast('Примечание добавлено.');
+      showToast(t('toast.noteAdded'));
     } catch (error) {
       console.error(error);
-      handleApiError(error, 'Не удалось добавить примечание.');
+      handleApiError(error, t('errors.noteAddFailed'));
     } finally {
       hideLoading();
     }
@@ -3209,9 +3516,9 @@ if (usersForm) {
       showLoading();
       await addMember('user', identifier);
       usersForm.reset();
-      showToast('Пользователь добавлен.');
+      showToast(t('toast.userAdded'));
     } catch (error) {
-      handleApiError(error, 'Не удалось добавить пользователя.');
+      handleApiError(error, t('errors.userAddFailed'));
     } finally {
       hideLoading();
     }
@@ -3228,9 +3535,9 @@ if (installersForm) {
       showLoading();
       await addMember('installer', identifier);
       installersForm.reset();
-      showToast('Инженер добавлен.');
+      showToast(t('toast.installerAdded'));
     } catch (error) {
-      handleApiError(error, 'Не удалось добавить инженера.');
+      handleApiError(error, t('errors.installerAddFailed'));
     } finally {
       hideLoading();
     }
@@ -3255,10 +3562,10 @@ if (photoForm) {
       await loadSpaces();
       renderAll();
       photoForm.reset();
-      showToast('Фото добавлено.');
+      showToast(t('toast.photoAdded'));
     } catch (error) {
       console.error(error);
-      handleApiError(error, 'Не удалось добавить фото.');
+      handleApiError(error, t('errors.photoAddFailed'));
     } finally {
       hideLoading();
     }
@@ -3283,10 +3590,10 @@ if (editForm) {
       Object.assign(space, updated);
       await loadLogs(space.id);
       renderAll();
-      showToast('Информация обновлена.');
+      showToast(t('toast.infoUpdated'));
     } catch (error) {
       console.error(error);
-      handleApiError(error, 'Не удалось обновить объект.');
+      handleApiError(error, t('errors.spaceUpdateFailed'));
     } finally {
       hideLoading();
     }
@@ -3298,7 +3605,7 @@ if (openCreate && modal) {
     const lockUntil = getSpaceCreateLockUntil();
     if (lockUntil) {
       updateSpaceCreateControls();
-      showToast(`Создавать объекты можно не чаще, чем раз в 15 минут. Доступно после ${formatLockUntil(lockUntil)}.`);
+      showToast(`${t('errors.spaceCreateCooldownUntil')} ${formatLockUntil(lockUntil)}.`);
       return;
     }
     modal.classList.add('modal--open');
@@ -3335,14 +3642,14 @@ if (attachHubForm) {
       });
       attachHubForm.reset();
       await refreshAll();
-      showToast('Хаб привязан.');
+      showToast(t('toast.hubAttached'));
     } catch (error) {
       console.error(error);
       if (error.message === 'space_armed') {
         showGuardModal();
         return;
       }
-      handleApiError(error, 'Не удалось привязать хаб.');
+      handleApiError(error, t('errors.hubAttachFailed'));
     } finally {
       hideLoading();
     }
@@ -3459,11 +3766,11 @@ const initProfileMenu = async () => {
     if (!profileNickname || profileNickname.disabled) return;
     const nextNickname = profileNickname.value.trim();
     if (!nextNickname) {
-      showToast('Введите корректный ник.');
+      showToast(t('errors.invalidNickname'));
       return;
     }
     if (nextNickname === confirmedNickname) {
-      showToast('Ник уже установлен.');
+      showToast(t('errors.nicknameAlreadySet'));
       return;
     }
     if (isAdminPage) {
@@ -3495,7 +3802,7 @@ const initProfileMenu = async () => {
       saveProfileSettings();
       updateNicknameControls();
     } catch (error) {
-      handleApiError(error, 'Не удалось обновить ник.');
+      handleApiError(error, t('errors.nicknameUpdateFailed'));
       state.nickname = confirmedNickname;
       profileNickname.value = confirmedNickname;
       saveProfileSettings();
@@ -3564,7 +3871,7 @@ const init = async () => {
       const lockUntil = getSpaceCreateLockUntil();
       if (lockUntil) {
         updateSpaceCreateControls();
-        showToast(`Создавать объекты можно не чаще, чем раз в 15 минут. Доступно после ${formatLockUntil(lockUntil)}.`);
+        showToast(`${t('errors.spaceCreateCooldownUntil')} ${formatLockUntil(lockUntil)}.`);
       } else {
         modal.classList.add('modal--open');
       }
