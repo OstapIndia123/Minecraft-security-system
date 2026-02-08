@@ -329,12 +329,16 @@ const statusMap = {
 const normalizeStatusValue = (status) => {
   if (!status) return status;
   const raw = String(status).trim();
+  const lower = raw.toLowerCase();
   const aliases = {
-    'Не в сети': 'offline',
-    'В сети': 'online',
-    'Норма': 'normal',
+    'не в сети': 'offline',
+    'в сети': 'online',
+    'норма': 'normal',
+    online: 'online',
+    offline: 'offline',
+    normal: 'normal',
   };
-  return aliases[raw] ?? raw;
+  return aliases[lower] ?? raw;
 };
 
 const getStatusLabel = (status) => {
