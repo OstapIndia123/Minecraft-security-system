@@ -1646,12 +1646,16 @@ const loadLogs = async (spaceId, reset = true) => {
     const space = spaces.find((item) => item.id === spaceId);
     if (!space) return;
     if (reset) {
+      const previousTimestamp = space.lastLogTimestamp ?? null;
       const limit = space.logsLimit ?? 200;
       const { logs, hasMore } = await fetchLogsChunked(`/api/spaces/${spaceId}/logs`, limit);
       space.logs = logs;
       space.logsOffset = logs.length;
       space.logsHasMore = hasMore;
       const lastLog = space.logs[0];
+      const newestTimestamp = getLogTimestamp(lastLog) ?? null;
+      space.lastLogTimestamp = newestTimestamp ?? space.lastLogTimestamp ?? null;
+      space.flashSince = previousTimestamp;
       state.lastLogKey = `${space.logs.length}-${lastLog?.time ?? ''}-${lastLog?.text ?? ''}-${lastLog?.createdAt ?? ''}`;
       return;
     }
@@ -2646,6 +2650,7 @@ const translateLogText = (text) => {
 
 const renderLogs = (space) => {
   const logsSource = space.logs ?? [];
+  const flashSince = space.flashSince ?? null;
   const logs = state.logFilter === 'all'
     ? logsSource.filter((log) => log.type !== 'hub_raw')
     : logsSource.filter((log) => {
@@ -2676,7 +2681,7 @@ const renderLogs = (space) => {
     const isHub = log.type === 'hub_raw';
     const flashKey = `logFlash:${space.id}:${logTimestamp ?? log.time}:${log.text}`;
     const hasSeen = localStorage.getItem(flashKey);
-    if (isAlarm && logTimestamp && !hasSeen) {
+    if (isAlarm && logTimestamp && flashSince && logTimestamp > flashSince && !hasSeen) {
       localStorage.setItem(flashKey, String(Date.now()));
       logFlashActive.set(flashKey, Date.now() + FLASH_DURATION_MS);
     }
@@ -2705,6 +2710,7 @@ const renderLogs = (space) => {
     logMoreButton?.classList.add('hidden');
   }
   logMoreButton?.classList.toggle('hidden', !space.logsHasMore);
+  space.flashSince = null;
 };
 
 const renderAll = () => {
@@ -3306,6 +3312,7 @@ const pollLogs = async () => {
 
   try {
     const limit = space.logsLimit ?? 200;
+    const previousTimestamp = space.lastLogTimestamp ?? null;
     const { logs, hasMore } = await fetchLogsChunked(`/api/spaces/${space.id}/logs`, limit);
     const lastLog = logs[0];
     const logKey = `${logs.length}-${lastLog?.time ?? ''}-${lastLog?.text ?? ''}-${lastLog?.createdAt ?? ''}`;
@@ -3314,6 +3321,9 @@ const pollLogs = async () => {
       space.logs = logs;
       space.logsOffset = logs.length;
       space.logsHasMore = hasMore;
+      const newestTimestamp = getLogTimestamp(lastLog) ?? null;
+      space.lastLogTimestamp = newestTimestamp ?? space.lastLogTimestamp ?? null;
+      space.flashSince = previousTimestamp;
       renderLogs(space);
       notifyLogEvent(space, lastLog).catch(() => null);
       if (lastLog?.type === 'alarm' || lastLog?.type === 'restore') {

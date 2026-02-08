@@ -945,8 +945,8 @@ const startPendingArm = async (spaceId, hubId, delaySeconds, who, logMessage, gr
       ? await query("SELECT status, config FROM devices WHERE space_id = $1 AND type = $2 AND (config->>'groupId')::int = $3", [spaceId, 'zone', groupId])
       : await query('SELECT status, config FROM devices WHERE space_id = $1 AND type = $2', [spaceId, 'zone']);
     const hasViolations = zonesQuery.rows.some((zone) => {
-      const zoneType = zone.config?.zoneType;
-      if (zoneType !== 'delayed' && zoneType !== 'pass') return false;
+      const zoneType = zone.config?.zoneType ?? 'instant';
+      if (zoneType === 'delayed' || zoneType === 'pass') return false;
       return zone.status !== 'Норма';
     });
     if (hasViolations) {
@@ -2607,7 +2607,7 @@ app.patch('/api/spaces/:id/photos/:index', requireAuth, requireInstaller, async 
   res.json({ ok: true });
 });
 
-async function applyLightOutputs(spaceId, hubId, status, groupId = null) {
+async function applyLightOutputs(spaceId, hubId, status, groupId = null, { force = false } = {}) {
   const outputs = groupId
     ? await query("SELECT side, config FROM devices WHERE space_id = $1 AND type = $2 AND (config->>'groupId')::int = $3", [spaceId, 'output-light', groupId])
     : await query('SELECT side, config FROM devices WHERE space_id = $1 AND type = $2', [spaceId, 'output-light']);
@@ -2616,7 +2616,7 @@ async function applyLightOutputs(spaceId, hubId, status, groupId = null) {
       const level = Number(output.config?.level ?? 15);
       const targetId = resolveDeviceTargetId(output.config, hubId);
       if (!targetId) return null;
-      return sendHubOutputChecked(spaceId, targetId, output.side, status === 'armed' ? level : 0).catch(() => null);
+      return sendHubOutputChecked(spaceId, targetId, output.side, status === 'armed' ? level : 0, { force }).catch(() => null);
     }),
   );
 }
@@ -2627,7 +2627,7 @@ const updateStatus = async (spaceId, status, who, logMessage) => {
   const defaultMessage = status === 'armed' ? 'Объект поставлен под охрану' : 'Объект снят с охраны';
   await appendLog(spaceId, logMessage ?? defaultMessage, who, 'security');
   const space = mapSpace(updated.rows[0]);
-  await applyLightOutputs(spaceId, space.hubId, status);
+  await applyLightOutputs(spaceId, space.hubId, status, null, { force: status !== 'armed' });
   if (status !== 'armed') {
     await stopSirenTimers(spaceId, space.hubId);
     spaceAlarmState.set(spaceId, false);
@@ -3065,20 +3065,8 @@ app.post('/api/spaces/:id/groups/:groupId/arm', requireAuth, async (req, res) =>
     await appendLog(spaceId, `Неудачная постановка группы '${groupName}' (зоны не в норме)`, 'UI', 'security', Number(groupId));
     return res.status(409).json({ error: 'zone_state' });
   }
-  const delaySeconds = getExitDelaySeconds(zones.rows);
   const spaceRow = await query('SELECT hub_id FROM spaces WHERE id = $1', [spaceId]);
   const hubId = spaceRow.rows[0]?.hub_id;
-  if (delaySeconds > 0) {
-    await startPendingArm(
-      spaceId,
-      hubId,
-      delaySeconds,
-      req.user.minecraft_nickname ?? 'UI',
-      `Группа '${groupName}' поставлена под охрану`,
-      Number(groupId),
-    );
-    return res.json({ ok: true, pendingArm: true });
-  }
   await query('UPDATE groups SET status = $1 WHERE id = $2 AND space_id = $3', ['armed', groupId, spaceId]);
   const computedStatus = await computeSpaceStatusFromGroups(spaceId);
   await query('UPDATE spaces SET status = $1 WHERE id = $2', [computedStatus, spaceId]);
@@ -3120,7 +3108,9 @@ app.post('/api/spaces/:id/groups/:groupId/disarm', requireAuth, async (req, res)
   entryDelayFailed.delete(sk);
   await clearEntryDelay(spaceId, hubId, gId);
   await clearPendingArm(spaceId, hubId, gId);
-  await applyLightOutputs(spaceId, hubId, 'disarmed', gId);
+  await stopBlinkingLights(spaceId, hubId, 'entry-delay', gId);
+  await stopBlinkingLights(spaceId, hubId, 'exit-delay', gId);
+  await applyLightOutputs(spaceId, hubId, 'disarmed', gId, { force: true });
   const computedStatus = await computeSpaceStatusFromGroups(spaceId);
   await query('UPDATE spaces SET status = $1 WHERE id = $2', [computedStatus, spaceId]);
   await evaluateZoneIssues(spaceId);
@@ -3186,17 +3176,19 @@ app.post('/api/hub/events', requireWebhookToken, async (req, res) => {
     }
     extensionDevice = extensionResult.rows[0];
     const extensionSide = normalizeSideValue(extensionDevice?.config?.extensionSide);
-    const mirrorExtensionSide = extensionSide ? mirrorOutputSide(extensionSide) : null;
     const eventSide = normalizeSideValue(payload?.side);
     const eventLevel = Number(payload?.level);
+    const matchesExtensionSide = Boolean(
+      eventSide
+      && extensionSide
+      && (eventSide === extensionSide || mirrorOutputSide(eventSide) === extensionSide),
+    );
     const isTestSetOutput = Boolean(
       type === 'SET_OUTPUT'
-      && eventSide
-      && extensionSide
-      && (eventSide === extensionSide || eventSide === mirrorExtensionSide)
+      && matchesExtensionSide
       && (eventLevel === 0 || eventLevel === 15),
     );
-    const shouldIgnoreTestSetOutput = isTestSetOutput && eventSide !== extensionSide;
+    const shouldIgnoreTestSetOutput = isTestSetOutput;
     const isTestSideEvent = Boolean(
       type !== 'SET_OUTPUT'
       && eventSide
@@ -3331,13 +3323,16 @@ app.post('/api/hub/events', requireWebhookToken, async (req, res) => {
                 const sk = stateKey(spaceId, gId);
                 await query("UPDATE groups SET status = 'disarmed' WHERE id = $1 AND space_id = $2", [gId, spaceId]);
                 const spaceRow = await query('SELECT hub_id FROM spaces WHERE id = $1', [spaceId]);
-                await stopSirenTimers(spaceId, spaceRow.rows[0]?.hub_id, gId);
+                const hubId = spaceRow.rows[0]?.hub_id;
+                await stopSirenTimers(spaceId, hubId, gId);
                 spaceAlarmState.set(sk, false);
                 alarmSinceArmed.delete(sk);
                 entryDelayFailed.delete(sk);
-                await clearEntryDelay(spaceId, spaceRow.rows[0]?.hub_id, gId);
-                await clearPendingArm(spaceId, spaceRow.rows[0]?.hub_id, gId);
-                await applyLightOutputs(spaceId, spaceRow.rows[0]?.hub_id, 'disarmed', gId);
+                await clearEntryDelay(spaceId, hubId, gId);
+                await clearPendingArm(spaceId, hubId, gId);
+                await stopBlinkingLights(spaceId, hubId, 'entry-delay', gId);
+                await stopBlinkingLights(spaceId, hubId, 'exit-delay', gId);
+                await applyLightOutputs(spaceId, hubId, 'disarmed', gId, { force: true });
                 await appendLog(spaceId, `Снятие группы '${group.name}' ключом: ${session.key_name}`, session.reader_name, 'security', gId);
               }
             } else {
@@ -3423,6 +3418,25 @@ app.post('/api/hub/events', requireWebhookToken, async (req, res) => {
               }
             }
           } else {
+            const spaceRow = await query('SELECT hub_id, groups_enabled FROM spaces WHERE id = $1', [spaceId]);
+            const hubId = spaceRow.rows[0]?.hub_id;
+            if (spaceRow.rows[0]?.groups_enabled) {
+              const groups = await query('SELECT id FROM groups WHERE space_id = $1', [spaceId]);
+              for (const group of groups.rows) {
+                const gId = group.id;
+                const sk = stateKey(spaceId, gId);
+                await query("UPDATE groups SET status = 'disarmed' WHERE id = $1 AND space_id = $2", [gId, spaceId]);
+                await stopSirenTimers(spaceId, hubId, gId);
+                spaceAlarmState.set(sk, false);
+                alarmSinceArmed.delete(sk);
+                entryDelayFailed.delete(sk);
+                await clearEntryDelay(spaceId, hubId, gId);
+                await clearPendingArm(spaceId, hubId, gId);
+                await stopBlinkingLights(spaceId, hubId, 'entry-delay', gId);
+                await stopBlinkingLights(spaceId, hubId, 'exit-delay', gId);
+                await applyLightOutputs(spaceId, hubId, 'disarmed', gId, { force: true });
+              }
+            }
             await updateStatus(
               spaceId,
               'disarmed',
