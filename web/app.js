@@ -192,6 +192,36 @@ const notifyLogEvent = async (space, log) => {
   await notifySecurityEvent({ title, body, tag: key });
 };
 
+const isSpaceAlarmActive = (space) => {
+  const logs = space?.logs ?? [];
+  if (!logs.length) return false;
+  let lastAlarm = null;
+  let lastRestore = null;
+  logs.forEach((log) => {
+    if (log.type !== 'alarm' && log.type !== 'restore') return;
+    const ts = getLogTimestamp(log);
+    if (!ts) return;
+    if (log.type === 'alarm') {
+      if (!lastAlarm || ts > lastAlarm) lastAlarm = ts;
+    } else if (log.type === 'restore') {
+      if (!lastRestore || ts > lastRestore) lastRestore = ts;
+    }
+  });
+  if (!lastAlarm) return false;
+  if (!lastRestore) return true;
+  return lastAlarm > lastRestore;
+};
+
+const hasActiveAlarmFlash = (space) => {
+  const prefix = `logFlash:${space.id}:`;
+  for (const [key, expiresAt] of logFlashActive.entries()) {
+    if (key.startsWith(prefix) && expiresAt > Date.now()) {
+      return true;
+    }
+  }
+  return false;
+};
+
 (() => {
   const maxAge = 24 * 60 * 60 * 1000;
   const now = Date.now();
@@ -1639,8 +1669,8 @@ const renderObjectList = () => {
   objectList.innerHTML = '';
   filtered.forEach((space) => {
     const card = document.createElement('button');
-    const isAlarm = space.issues;
-    const alarmFlash = isAlarm;
+    const isAlarm = isSpaceAlarmActive(space);
+    const alarmFlash = isAlarm || hasActiveAlarmFlash(space);
     const hubOfflineLabel = space.hubOnline === false
       ? `<div class="object-card__hub-offline">${t('engineer.object.hubOffline')}</div>`
       : '';
@@ -1665,7 +1695,7 @@ const renderObjectList = () => {
     });
     objectList.appendChild(card);
   });
-  setAlarmSoundActive(spaces.some((space) => space.issues)).catch(() => null);
+  setAlarmSoundActive(spaces.some((space) => isSpaceAlarmActive(space))).catch(() => null);
 };
 
 const renderSpaceHeader = (space) => {
@@ -3158,9 +3188,24 @@ const refreshAll = async () => {
   renderAll();
 };
 
+const runRefreshAnimation = async (button, action) => {
+  if (!button) {
+    await action();
+    return;
+  }
+  button.classList.add('is-loading');
+  button.disabled = true;
+  try {
+    await action();
+  } finally {
+    button.classList.remove('is-loading');
+    button.disabled = false;
+  }
+};
+
 if (refreshBtn) {
   refreshBtn.addEventListener('click', async () => {
-    await refreshAll();
+    await runRefreshAnimation(refreshBtn, refreshAll);
     showToast(t('toast.spaceSynced'));
   });
 }

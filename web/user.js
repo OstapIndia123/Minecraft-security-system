@@ -20,6 +20,8 @@ const detectBrowserLanguage = () => {
 
 let spacesCache = [];
 const NICKNAME_COOLDOWN_MS = 7 * 24 * 60 * 60 * 1000;
+const FLASH_DURATION_MS = 15000;
+const ALARM_SOUND_PATH = '/alarm.mp3';
 
 const escapeHtml = (value) => String(value ?? '')
   .replace(/&/g, '&amp;')
@@ -27,6 +29,32 @@ const escapeHtml = (value) => String(value ?? '')
   .replace(/>/g, '&gt;')
   .replace(/"/g, '&quot;')
   .replace(/'/g, '&#39;');
+
+const alarmAudio = typeof Audio !== 'undefined' ? new Audio(ALARM_SOUND_PATH) : null;
+if (alarmAudio) {
+  alarmAudio.loop = true;
+  alarmAudio.preload = 'auto';
+}
+let alarmAudioActive = false;
+const logFlashActive = new Map();
+let currentAlarmActive = false;
+let currentAlarmFlash = false;
+
+const setAlarmSoundActive = async (active) => {
+  if (!alarmAudio) return;
+  if (active === alarmAudioActive) return;
+  alarmAudioActive = active;
+  if (active) {
+    try {
+      await alarmAudio.play();
+    } catch {
+      // Ignore autoplay restrictions.
+    }
+  } else {
+    alarmAudio.pause();
+    alarmAudio.currentTime = 0;
+  }
+};
 
 const getDeviceTypeToken = (type) => {
   const raw = String(type ?? '').trim().toLowerCase();
@@ -454,6 +482,44 @@ const formatLogTime = (timestamp) => {
   });
 };
 
+const getLogTimestamp = (log) => {
+  if (log.createdAtMs) return log.createdAtMs;
+  const raw = log.createdAt ?? log.created_at;
+  if (!raw) return null;
+  const parsed = new Date(`${raw}Z`);
+  if (Number.isNaN(parsed.getTime())) return null;
+  return parsed.getTime();
+};
+
+const isAlarmActive = (logs) => {
+  if (!logs?.length) return false;
+  let lastAlarm = null;
+  let lastRestore = null;
+  logs.forEach((log) => {
+    if (log.type !== 'alarm' && log.type !== 'restore') return;
+    const ts = getLogTimestamp(log);
+    if (!ts) return;
+    if (log.type === 'alarm') {
+      if (!lastAlarm || ts > lastAlarm) lastAlarm = ts;
+    } else {
+      if (!lastRestore || ts > lastRestore) lastRestore = ts;
+    }
+  });
+  if (!lastAlarm) return false;
+  if (!lastRestore) return true;
+  return lastAlarm > lastRestore;
+};
+
+const hasActiveAlarmFlash = (spaceId) => {
+  const prefix = `logFlash:user:${spaceId}:`;
+  for (const [key, expiresAt] of logFlashActive.entries()) {
+    if (key.startsWith(prefix) && expiresAt > Date.now()) {
+      return true;
+    }
+  }
+  return false;
+};
+
 const initProfileMenu = async () => {
   if (!avatarButton || !profileDropdown) return;
   const toggle = (open) => {
@@ -600,7 +666,10 @@ const renderSpaces = (spaces) => {
     const hubOfflineLabel = space.hubOnline === false
       ? `<div class="object-item__hub-offline">${t('user.object.hubOffline')}</div>`
       : '';
-    item.className = `object-item ${space.id === state.selectedSpaceId ? 'object-item--active' : ''}`;
+    const isSelected = space.id === state.selectedSpaceId;
+    const alarmClass = isSelected && currentAlarmActive ? 'object-item--alarm' : '';
+    const alarmFlashClass = isSelected && currentAlarmFlash ? 'object-item--alarm-flash' : '';
+    item.className = `object-item ${isSelected ? 'object-item--active' : ''} ${alarmClass} ${alarmFlashClass}`;
     item.innerHTML = `
       <div class="object-item__title">${escapeHtml(space.name)}</div>
       <div class="object-item__meta">${escapeHtml(space.id)}</div>
@@ -769,6 +838,10 @@ const renderLogs = (logs) => {
   if (!filtered.length) {
     logTable.innerHTML = `<div class="empty-state">${t('user.empty.logs')}</div>`;
     logMoreButton?.classList.add('hidden');
+    currentAlarmActive = isAlarmActive(logs);
+    currentAlarmFlash = hasActiveAlarmFlash(state.selectedSpaceId);
+    setAlarmSoundActive(currentAlarmActive).catch(() => null);
+    renderSpaces(spacesCache);
     return;
   }
   filtered.forEach((log) => {
@@ -776,9 +849,15 @@ const renderLogs = (logs) => {
     const translated = maskKeyNames(translateLogText(log.text));
     const isHubOffline = log.text === 'Хаб не в сети' || translated === 'Hub offline';
     const isExtensionOffline = log.text === 'Модуль расширения не в сети' || translated === 'Hub extension offline';
+    const logTimestamp = getLogTimestamp(log);
+    const flashKey = `logFlash:user:${state.selectedSpaceId}:${logTimestamp ?? log.time}:${log.text}`;
+    const hasSeen = localStorage.getItem(flashKey);
+    if (log.type === 'alarm' && logTimestamp && !hasSeen) {
+      localStorage.setItem(flashKey, String(Date.now()));
+      logFlashActive.set(flashKey, Date.now() + FLASH_DURATION_MS);
+    }
     row.className = `log-row ${log.type === 'alarm' ? 'log-row--alarm' : ''} ${(isHubOffline || isExtensionOffline) ? 'log-row--hub-offline' : ''}`;
-    const timestamp = log.createdAtMs ?? (log.createdAt ? new Date(`${log.createdAt}Z`).getTime() : null);
-    const timeLabel = escapeHtml(formatLogTime(timestamp) ?? log.time);
+    const timeLabel = escapeHtml(formatLogTime(logTimestamp) ?? log.time);
     const text = escapeHtml(translated);
     const whoLabel = escapeHtml(log.who);
     row.innerHTML = `
@@ -789,6 +868,10 @@ const renderLogs = (logs) => {
     logTable.appendChild(row);
   });
   logMoreButton?.classList.toggle('hidden', !state.logsHasMore);
+  currentAlarmActive = isAlarmActive(logs);
+  currentAlarmFlash = hasActiveAlarmFlash(state.selectedSpaceId);
+  setAlarmSoundActive(currentAlarmActive).catch(() => null);
+  renderSpaces(spacesCache);
 };
 
 const loadSpace = async (spaceId, { refreshLogs = true } = {}) => {

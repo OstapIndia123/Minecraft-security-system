@@ -56,6 +56,21 @@ const setAlarmSoundActive = async (active) => {
   }
 };
 
+const runRefreshAnimation = async (button, action) => {
+  if (!button) {
+    await action();
+    return;
+  }
+  button.classList.add('is-loading');
+  button.disabled = true;
+  try {
+    await action();
+  } finally {
+    button.classList.remove('is-loading');
+    button.disabled = false;
+  }
+};
+
 const grid = document.getElementById('mainObjectGrid');
 const logTable = document.getElementById('mainLogTable');
 const refreshBtn = document.getElementById('mainRefresh');
@@ -504,14 +519,51 @@ const hasActiveAlarmFlash = (space) => {
   return false;
 };
 
+const getAlarmStateBySpace = (logs) => {
+  const alarmMap = new Map();
+  const restoreMap = new Map();
+  logs.forEach((log) => {
+    if (log.type !== 'alarm' && log.type !== 'restore') return;
+    const ts = getLogTimestamp(log);
+    if (!ts) return;
+    const key = log.spaceId ?? log.spaceName ?? log.space_id ?? '';
+    if (!key) return;
+    if (log.type === 'alarm') {
+      const current = alarmMap.get(key);
+      if (!current || ts > current) alarmMap.set(key, ts);
+    } else {
+      const current = restoreMap.get(key);
+      if (!current || ts > current) restoreMap.set(key, ts);
+    }
+  });
+  return { alarmMap, restoreMap };
+};
+
+const isAlarmActiveForSpace = (space, alarmState) => {
+  if (!space) return false;
+  const keys = [space.id, space.name].filter(Boolean);
+  let lastAlarm = null;
+  let lastRestore = null;
+  keys.forEach((key) => {
+    const alarmTs = alarmState.alarmMap.get(key);
+    const restoreTs = alarmState.restoreMap.get(key);
+    if (alarmTs && (!lastAlarm || alarmTs > lastAlarm)) lastAlarm = alarmTs;
+    if (restoreTs && (!lastRestore || restoreTs > lastRestore)) lastRestore = restoreTs;
+  });
+  if (!lastAlarm) return false;
+  if (!lastRestore) return true;
+  return lastAlarm > lastRestore;
+};
+
 const renderObjects = (spaces) => {
   const query = (searchInput?.value ?? '').trim().toLowerCase();
+  const alarmState = getAlarmStateBySpace(state.logs);
   const filtered = spaces.filter((space) => {
     if (state.filter === 'offline') {
       return space.hubOnline === false;
     }
     if (state.filter === 'issues') {
-      return space.issues;
+      return isAlarmActiveForSpace(space, alarmState);
     }
     return true;
   }).filter((space) => {
@@ -531,7 +583,8 @@ const renderObjects = (spaces) => {
 
   filtered.forEach((space) => {
     const card = document.createElement('button');
-    const shouldFlash = space.issues || hasActiveAlarmFlash(space);
+    const isAlarmActive = isAlarmActiveForSpace(space, alarmState);
+    const shouldFlash = isAlarmActive || hasActiveAlarmFlash(space);
     const hubOfflineLabel = space.hubOnline === false
       ? `<div class="object-card__hub-offline">${t('pcn.object.hubOffline')}</div>`
       : '';
@@ -551,7 +604,7 @@ const renderObjects = (spaces) => {
     });
     grid.appendChild(card);
   });
-  setAlarmSoundActive(filtered.some((space) => space.issues || hasActiveAlarmFlash(space))).catch(() => null);
+  setAlarmSoundActive(filtered.some((space) => isAlarmActiveForSpace(space, alarmState))).catch(() => null);
 };
 
 const translateLogText = (text) => {
@@ -724,7 +777,7 @@ logFilters.forEach((button) => {
 
 if (refreshBtn) {
   refreshBtn.addEventListener('click', () => {
-    refresh().catch(() => null);
+    runRefreshAnimation(refreshBtn, refresh).catch(() => null);
   });
 }
 

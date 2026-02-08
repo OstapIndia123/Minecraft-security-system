@@ -272,6 +272,37 @@ body {
   box-shadow: 0 0 12px rgba(213, 0, 255, 0.3);
 }
 
+.button--refresh {
+  position: relative;
+  padding-right: 38px;
+  border-color: rgba(101, 161, 255, 0.4);
+  color: #8fb7ff;
+}
+
+.button--refresh::after {
+  content: '⟳';
+  position: absolute;
+  right: 14px;
+  top: 50%;
+  transform: translateY(-50%);
+  font-size: 14px;
+  opacity: 0.8;
+}
+
+.button--refresh.is-loading::after {
+  content: '';
+  width: 14px;
+  height: 14px;
+  border-radius: 50%;
+  border: 2px solid rgba(143, 183, 255, 0.4);
+  border-top-color: #8fb7ff;
+  animation: spin 0.8s linear infinite;
+}
+
+.button--refresh.is-loading {
+  box-shadow: 0 0 12px rgba(101, 161, 255, 0.3);
+}
+
 .button--ghost {
   background: transparent;
 }
@@ -476,6 +507,10 @@ body {
 
 .chip--success:hover {
   box-shadow: 0 0 12px rgba(77, 255, 143, 0.3);
+}
+
+.chip--info:hover {
+  box-shadow: 0 0 12px rgba(101, 161, 255, 0.3);
 }
 
 .chip--active {
@@ -1010,6 +1045,15 @@ body {
   display: grid;
   gap: 4px;
   cursor: pointer;
+}
+
+.object-item--alarm {
+  border-color: rgba(255, 77, 77, 0.6);
+  background: rgba(255, 77, 77, 0.12);
+}
+
+.object-item--alarm-flash {
+  animation: alarm-card 1s steps(2) infinite;
 }
 
 .object-item--active {
