@@ -3065,20 +3065,8 @@ app.post('/api/spaces/:id/groups/:groupId/arm', requireAuth, async (req, res) =>
     await appendLog(spaceId, `Неудачная постановка группы '${groupName}' (зоны не в норме)`, 'UI', 'security', Number(groupId));
     return res.status(409).json({ error: 'zone_state' });
   }
-  const delaySeconds = getExitDelaySeconds(zones.rows);
   const spaceRow = await query('SELECT hub_id FROM spaces WHERE id = $1', [spaceId]);
   const hubId = spaceRow.rows[0]?.hub_id;
-  if (delaySeconds > 0) {
-    await startPendingArm(
-      spaceId,
-      hubId,
-      delaySeconds,
-      req.user.minecraft_nickname ?? 'UI',
-      `Группа '${groupName}' поставлена под охрану`,
-      Number(groupId),
-    );
-    return res.json({ ok: true, pendingArm: true });
-  }
   await query('UPDATE groups SET status = $1 WHERE id = $2 AND space_id = $3', ['armed', groupId, spaceId]);
   const computedStatus = await computeSpaceStatusFromGroups(spaceId);
   await query('UPDATE spaces SET status = $1 WHERE id = $2', [computedStatus, spaceId]);
