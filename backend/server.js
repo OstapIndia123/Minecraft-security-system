@@ -2627,7 +2627,7 @@ const updateStatus = async (spaceId, status, who, logMessage) => {
   const defaultMessage = status === 'armed' ? 'Объект поставлен под охрану' : 'Объект снят с охраны';
   await appendLog(spaceId, logMessage ?? defaultMessage, who, 'security');
   const space = mapSpace(updated.rows[0]);
-  await applyLightOutputs(spaceId, space.hubId, status);
+  await applyLightOutputs(spaceId, space.hubId, status, null, { force: status !== 'armed' });
   if (status !== 'armed') {
     await stopSirenTimers(spaceId, space.hubId);
     spaceAlarmState.set(spaceId, false);
