@@ -20,6 +20,8 @@ const detectBrowserLanguage = () => {
 
 let spacesCache = [];
 const NICKNAME_COOLDOWN_MS = 7 * 24 * 60 * 60 * 1000;
+const FLASH_DURATION_MS = 15000;
+const ALARM_SOUND_PATH = '/alarm.mp3';
 
 const escapeHtml = (value) => String(value ?? '')
   .replace(/&/g, '&amp;')
@@ -27,6 +29,118 @@ const escapeHtml = (value) => String(value ?? '')
   .replace(/>/g, '&gt;')
   .replace(/"/g, '&quot;')
   .replace(/'/g, '&#39;');
+
+const alarmAudio = typeof Audio !== 'undefined' ? new Audio(ALARM_SOUND_PATH) : null;
+if (alarmAudio) {
+  alarmAudio.loop = true;
+  alarmAudio.preload = 'auto';
+}
+let alarmAudioActive = false;
+const logFlashActive = new Map();
+let currentAlarmActive = false;
+let currentAlarmFlash = false;
+
+const setAlarmSoundActive = async (active) => {
+  if (!alarmAudio) return;
+  if (active === alarmAudioActive) return;
+  alarmAudioActive = active;
+  if (active) {
+    try {
+      await alarmAudio.play();
+    } catch {
+      // Ignore autoplay restrictions.
+    }
+  } else {
+    alarmAudio.pause();
+    alarmAudio.currentTime = 0;
+  }
+};
+
+const getDeviceTypeToken = (type) => {
+  const raw = String(type ?? '').trim().toLowerCase();
+  if (['hub_extension', 'hub-extension', 'hub extension', 'hubextension', 'extension'].includes(raw)) {
+    return 'hub_extension';
+  }
+  if (raw === 'output_light' || raw === 'output light') return 'output-light';
+  return raw;
+};
+
+const deviceIcon = (type) => {
+  const token = getDeviceTypeToken(type);
+  const base = 'fill=\"none\" stroke=\"currentColor\" stroke-width=\"1.7\" stroke-linecap=\"round\" stroke-linejoin=\"round\"';
+  switch (token) {
+    case 'zone':
+      return `
+        <svg viewBox=\"0 0 24 24\" ${base} aria-hidden=\"true\">
+          <circle cx=\"12\" cy=\"12\" r=\"2.5\" />
+          <path d=\"M4.5 12a7.5 7.5 0 0 1 3.2-6.1\" />
+          <path d=\"M19.5 12a7.5 7.5 0 0 0-3.2-6.1\" />
+          <path d=\"M4.5 12a7.5 7.5 0 0 0 3.2 6.1\" />
+          <path d=\"M19.5 12a7.5 7.5 0 0 1-3.2 6.1\" />
+        </svg>
+      `;
+    case 'siren':
+      return `
+        <svg viewBox=\"0 0 24 24\" ${base} aria-hidden=\"true\">
+          <path d=\"M7 16a5 5 0 0 1 10 0\" />
+          <path d=\"M6 16h12\" />
+          <path d=\"M8.5 8.5a5 5 0 0 1 7 0\" />
+          <path d=\"M12 5v2\" />
+        </svg>
+      `;
+    case 'output-light':
+      return `
+        <svg viewBox=\"0 0 24 24\" ${base} aria-hidden=\"true\">
+          <path d=\"M9 18h6\" />
+          <path d=\"M8 9a4 4 0 1 1 8 0c0 2-1.1 2.6-2 4h-4c-.9-1.4-2-2-2-4z\" />
+          <path d=\"M10 21h4\" />
+        </svg>
+      `;
+    case 'reader':
+      return `
+        <svg viewBox=\"0 0 24 24\" ${base} aria-hidden=\"true\">
+          <rect x=\"6\" y=\"3.5\" width=\"12\" height=\"17\" rx=\"2\" />
+          <path d=\"M9 8h6\" />
+          <path d=\"M9 12h6\" />
+          <path d=\"M9 16h4\" />
+        </svg>
+      `;
+    case 'key':
+      return `
+        <svg viewBox=\"0 0 24 24\" ${base} aria-hidden=\"true\">
+          <circle cx=\"8.5\" cy=\"12\" r=\"3\" />
+          <path d=\"M11.5 12h8\" />
+          <path d=\"M16 12v3\" />
+          <path d=\"M18.5 12v2\" />
+        </svg>
+      `;
+    case 'hub':
+      return `
+        <svg viewBox=\"0 0 24 24\" ${base} aria-hidden=\"true\">
+          <rect x=\"4\" y=\"4\" width=\"16\" height=\"6\" rx=\"2\" />
+          <rect x=\"4\" y=\"14\" width=\"16\" height=\"6\" rx=\"2\" />
+          <path d=\"M8 7h0\" />
+          <path d=\"M8 17h0\" />
+        </svg>
+      `;
+    case 'hub_extension':
+      return `
+        <svg viewBox=\"0 0 24 24\" ${base} aria-hidden=\"true\">
+          <path d=\"M8 7h8v4a4 4 0 0 1-8 0z\" />
+          <path d=\"M12 3v4\" />
+          <path d=\"M10 19h4\" />
+          <path d=\"M9 21h6\" />
+        </svg>
+      `;
+    default:
+      return `
+        <svg viewBox=\"0 0 24 24\" ${base} aria-hidden=\"true\">
+          <rect x=\"5\" y=\"5\" width=\"14\" height=\"14\" rx=\"3\" />
+          <path d=\"M9 12h6\" />
+        </svg>
+      `;
+  }
+};
 
 const objectList = document.getElementById('userObjectList');
 const spaceIdEl = document.getElementById('userSpaceName');
@@ -80,6 +194,8 @@ const translations = {
     'status.disarmed': 'Снято с охраны',
     'status.night': 'Ночной режим',
     'status.partial': 'Частично под охраной',
+    'status.online': 'В сети',
+    'status.offline': 'Не в сети',
     'user.groups.manage': 'Управление',
     'user.groups.manageTitle': 'Управление группами',
     'user.groups.arm': 'Под охрану',
@@ -92,6 +208,13 @@ const translations = {
     'profile.language': 'Язык',
     'profile.switchPro': 'Перейти на PRO',
     'profile.logout': 'Выйти',
+    'device.type': 'Тип',
+    'device.side': 'Сторона',
+    'device.keyMasked': 'Ключ: *****',
+    'common.close': 'Закрыть',
+    'common.cancel': 'Отмена',
+    'common.confirm': 'Подтвердить',
+    'common.actionConfirmTitle': 'Подтвердите действие',
     'user.pageTitle': 'Minecraft Security System — Режим пользователя',
   },
   'en-US': {
@@ -115,6 +238,8 @@ const translations = {
     'status.disarmed': 'Disarmed',
     'status.night': 'Night mode',
     'status.partial': 'Partially armed',
+    'status.online': 'Online',
+    'status.offline': 'Offline',
     'user.groups.manage': 'Manage',
     'user.groups.manageTitle': 'Manage groups',
     'user.groups.arm': 'Arm',
@@ -127,6 +252,13 @@ const translations = {
     'profile.language': 'Language',
     'profile.switchPro': 'Go to PRO',
     'profile.logout': 'Sign out',
+    'device.type': 'Type',
+    'device.side': 'Side',
+    'device.keyMasked': 'Key: *****',
+    'common.close': 'Close',
+    'common.cancel': 'Cancel',
+    'common.confirm': 'Confirm',
+    'common.actionConfirmTitle': 'Confirm action',
     'user.pageTitle': 'Minecraft Security System — User mode',
   },
 };
@@ -136,6 +268,27 @@ const statusTone = {
   disarmed: 'status--disarmed',
   night: 'status--night',
   partial: 'status--partial',
+};
+
+const normalizeStatusValue = (status) => {
+  if (!status) return status;
+  const raw = String(status).trim();
+  const aliases = {
+    'Не в сети': 'offline',
+    'В сети': 'online',
+  };
+  return aliases[raw] ?? raw;
+};
+
+const getStatusLabel = (status) => {
+  if (!status) return '—';
+  const normalized = normalizeStatusValue(status);
+  const key = `status.${normalized}`;
+  const translated = t(key);
+  if (!translated || translated === key) {
+    return normalized;
+  }
+  return translated;
 };
 
 const applyTranslations = () => {
@@ -354,6 +507,44 @@ const formatLogTime = (timestamp) => {
   });
 };
 
+const getLogTimestamp = (log) => {
+  if (log.createdAtMs) return log.createdAtMs;
+  const raw = log.createdAt ?? log.created_at;
+  if (!raw) return null;
+  const parsed = new Date(`${raw}Z`);
+  if (Number.isNaN(parsed.getTime())) return null;
+  return parsed.getTime();
+};
+
+const isAlarmActive = (logs) => {
+  if (!logs?.length) return false;
+  let lastAlarm = null;
+  let lastRestore = null;
+  logs.forEach((log) => {
+    if (log.type !== 'alarm' && log.type !== 'restore') return;
+    const ts = getLogTimestamp(log);
+    if (!ts) return;
+    if (log.type === 'alarm') {
+      if (!lastAlarm || ts > lastAlarm) lastAlarm = ts;
+    } else {
+      if (!lastRestore || ts > lastRestore) lastRestore = ts;
+    }
+  });
+  if (!lastAlarm) return false;
+  if (!lastRestore) return true;
+  return lastAlarm > lastRestore;
+};
+
+const hasActiveAlarmFlash = (spaceId) => {
+  const prefix = `logFlash:user:${spaceId}:`;
+  for (const [key, expiresAt] of logFlashActive.entries()) {
+    if (key.startsWith(prefix) && expiresAt > Date.now()) {
+      return true;
+    }
+  }
+  return false;
+};
+
 const initProfileMenu = async () => {
   if (!avatarButton || !profileDropdown) return;
   const toggle = (open) => {
@@ -500,7 +691,10 @@ const renderSpaces = (spaces) => {
     const hubOfflineLabel = space.hubOnline === false
       ? `<div class="object-item__hub-offline">${t('user.object.hubOffline')}</div>`
       : '';
-    item.className = `object-item ${space.id === state.selectedSpaceId ? 'object-item--active' : ''}`;
+    const isSelected = space.id === state.selectedSpaceId;
+    const alarmClass = isSelected && currentAlarmActive ? 'object-item--alarm' : '';
+    const alarmFlashClass = isSelected && currentAlarmFlash ? 'object-item--alarm-flash' : '';
+    item.className = `object-item ${isSelected ? 'object-item--active' : ''} ${alarmClass} ${alarmFlashClass}`;
     item.innerHTML = `
       <div class="object-item__title">${escapeHtml(space.name)}</div>
       <div class="object-item__meta">${escapeHtml(space.id)}</div>
@@ -541,14 +735,20 @@ const renderDevices = (devices) => {
   }
 
   devices.forEach((device) => {
-    const statusText = device.type === 'zone' || device.type === 'hub' ? (device.status ?? '—') : '';
+    const statusText = device.type === 'zone' || device.type === 'hub'
+      ? getStatusLabel(device.status)
+      : '';
     const button = document.createElement('button');
     button.className = `device-item ${device.id === state.selectedDeviceId ? 'device-item--active' : ''}`;
-    const displayName = device.type === 'key' ? 'Ключ: *****' : device.name;
+    const displayName = device.type === 'key' ? t('device.keyMasked') : device.name;
+    const deviceTypeToken = getDeviceTypeToken(device.type);
     button.innerHTML = `
-      <div>
-        <div class="device-item__title">${escapeHtml(displayName)}</div>
-        <div class="device-item__meta">${escapeHtml(device.room ?? '—')}</div>
+      <div class="device-item__content">
+        <div class="device-avatar" data-type="${deviceTypeToken}">${deviceIcon(device.type)}</div>
+        <div>
+          <div class="device-item__title">${escapeHtml(displayName)}</div>
+          <div class="device-item__meta">${escapeHtml(device.room ?? '—')}</div>
+        </div>
       </div>
       <span class="device-item__status">${escapeHtml(statusText)}</span>
     `;
@@ -557,12 +757,24 @@ const renderDevices = (devices) => {
       renderDevices(devices);
       const keyGroups = device.config?.groups ?? [];
       const hasGroupAccess = keyGroups.some((groupId) => allowedGroups.has(groupId));
-      const detailTitle = device.type === 'key' && !hasGroupAccess ? 'Ключ: *****' : device.name;
+      const detailTitle = device.type === 'key' && !hasGroupAccess ? t('device.keyMasked') : device.name;
       deviceDetails.innerHTML = `
-        <div class="detail-card">
-          <h3>${escapeHtml(detailTitle)}</h3>
-          <p>Тип: ${escapeHtml(device.type)}</p>
-          <p>Сторона: ${escapeHtml(device.side ?? '—')}</p>
+        <div class="device-details__header">
+          <div class="device-avatar" data-type="${deviceTypeToken}">${deviceIcon(device.type)}</div>
+          <div>
+            <div class="device-details__title">${escapeHtml(detailTitle)}</div>
+            <div class="device-details__meta">${escapeHtml(device.room ?? '—')}</div>
+          </div>
+        </div>
+        <div class="device-details__stats">
+          <div class="stat">
+            <span>${t('device.type')}</span>
+            <strong>${escapeHtml(device.type)}</strong>
+          </div>
+          <div class="stat">
+            <span>${t('device.side')}</span>
+            <strong>${escapeHtml(device.side ?? '—')}</strong>
+          </div>
         </div>
       `;
     });
@@ -576,6 +788,7 @@ const renderDevices = (devices) => {
 
 const translateLogText = (text) => {
   if (state.language !== 'en-US' || !text) return text;
+  const normalizedText = String(text).replace(/&#39;/g, "'");
   const translations = [
     { pattern: /^Создано пространство$/, replacement: 'Space created' },
     { pattern: /^Обновлена информация об объекте$/, replacement: 'Space details updated' },
@@ -614,17 +827,20 @@ const translateLogText = (text) => {
     { pattern: /^Группа '(.+)' снята с охраны$/, replacement: "Group '$1' disarmed" },
     { pattern: /^Постановка группы '(.+)' ключом: (.+)$/, replacement: "Group '$1' armed by key: $2" },
     { pattern: /^Снятие группы '(.+)' ключом: (.+)$/, replacement: "Group '$1' disarmed by key: $2" },
+    { pattern: /^Добавлена группа: (.+)$/, replacement: 'Group added: $1' },
+    { pattern: /^Удалена группа: (.+)$/, replacement: 'Group removed: $1' },
+    { pattern: /^Переименована группа: (.+)$/, replacement: 'Group renamed: $1' },
     { pattern: /^Режим групп включён$/, replacement: 'Groups mode enabled' },
     { pattern: /^Режим групп отключён$/, replacement: 'Groups mode disabled' },
     { pattern: /^Тревога шлейфа: (.+) \[(.+)\]$/, replacement: 'Zone alarm: $1 [$2]' },
     { pattern: /^Восстановление шлейфа: (.+) \[(.+)\]$/, replacement: 'Zone restored: $1 [$2]' },
   ];
   for (const entry of translations) {
-    if (entry.pattern.test(text)) {
-      return text.replace(entry.pattern, entry.replacement);
+    if (entry.pattern.test(normalizedText)) {
+      return normalizedText.replace(entry.pattern, entry.replacement);
     }
   }
-  return text;
+  return normalizedText;
 };
 
 const maskKeyNames = (text) => {
@@ -650,6 +866,10 @@ const renderLogs = (logs) => {
   if (!filtered.length) {
     logTable.innerHTML = `<div class="empty-state">${t('user.empty.logs')}</div>`;
     logMoreButton?.classList.add('hidden');
+    currentAlarmActive = isAlarmActive(logs);
+    currentAlarmFlash = hasActiveAlarmFlash(state.selectedSpaceId);
+    setAlarmSoundActive(currentAlarmActive).catch(() => null);
+    renderSpaces(spacesCache);
     return;
   }
   filtered.forEach((log) => {
@@ -657,9 +877,15 @@ const renderLogs = (logs) => {
     const translated = maskKeyNames(translateLogText(log.text));
     const isHubOffline = log.text === 'Хаб не в сети' || translated === 'Hub offline';
     const isExtensionOffline = log.text === 'Модуль расширения не в сети' || translated === 'Hub extension offline';
+    const logTimestamp = getLogTimestamp(log);
+    const flashKey = `logFlash:user:${state.selectedSpaceId}:${logTimestamp ?? log.time}:${log.text}`;
+    const hasSeen = localStorage.getItem(flashKey);
+    if (log.type === 'alarm' && logTimestamp && !hasSeen) {
+      localStorage.setItem(flashKey, String(Date.now()));
+      logFlashActive.set(flashKey, Date.now() + FLASH_DURATION_MS);
+    }
     row.className = `log-row ${log.type === 'alarm' ? 'log-row--alarm' : ''} ${(isHubOffline || isExtensionOffline) ? 'log-row--hub-offline' : ''}`;
-    const timestamp = log.createdAtMs ?? (log.createdAt ? new Date(`${log.createdAt}Z`).getTime() : null);
-    const timeLabel = escapeHtml(formatLogTime(timestamp) ?? log.time);
+    const timeLabel = escapeHtml(formatLogTime(logTimestamp) ?? log.time);
     const text = escapeHtml(translated);
     const whoLabel = escapeHtml(log.who);
     row.innerHTML = `
@@ -670,6 +896,10 @@ const renderLogs = (logs) => {
     logTable.appendChild(row);
   });
   logMoreButton?.classList.toggle('hidden', !state.logsHasMore);
+  currentAlarmActive = isAlarmActive(logs);
+  currentAlarmFlash = hasActiveAlarmFlash(state.selectedSpaceId);
+  setAlarmSoundActive(currentAlarmActive).catch(() => null);
+  renderSpaces(spacesCache);
 };
 
 const loadSpace = async (spaceId, { refreshLogs = true } = {}) => {

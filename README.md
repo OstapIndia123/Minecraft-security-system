@@ -119,6 +119,9 @@ http://localhost:8080/login.html?token=TEST_TOKEN
 
 И не забудьте сменить токен Webhook.
 
+## UI иконки устройств
+Инструкция по добавлению пользовательских SVG-иконок для устройств находится в `docs/icons.md`.
+
 ## Содержание
 - [Архитектура и модели](docs/architecture.md)
 - [Авторизация через launcher token](docs/auth-flow.md)

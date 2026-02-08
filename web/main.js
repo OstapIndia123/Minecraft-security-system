@@ -56,6 +56,21 @@ const setAlarmSoundActive = async (active) => {
   }
 };
 
+const runRefreshAnimation = async (button, action) => {
+  if (!button) {
+    await action();
+    return;
+  }
+  button.classList.add('is-loading');
+  button.disabled = true;
+  try {
+    await action();
+  } finally {
+    button.classList.remove('is-loading');
+    button.disabled = false;
+  }
+};
+
 const grid = document.getElementById('mainObjectGrid');
 const logTable = document.getElementById('mainLogTable');
 const refreshBtn = document.getElementById('mainRefresh');
@@ -108,6 +123,8 @@ const translations = {
     'status.disarmed': 'Снято с охраны',
     'status.night': 'Ночной режим',
     'status.partial': 'Частично под охраной',
+    'status.online': 'В сети',
+    'status.offline': 'Не в сети',
     'profile.title': 'Профиль',
     'profile.nickname': 'Игровой ник',
     'profile.nickname.change': 'Сменить',
@@ -142,6 +159,8 @@ const translations = {
     'status.disarmed': 'Disarmed',
     'status.night': 'Night mode',
     'status.partial': 'Partially armed',
+    'status.online': 'Online',
+    'status.offline': 'Offline',
     'profile.title': 'Profile',
     'profile.nickname': 'Game nickname',
     'profile.nickname.change': 'Change',
@@ -179,13 +198,26 @@ const statusMap = {
   disarmed: 'Снято с охраны',
   night: 'Ночной режим',
   partial: 'Частично под охраной',
+  online: 'В сети',
+  offline: 'Не в сети',
+};
+
+const normalizeStatusValue = (status) => {
+  if (!status) return status;
+  const raw = String(status).trim();
+  const aliases = {
+    'Не в сети': 'offline',
+    'В сети': 'online',
+  };
+  return aliases[raw] ?? raw;
 };
 
 const getStatusLabel = (status) => {
-  const key = `status.${status}`;
+  const normalized = normalizeStatusValue(status);
+  const key = `status.${normalized}`;
   const translated = t(key);
   if (!translated || translated === key) {
-    return statusMap[status] ?? status;
+    return statusMap[normalized] ?? status;
   }
   return translated;
 };
@@ -504,14 +536,51 @@ const hasActiveAlarmFlash = (space) => {
   return false;
 };
 
+const getAlarmStateBySpace = (logs) => {
+  const alarmMap = new Map();
+  const restoreMap = new Map();
+  logs.forEach((log) => {
+    if (log.type !== 'alarm' && log.type !== 'restore') return;
+    const ts = getLogTimestamp(log);
+    if (!ts) return;
+    const key = log.spaceId ?? log.spaceName ?? log.space_id ?? '';
+    if (!key) return;
+    if (log.type === 'alarm') {
+      const current = alarmMap.get(key);
+      if (!current || ts > current) alarmMap.set(key, ts);
+    } else {
+      const current = restoreMap.get(key);
+      if (!current || ts > current) restoreMap.set(key, ts);
+    }
+  });
+  return { alarmMap, restoreMap };
+};
+
+const isAlarmActiveForSpace = (space, alarmState) => {
+  if (!space) return false;
+  const keys = [space.id, space.name].filter(Boolean);
+  let lastAlarm = null;
+  let lastRestore = null;
+  keys.forEach((key) => {
+    const alarmTs = alarmState.alarmMap.get(key);
+    const restoreTs = alarmState.restoreMap.get(key);
+    if (alarmTs && (!lastAlarm || alarmTs > lastAlarm)) lastAlarm = alarmTs;
+    if (restoreTs && (!lastRestore || restoreTs > lastRestore)) lastRestore = restoreTs;
+  });
+  if (!lastAlarm) return false;
+  if (!lastRestore) return true;
+  return lastAlarm > lastRestore;
+};
+
 const renderObjects = (spaces) => {
   const query = (searchInput?.value ?? '').trim().toLowerCase();
+  const alarmState = getAlarmStateBySpace(state.logs);
   const filtered = spaces.filter((space) => {
     if (state.filter === 'offline') {
       return space.hubOnline === false;
     }
     if (state.filter === 'issues') {
-      return space.issues;
+      return isAlarmActiveForSpace(space, alarmState);
     }
     return true;
   }).filter((space) => {
@@ -531,14 +600,14 @@ const renderObjects = (spaces) => {
 
   filtered.forEach((space) => {
     const card = document.createElement('button');
-    const shouldFlash = space.issues || hasActiveAlarmFlash(space);
+    const isAlarmActive = isAlarmActiveForSpace(space, alarmState);
+    const shouldFlash = isAlarmActive || hasActiveAlarmFlash(space);
     const hubOfflineLabel = space.hubOnline === false
       ? `<div class="object-card__hub-offline">${t('pcn.object.hubOffline')}</div>`
       : '';
     card.className = `object-card ${shouldFlash ? 'object-card--alarm object-card--alarm-flash' : ''}`;
     card.innerHTML = `
       <div class="object-card__title">${escapeHtml(space.name)}</div>
-      <div class="object-card__meta">${t('pcn.object.hubId')} ${escapeHtml(space.hubId ?? '—')}</div>
       ${hubOfflineLabel}
       <div class="object-card__status ${statusTone[space.status] ?? ''}">${getStatusLabel(space.status)}</div>
       <div class="object-card__meta">${escapeHtml(space.server ?? '—')}</div>
@@ -551,11 +620,12 @@ const renderObjects = (spaces) => {
     });
     grid.appendChild(card);
   });
-  setAlarmSoundActive(filtered.some((space) => space.issues || hasActiveAlarmFlash(space))).catch(() => null);
+  setAlarmSoundActive(filtered.some((space) => isAlarmActiveForSpace(space, alarmState))).catch(() => null);
 };
 
 const translateLogText = (text) => {
   if (state.language !== 'en-US' || !text) return text;
+  const normalizedText = String(text).replace(/&#39;/g, "'");
   const translations = [
     { pattern: /^Создано пространство$/, replacement: 'Space created' },
     { pattern: /^Обновлена информация об объекте$/, replacement: 'Space details updated' },
@@ -590,13 +660,22 @@ const translateLogText = (text) => {
     { pattern: /^Обновлён ключ: (.+)$/, replacement: 'Key updated: $1' },
     { pattern: /^Пользователь покинул пространство: (.+)$/, replacement: 'User left space: $1' },
     { pattern: /^Пользователь удалён из пространства: (.+)$/, replacement: 'User removed from space: $1' },
+    { pattern: /^Группа '(.+)' поставлена под охрану$/, replacement: "Group '$1' armed" },
+    { pattern: /^Группа '(.+)' снята с охраны$/, replacement: "Group '$1' disarmed" },
+    { pattern: /^Постановка группы '(.+)' ключом: (.+)$/, replacement: "Group '$1' armed by key: $2" },
+    { pattern: /^Снятие группы '(.+)' ключом: (.+)$/, replacement: "Group '$1' disarmed by key: $2" },
+    { pattern: /^Добавлена группа: (.+)$/, replacement: 'Group added: $1' },
+    { pattern: /^Удалена группа: (.+)$/, replacement: 'Group removed: $1' },
+    { pattern: /^Переименована группа: (.+)$/, replacement: 'Group renamed: $1' },
+    { pattern: /^Режим групп включён$/, replacement: 'Groups mode enabled' },
+    { pattern: /^Режим групп отключён$/, replacement: 'Groups mode disabled' },
   ];
   for (const entry of translations) {
-    if (entry.pattern.test(text)) {
-      return text.replace(entry.pattern, entry.replacement);
+    if (entry.pattern.test(normalizedText)) {
+      return normalizedText.replace(entry.pattern, entry.replacement);
     }
   }
-  return text;
+  return normalizedText;
 };
 
 const renderLogs = (logs) => {
@@ -723,8 +802,10 @@ logFilters.forEach((button) => {
 });
 
 if (refreshBtn) {
-  refreshBtn.addEventListener('click', () => {
-    refresh().catch(() => null);
+  refreshBtn.addEventListener('click', (event) => {
+    event.preventDefault();
+    event.stopPropagation();
+    runRefreshAnimation(refreshBtn, refresh).catch(() => null);
   });
 }
 
