@@ -3418,6 +3418,25 @@ app.post('/api/hub/events', requireWebhookToken, async (req, res) => {
               }
             }
           } else {
+            const spaceRow = await query('SELECT hub_id, groups_enabled FROM spaces WHERE id = $1', [spaceId]);
+            const hubId = spaceRow.rows[0]?.hub_id;
+            if (spaceRow.rows[0]?.groups_enabled) {
+              const groups = await query('SELECT id FROM groups WHERE space_id = $1', [spaceId]);
+              for (const group of groups.rows) {
+                const gId = group.id;
+                const sk = stateKey(spaceId, gId);
+                await query("UPDATE groups SET status = 'disarmed' WHERE id = $1 AND space_id = $2", [gId, spaceId]);
+                await stopSirenTimers(spaceId, hubId, gId);
+                spaceAlarmState.set(sk, false);
+                alarmSinceArmed.delete(sk);
+                entryDelayFailed.delete(sk);
+                await clearEntryDelay(spaceId, hubId, gId);
+                await clearPendingArm(spaceId, hubId, gId);
+                await stopBlinkingLights(spaceId, hubId, 'entry-delay', gId);
+                await stopBlinkingLights(spaceId, hubId, 'exit-delay', gId);
+                await applyLightOutputs(spaceId, hubId, 'disarmed', gId);
+              }
+            }
             await updateStatus(
               spaceId,
               'disarmed',
