@@ -272,6 +272,16 @@ const statusTone = {
   partial: 'status--partial',
 };
 
+const statusKeys = new Set([
+  'armed',
+  'disarmed',
+  'night',
+  'partial',
+  'online',
+  'offline',
+  'normal',
+]);
+
 const normalizeStatusValue = (status) => {
   if (!status) return status;
   const raw = String(status).trim();
@@ -284,7 +294,7 @@ const normalizeStatusValue = (status) => {
     offline: 'offline',
     normal: 'normal',
   };
-  return aliases[lower] ?? raw;
+  return aliases[lower] ?? (statusKeys.has(lower) ? lower : raw);
 };
 
 const getStatusLabel = (status) => {

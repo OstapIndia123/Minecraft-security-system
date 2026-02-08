@@ -217,7 +217,7 @@ const normalizeStatusValue = (status) => {
     offline: 'offline',
     normal: 'normal',
   };
-  return aliases[lower] ?? raw;
+  return aliases[lower] ?? (statusMap[lower] ? lower : raw);
 };
 
 const getStatusLabel = (status) => {
