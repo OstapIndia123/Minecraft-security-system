@@ -955,7 +955,7 @@ const filterLogs = (logs) => {
   return withoutHubEvents.filter((log) => log.type === state.logFilter);
 };
 
-const renderLogs = (logs, { flashSince } = {}) => {
+const renderLogs = async (logs, { flashSince } = {}) => {
   const filtered = filterLogs(logs)
     .filter((log) => !/^Событие хаба/.test(log.text ?? ''));
   logTable.innerHTML = '';
@@ -1054,7 +1054,7 @@ const loadLogs = async (reset = false) => {
     state.logsLimit = state.logsOffset;
     state.logsHasMore = Boolean(resp.hasMore);
   }
-  renderLogs(state.logs, { flashSince });
+  await renderLogs(state.logs, { flashSince });
 };
 
 const loadSpaces = async () => {
