@@ -572,36 +572,62 @@ const registerAlarmFlashes = (logs, flashSince) => {
   });
 };
 
+const isDisarmLogText = (text) => (
+  text === 'Объект снят с охраны'
+  || (text.startsWith('Группа ') && text.includes(' снята с охраны'))
+  || text.startsWith('Снятие с охраны')
+  || (text.startsWith('Снятие группы ') && text.includes(' ключом'))
+);
+
+const isArmLogText = (text) => (
+  text === 'Объект поставлен под охрану'
+  || (text.startsWith('Группа ') && text.includes(' поставлена под охрану'))
+  || text.startsWith('Постановка на охрану')
+  || (text.startsWith('Постановка группы ') && text.includes(' ключом'))
+);
+
 const getAlarmStateBySpace = (logs) => {
   const alarmMap = new Map();
   const restoreMap = new Map();
+  const disarmMap = new Map();
+  const armMap = new Map();
   logs.forEach((log) => {
-    if (log.type !== 'alarm' && log.type !== 'restore') return;
     const ts = getLogTimestamp(log);
     if (!ts) return;
     const key = log.spaceId ?? log.spaceName ?? log.space_id ?? '';
     if (!key) return;
+    const text = log.text ?? '';
     if (log.type === 'alarm') {
       const current = alarmMap.get(key);
       if (!current || ts > current) alarmMap.set(key, ts);
-    } else {
+    } else if (log.type === 'restore') {
       const current = restoreMap.get(key);
       if (!current || ts > current) restoreMap.set(key, ts);
+    } else if (log.type === 'security' && isDisarmLogText(text)) {
+      const current = disarmMap.get(key);
+      if (!current || ts > current) disarmMap.set(key, ts);
+    } else if (log.type === 'security' && isArmLogText(text)) {
+      const current = armMap.get(key);
+      if (!current || ts > current) armMap.set(key, ts);
     }
   });
-  return { alarmMap, restoreMap };
+  return { alarmMap, restoreMap, disarmMap, armMap };
 };
 
 const isAlarmActiveForSpace = (space, alarmState) => {
   if (!space) return false;
+  if (space.status === 'disarmed') return false;
   const keys = [space.id, space.name].filter(Boolean);
   let lastAlarm = null;
   let lastRestore = null;
   keys.forEach((key) => {
     const alarmTs = alarmState.alarmMap.get(key);
     const restoreTs = alarmState.restoreMap.get(key);
+    const disarmTs = alarmState.disarmMap.get(key);
+    const armTs = alarmState.armMap.get(key);
     if (alarmTs && (!lastAlarm || alarmTs > lastAlarm)) lastAlarm = alarmTs;
-    if (restoreTs && (!lastRestore || restoreTs > lastRestore)) lastRestore = restoreTs;
+    const clearTs = Math.max(restoreTs ?? 0, disarmTs ?? 0, armTs ?? 0);
+    if (clearTs && (!lastRestore || clearTs > lastRestore)) lastRestore = clearTs;
   });
   if (!lastAlarm) return false;
   if (!lastRestore) return true;
@@ -660,7 +686,10 @@ const renderObjects = (spaces) => {
     });
     grid.appendChild(card);
   });
-  setAlarmSoundActive(filtered.some((space) => hasUnackedAlarm(space.id) || isAlarmActiveForSpace(space, alarmState))).catch(() => null);
+  setAlarmSoundActive(filtered.some((space) => (
+    space.status !== 'disarmed'
+    && (hasUnackedAlarm(space.id) || isAlarmActiveForSpace(space, alarmState))
+  ))).catch(() => null);
 };
 
 const translateLogText = (text) => {

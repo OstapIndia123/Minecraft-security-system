@@ -192,24 +192,45 @@ const notifyLogEvent = async (space, log) => {
   await notifySecurityEvent({ title, body, tag: key });
 };
 
+const isDisarmLogText = (text) => (
+  text === 'Объект снят с охраны'
+  || (text.startsWith('Группа ') && text.includes(' снята с охраны'))
+  || text.startsWith('Снятие с охраны')
+  || (text.startsWith('Снятие группы ') && text.includes(' ключом'))
+);
+
+const isArmLogText = (text) => (
+  text === 'Объект поставлен под охрану'
+  || (text.startsWith('Группа ') && text.includes(' поставлена под охрану'))
+  || text.startsWith('Постановка на охрану')
+  || (text.startsWith('Постановка группы ') && text.includes(' ключом'))
+);
+
 const isSpaceAlarmActive = (space) => {
   const logs = space?.logs ?? [];
   if (!logs.length) return false;
   let lastAlarm = null;
   let lastRestore = null;
+  let lastDisarm = null;
+  let lastArm = null;
   logs.forEach((log) => {
-    if (log.type !== 'alarm' && log.type !== 'restore') return;
     const ts = getLogTimestamp(log);
     if (!ts) return;
+    const text = log.text ?? '';
     if (log.type === 'alarm') {
       if (!lastAlarm || ts > lastAlarm) lastAlarm = ts;
     } else if (log.type === 'restore') {
       if (!lastRestore || ts > lastRestore) lastRestore = ts;
+    } else if (log.type === 'security' && isDisarmLogText(text)) {
+      if (!lastDisarm || ts > lastDisarm) lastDisarm = ts;
+    } else if (log.type === 'security' && isArmLogText(text)) {
+      if (!lastArm || ts > lastArm) lastArm = ts;
     }
   });
   if (!lastAlarm) return false;
-  if (!lastRestore) return true;
-  return lastAlarm > lastRestore;
+  const lastClear = Math.max(lastRestore ?? 0, lastDisarm ?? 0, lastArm ?? 0);
+  if (!lastClear) return true;
+  return lastAlarm > lastClear;
 };
 
 const hasActiveAlarmFlash = (space) => {
