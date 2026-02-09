@@ -572,6 +572,20 @@ const registerAlarmFlashes = (logs, flashSince) => {
   });
 };
 
+const isDisarmLogText = (text) => (
+  text === 'Объект снят с охраны'
+  || (text.startsWith('Группа ') && text.includes(' снята с охраны'))
+  || text.startsWith('Снятие с охраны')
+  || (text.startsWith('Снятие группы ') && text.includes(' ключом'))
+);
+
+const isArmLogText = (text) => (
+  text === 'Объект поставлен под охрану'
+  || (text.startsWith('Группа ') && text.includes(' поставлена под охрану'))
+  || text.startsWith('Постановка на охрану')
+  || (text.startsWith('Постановка группы ') && text.includes(' ключом'))
+);
+
 const getAlarmStateBySpace = (logs) => {
   const alarmMap = new Map();
   const restoreMap = new Map();
@@ -589,16 +603,10 @@ const getAlarmStateBySpace = (logs) => {
     } else if (log.type === 'restore') {
       const current = restoreMap.get(key);
       if (!current || ts > current) restoreMap.set(key, ts);
-    } else if (
-      log.type === 'security'
-      && (text === 'Объект снят с охраны' || text.startsWith('Группа ') && text.includes(' снята с охраны'))
-    ) {
+    } else if (log.type === 'security' && isDisarmLogText(text)) {
       const current = disarmMap.get(key);
       if (!current || ts > current) disarmMap.set(key, ts);
-    } else if (
-      log.type === 'security'
-      && (text === 'Объект поставлен под охрану' || text.startsWith('Группа ') && text.includes(' поставлена под охрану'))
-    ) {
+    } else if (log.type === 'security' && isArmLogText(text)) {
       const current = armMap.get(key);
       if (!current || ts > current) armMap.set(key, ts);
     }

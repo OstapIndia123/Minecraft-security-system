@@ -192,6 +192,20 @@ const notifyLogEvent = async (space, log) => {
   await notifySecurityEvent({ title, body, tag: key });
 };
 
+const isDisarmLogText = (text) => (
+  text === 'Объект снят с охраны'
+  || (text.startsWith('Группа ') && text.includes(' снята с охраны'))
+  || text.startsWith('Снятие с охраны')
+  || (text.startsWith('Снятие группы ') && text.includes(' ключом'))
+);
+
+const isArmLogText = (text) => (
+  text === 'Объект поставлен под охрану'
+  || (text.startsWith('Группа ') && text.includes(' поставлена под охрану'))
+  || text.startsWith('Постановка на охрану')
+  || (text.startsWith('Постановка группы ') && text.includes(' ключом'))
+);
+
 const isSpaceAlarmActive = (space) => {
   const logs = space?.logs ?? [];
   if (!logs.length) return false;
@@ -207,15 +221,9 @@ const isSpaceAlarmActive = (space) => {
       if (!lastAlarm || ts > lastAlarm) lastAlarm = ts;
     } else if (log.type === 'restore') {
       if (!lastRestore || ts > lastRestore) lastRestore = ts;
-    } else if (
-      log.type === 'security'
-      && (text === 'Объект снят с охраны' || text.startsWith('Группа ') && text.includes(' снята с охраны'))
-    ) {
+    } else if (log.type === 'security' && isDisarmLogText(text)) {
       if (!lastDisarm || ts > lastDisarm) lastDisarm = ts;
-    } else if (
-      log.type === 'security'
-      && (text === 'Объект поставлен под охрану' || text.startsWith('Группа ') && text.includes(' поставлена под охрану'))
-    ) {
+    } else if (log.type === 'security' && isArmLogText(text)) {
       if (!lastArm || ts > lastArm) lastArm = ts;
     }
   });

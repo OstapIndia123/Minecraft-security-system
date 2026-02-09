@@ -37,16 +37,18 @@ if (alarmAudio) {
   alarmAudio.preload = 'auto';
 }
 let alarmAudioActive = false;
+let alarmAudioOneShot = false;
 const logFlashActive = new Map();
 let currentAlarmActive = false;
 let currentAlarmFlash = false;
 
 const setAlarmSoundActive = async (active) => {
   if (!alarmAudio) return;
-  if (active === alarmAudioActive) return;
+  if (active === alarmAudioActive && !alarmAudioOneShot) return;
   alarmAudioActive = active;
   if (active) {
     try {
+      alarmAudioOneShot = false;
       await alarmAudio.play();
     } catch {
       // Ignore autoplay restrictions.
@@ -55,6 +57,52 @@ const setAlarmSoundActive = async (active) => {
     alarmAudio.pause();
     alarmAudio.currentTime = 0;
   }
+};
+
+const playAlarmSoundOnce = async () => {
+  if (!alarmAudio) return;
+  alarmAudioOneShot = true;
+  alarmAudio.loop = false;
+  try {
+    await alarmAudio.play();
+  } catch {
+    // Ignore autoplay restrictions.
+  } finally {
+    alarmAudio.loop = true;
+    alarmAudioOneShot = false;
+  }
+};
+
+const shouldPlayRestoreSound = (logs) => {
+  let lastAlarm = null;
+  let lastRestore = null;
+  let lastDisarm = null;
+  let lastArm = null;
+  let restoreLogKey = null;
+  logs.forEach((log) => {
+    const ts = getLogTimestamp(log);
+    if (!ts) return;
+    const text = log.text ?? '';
+    if (log.type === 'alarm') {
+      if (!lastAlarm || ts > lastAlarm) lastAlarm = ts;
+    } else if (log.type === 'restore' && isRestoreLogText(text)) {
+      if (!lastRestore || ts > lastRestore) {
+        lastRestore = ts;
+        restoreLogKey = `alarmRestorePlayed:${state.selectedSpaceId}:${ts}:${text}`;
+      }
+    } else if (log.type === 'security' && isDisarmLogText(text)) {
+      if (!lastDisarm || ts > lastDisarm) lastDisarm = ts;
+    } else if (log.type === 'security' && isArmLogText(text)) {
+      if (!lastArm || ts > lastArm) lastArm = ts;
+    }
+  });
+  if (!lastAlarm || !lastRestore || !restoreLogKey) return null;
+  const lastClear = Math.max(lastDisarm ?? 0, lastArm ?? 0);
+  if (lastRestore <= lastAlarm) return null;
+  if (lastRestore <= lastClear) return null;
+  if (localStorage.getItem(restoreLogKey)) return null;
+  localStorage.setItem(restoreLogKey, String(Date.now()));
+  return restoreLogKey;
 };
 
 const getDeviceTypeToken = (type) => {
@@ -536,12 +584,29 @@ const getLogTimestamp = (log) => {
   return parsed.getTime();
 };
 
+const isDisarmLogText = (text) => (
+  text === 'Объект снят с охраны'
+  || (text.startsWith('Группа ') && text.includes(' снята с охраны'))
+  || text.startsWith('Снятие с охраны')
+  || (text.startsWith('Снятие группы ') && text.includes(' ключом'))
+);
+
+const isRestoreLogText = (text) => text.startsWith('Восстановление шлейфа');
+
+const isArmLogText = (text) => (
+  text === 'Объект поставлен под охрану'
+  || (text.startsWith('Группа ') && text.includes(' поставлена под охрану'))
+  || text.startsWith('Постановка на охрану')
+  || (text.startsWith('Постановка группы ') && text.includes(' ключом'))
+);
+
 const isAlarmActive = (logs) => {
   if (!logs?.length) return false;
   let lastAlarm = null;
   let lastRestore = null;
   let lastDisarm = null;
   let lastArm = null;
+  let lastRestoreOnly = null;
   logs.forEach((log) => {
     const ts = getLogTimestamp(log);
     if (!ts) return;
@@ -550,15 +615,10 @@ const isAlarmActive = (logs) => {
       if (!lastAlarm || ts > lastAlarm) lastAlarm = ts;
     } else if (log.type === 'restore') {
       if (!lastRestore || ts > lastRestore) lastRestore = ts;
-    } else if (
-      log.type === 'security'
-      && (text === 'Объект снят с охраны' || text.startsWith('Группа ') && text.includes(' снята с охраны'))
-    ) {
+      if (!lastRestoreOnly || ts > lastRestoreOnly) lastRestoreOnly = ts;
+    } else if (log.type === 'security' && isDisarmLogText(text)) {
       if (!lastDisarm || ts > lastDisarm) lastDisarm = ts;
-    } else if (
-      log.type === 'security'
-      && (text === 'Объект поставлен под охрану' || text.startsWith('Группа ') && text.includes(' поставлена под охрану'))
-    ) {
+    } else if (log.type === 'security' && isArmLogText(text)) {
       if (!lastArm || ts > lastArm) lastArm = ts;
     }
   });
@@ -895,7 +955,7 @@ const filterLogs = (logs) => {
   return withoutHubEvents.filter((log) => log.type === state.logFilter);
 };
 
-const renderLogs = (logs, { flashSince } = {}) => {
+const renderLogs = async (logs, { flashSince } = {}) => {
   const filtered = filterLogs(logs)
     .filter((log) => !/^Событие хаба/.test(log.text ?? ''));
   logTable.innerHTML = '';
@@ -932,7 +992,12 @@ const renderLogs = (logs, { flashSince } = {}) => {
     logTable.appendChild(row);
   });
   logMoreButton?.classList.toggle('hidden', !state.logsHasMore);
-  currentAlarmActive = isAlarmActive(logs);
+  const nextAlarmActive = isAlarmActive(logs);
+  const restoreKey = shouldPlayRestoreSound(logs);
+  if (!nextAlarmActive && restoreKey) {
+    await playAlarmSoundOnce();
+  }
+  currentAlarmActive = nextAlarmActive;
   currentAlarmFlash = hasActiveAlarmFlash(state.selectedSpaceId);
   setAlarmSoundActive(currentAlarmActive).catch(() => null);
   renderSpaces(spacesCache);
@@ -989,7 +1054,7 @@ const loadLogs = async (reset = false) => {
     state.logsLimit = state.logsOffset;
     state.logsHasMore = Boolean(resp.hasMore);
   }
-  renderLogs(state.logs, { flashSince });
+  await renderLogs(state.logs, { flashSince });
 };
 
 const loadSpaces = async () => {
