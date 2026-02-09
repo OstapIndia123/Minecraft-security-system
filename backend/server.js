@@ -3191,6 +3191,7 @@ app.post('/api/hub/events', requireWebhookToken, async (req, res) => {
     const shouldIgnoreTestSetOutput = isTestSetOutput;
     const isTestSideEvent = Boolean(
       type !== 'SET_OUTPUT'
+      && type !== 'PORT_IN'
       && eventSide
       && extensionSide
       && eventSide === extensionSide,
