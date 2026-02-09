@@ -927,6 +927,15 @@ const clearEntryDelay = async (spaceId, hubId, groupId = null) => {
   await stopBlinkingLights(spaceId, hubId, 'entry-delay', groupId);
 };
 
+const clearGroupZoneAlarms = async (spaceId, groupId) => {
+  if (!groupId) return;
+  const zones = await query(
+    "SELECT id FROM devices WHERE space_id = $1 AND type = $2 AND (config->>'groupId')::int = $3",
+    [spaceId, 'zone', groupId],
+  );
+  zones.rows.forEach((zone) => zoneAlarmState.delete(`${spaceId}:${zone.id}`));
+};
+
 const startSirenTimers = async (spaceId, hubId, groupId = null) => {
   const sk = stateKey(spaceId, groupId);
   const sirens = groupId
@@ -3129,6 +3138,7 @@ app.post('/api/spaces/:id/groups/:groupId/disarm', requireAuth, async (req, res)
   spaceAlarmState.set(sk, false);
   alarmSinceArmed.delete(sk);
   entryDelayFailed.delete(sk);
+  await clearGroupZoneAlarms(spaceId, gId);
   await clearEntryDelay(spaceId, hubId, gId);
   await clearPendingArm(spaceId, hubId, gId);
   await stopBlinkingLights(spaceId, hubId, 'entry-delay', gId);
@@ -3365,6 +3375,7 @@ app.post('/api/hub/events', requireWebhookToken, async (req, res) => {
                 spaceAlarmState.set(sk, false);
                 alarmSinceArmed.delete(sk);
                 entryDelayFailed.delete(sk);
+                await clearGroupZoneAlarms(spaceId, gId);
                 await clearEntryDelay(spaceId, hubId, gId);
                 await clearPendingArm(spaceId, hubId, gId);
                 await stopBlinkingLights(spaceId, hubId, 'entry-delay', gId);
@@ -3501,6 +3512,7 @@ app.post('/api/hub/events', requireWebhookToken, async (req, res) => {
                 spaceAlarmState.set(sk, false);
                 alarmSinceArmed.delete(sk);
                 entryDelayFailed.delete(sk);
+                await clearGroupZoneAlarms(spaceId, gId);
                 await clearEntryDelay(spaceId, hubId, gId);
                 await clearPendingArm(spaceId, hubId, gId);
                 await stopBlinkingLights(spaceId, hubId, 'entry-delay', gId);
@@ -3601,14 +3613,16 @@ app.post('/api/hub/events', requireWebhookToken, async (req, res) => {
 
       if (shouldCheck && !bypass && !isNormal) {
         if (entryDelayFailed.get(sk)) {
-          await appendLog(spaceId, `Тревога шлейфа: ${zone.name}${groupSuffix}`, 'Zone', 'alarm', zoneGroupId);
-          zoneAlarmState.set(`${spaceId}:${zone.id}`, true);
-          spaceAlarmState.set(sk, true);
-          alarmSinceArmed.set(sk, true);
-          if (!silent) {
-            await startSirenTimers(spaceId, spaceDataRow.rows[0]?.hub_id, zoneGroupId);
+          if (!zoneAlarmState.get(`${spaceId}:${zone.id}`)) {
+            await appendLog(spaceId, `Тревога шлейфа: ${zone.name}${groupSuffix}`, 'Zone', 'alarm', zoneGroupId);
+            zoneAlarmState.set(`${spaceId}:${zone.id}`, true);
+            spaceAlarmState.set(sk, true);
+            alarmSinceArmed.set(sk, true);
+            if (!silent) {
+              await startSirenTimers(spaceId, spaceDataRow.rows[0]?.hub_id, zoneGroupId);
+            }
+            await query('UPDATE spaces SET issues = true WHERE id = $1', [spaceId]);
           }
-          await query('UPDATE spaces SET issues = true WHERE id = $1', [spaceId]);
           continue;
         }
         if (zoneType === 'delayed' && effectiveStatus === 'armed' && entryDelayTimers.has(sk)) {
