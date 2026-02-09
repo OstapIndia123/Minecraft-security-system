@@ -193,6 +193,7 @@ const notifyLogEvent = async (space, log) => {
 };
 
 const isSpaceAlarmActive = (space) => {
+  if (space?.status === 'disarmed') return false;
   const logs = space?.logs ?? [];
   if (!logs.length) return false;
   let lastAlarm = null;

@@ -594,6 +594,7 @@ const getAlarmStateBySpace = (logs) => {
 
 const isAlarmActiveForSpace = (space, alarmState) => {
   if (!space) return false;
+  if (space.status === 'disarmed') return false;
   const keys = [space.id, space.name].filter(Boolean);
   let lastAlarm = null;
   let lastRestore = null;
@@ -660,7 +661,10 @@ const renderObjects = (spaces) => {
     });
     grid.appendChild(card);
   });
-  setAlarmSoundActive(filtered.some((space) => hasUnackedAlarm(space.id) || isAlarmActiveForSpace(space, alarmState))).catch(() => null);
+  setAlarmSoundActive(filtered.some((space) => (
+    space.status !== 'disarmed'
+    && (hasUnackedAlarm(space.id) || isAlarmActiveForSpace(space, alarmState))
+  ))).catch(() => null);
 };
 
 const translateLogText = (text) => {
