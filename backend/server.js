@@ -994,10 +994,10 @@ const startEntryDelay = async (spaceId, hubId, delaySeconds, zoneName, zoneId, g
   if (!hubId || entryDelayTimers.has(sk) || entryDelayFailed.get(sk)) return;
   const resolvedDelay = clampDelaySeconds(delaySeconds) ?? 0;
   await appendLog(spaceId, 'Начало снятия', 'Zone', 'security', groupId);
-  await startBlinkingLights(spaceId, hubId, 'entry-delay', groupId);
+  await startBlinkingLights(spaceId, hubId, 'entry-delay', groupId).catch(() => null);
   const timer = setTimeout(async () => {
     entryDelayTimers.delete(sk);
-    await stopBlinkingLights(spaceId, hubId, 'entry-delay', groupId);
+    await stopBlinkingLights(spaceId, hubId, 'entry-delay', groupId).catch(() => null);
     let effectiveStatus;
     if (groupId) {
       const groupRow = await query('SELECT status FROM groups WHERE id = $1 AND space_id = $2', [groupId, spaceId]);
@@ -1034,7 +1034,7 @@ const startEntryDelay = async (spaceId, hubId, delaySeconds, zoneName, zoneId, g
     }
     spaceAlarmState.set(sk, true);
     const spaceRow = await query('SELECT hub_id FROM spaces WHERE id = $1', [spaceId]);
-    await startSirenTimers(spaceId, spaceRow.rows[0]?.hub_id, groupId);
+    await startSirenTimers(spaceId, spaceRow.rows[0]?.hub_id, groupId).catch(() => null);
     await query('UPDATE spaces SET issues = true WHERE id = $1', [spaceId]);
   }, resolvedDelay * 1000);
   entryDelayTimers.set(sk, { timer, zoneName });
