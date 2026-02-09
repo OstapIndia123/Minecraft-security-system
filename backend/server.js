@@ -3296,6 +3296,11 @@ app.post('/api/hub/events', requireWebhookToken, async (req, res) => {
       if (sessions.rows.length) {
         const session = sessions.rows[0];
         if (session.input_side === normalizedSide && Number(session.input_level) === inputLevel) {
+          // Respond immediately to unblock hub-backend's sequential webhook queue.
+          // Session processing may invoke checkHubExtensionLink which waits for a
+          // PORT_IN that arrives through the same queue.
+          if (!res.headersSent) res.json({ ok: true });
+          await query('DELETE FROM reader_sessions WHERE id = $1', [session.id]);
           if (session.action === 'group_arm' || session.action === 'group_disarm') {
             const key = await query(
               'SELECT name, groups FROM keys WHERE space_id = $1 AND (reader_id IS NULL OR reader_id = $2)',
@@ -3304,7 +3309,6 @@ app.post('/api/hub/events', requireWebhookToken, async (req, res) => {
             const matchedKey = key.rows.find((row) => session.key_name.includes(row.name));
             const keyGroups = matchedKey?.groups ?? [];
             if (!matchedKey || !keyGroups.length) {
-              await query('DELETE FROM reader_sessions WHERE id = $1', [session.id]);
               return;
             }
             const groupRows = await query(
@@ -3312,7 +3316,6 @@ app.post('/api/hub/events', requireWebhookToken, async (req, res) => {
               [spaceId, keyGroups],
             );
             if (!groupRows.rows.length) {
-              await query('DELETE FROM reader_sessions WHERE id = $1', [session.id]);
               return;
             }
 
@@ -3444,7 +3447,6 @@ app.post('/api/hub/events', requireWebhookToken, async (req, res) => {
               `Снятие с охраны ключом: ${session.key_name}`,
             );
           }
-          await query('DELETE FROM reader_sessions WHERE id = $1', [session.id]);
         }
       }
     }
