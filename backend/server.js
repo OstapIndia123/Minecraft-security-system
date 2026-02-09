@@ -3617,9 +3617,10 @@ app.post('/api/hub/events', requireWebhookToken, async (req, res) => {
 
       const sk = stateKey(spaceId, zoneGroupId);
       const zoneType = config.zoneType ?? 'instant';
-      const hasActiveIssues = Boolean(
-        spaceDataRow.rows[0]?.issues || spaceAlarmState.get(sk) || alarmSinceArmed.get(sk),
-      );
+      const groupAlarmActive = Boolean(spaceAlarmState.get(sk) || alarmSinceArmed.get(sk));
+      const hasActiveIssues = spaceGroupsEnabled
+        ? groupAlarmActive
+        : Boolean(spaceDataRow.rows[0]?.issues || groupAlarmActive);
       const bypass = Boolean(config.bypass);
       const silent = Boolean(config.silent);
       const shouldCheck = zoneType === '24h' || effectiveStatus === 'armed';
