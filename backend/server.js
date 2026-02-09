@@ -981,7 +981,6 @@ const startPendingArm = async (spaceId, hubId, delaySeconds, who, logMessage, gr
       const computedStatus = await computeSpaceStatusFromGroups(spaceId);
       await query('UPDATE spaces SET status = $1 WHERE id = $2', [computedStatus, spaceId]);
       await appendLog(spaceId, logMessage ?? 'Группа поставлена под охрану', who, 'security', groupId);
-      entryDelayFailed.delete(sk);
       await applyLightOutputs(spaceId, hubId, 'armed', groupId);
     } else {
       await updateStatus(spaceId, 'armed', who, logMessage);
@@ -999,6 +998,26 @@ const startEntryDelay = async (spaceId, hubId, delaySeconds, zoneName, zoneId, g
   const timer = setTimeout(async () => {
     entryDelayTimers.delete(sk);
     await stopBlinkingLights(spaceId, hubId, 'entry-delay', groupId);
+    let effectiveStatus;
+    if (groupId) {
+      const groupRow = await query('SELECT status FROM groups WHERE id = $1 AND space_id = $2', [groupId, spaceId]);
+      effectiveStatus = groupRow.rows[0]?.status ?? 'disarmed';
+    } else {
+      const spaceRow = await query('SELECT status FROM spaces WHERE id = $1', [spaceId]);
+      effectiveStatus = spaceRow.rows[0]?.status ?? 'disarmed';
+    }
+    if (effectiveStatus === 'disarmed') {
+      return;
+    }
+    if (zoneId) {
+      const zoneRow = await query(
+        'SELECT status FROM devices WHERE id = $1 AND space_id = $2',
+        [zoneId, spaceId],
+      );
+      if (zoneRow.rows[0]?.status === 'Норма') {
+        return;
+      }
+    }
     entryDelayFailed.set(sk, true);
     alarmSinceArmed.set(sk, true);
     let groupSuffix = '';
@@ -2651,7 +2670,6 @@ const updateStatus = async (spaceId, status, who, logMessage) => {
   }
   if (status === 'armed') {
     alarmSinceArmed.set(spaceId, false);
-    entryDelayFailed.delete(spaceId);
   }
   space.devices = await loadDevices(spaceId, space.hubId, space.hubOnline);
   return space;
@@ -3089,7 +3107,6 @@ app.post('/api/spaces/:id/groups/:groupId/arm', requireAuth, async (req, res) =>
   await appendLog(spaceId, `Группа '${groupName}' поставлена под охрану`, req.user.minecraft_nickname ?? 'UI', 'security', Number(groupId));
   const sk = stateKey(spaceId, Number(groupId));
   alarmSinceArmed.set(sk, false);
-  entryDelayFailed.delete(sk);
   const result = await query('SELECT * FROM spaces WHERE id = $1', [spaceId]);
   const space = mapSpace(result.rows[0]);
   space.devices = await loadDevices(spaceId, space.hubId, space.hubOnline);
@@ -3404,7 +3421,6 @@ app.post('/api/hub/events', requireWebhookToken, async (req, res) => {
                   await applyLightOutputs(spaceId, spaceRow.rows[0]?.hub_id, 'armed', gId);
                   const sk = stateKey(spaceId, gId);
                   alarmSinceArmed.set(sk, false);
-                  entryDelayFailed.delete(sk);
                   await appendLog(spaceId, `Постановка группы '${group.name}' ключом: ${session.key_name}`, session.reader_name, 'security', gId);
                 }
               }
@@ -3578,10 +3594,6 @@ app.post('/api/hub/events', requireWebhookToken, async (req, res) => {
 
       const sk = stateKey(spaceId, zoneGroupId);
       const zoneType = config.zoneType ?? 'instant';
-      if (zoneType === 'delayed' && isNormal && entryDelayTimers.has(sk)) {
-        await clearEntryDelay(spaceId, spaceDataRow.rows[0]?.hub_id, zoneGroupId);
-        continue;
-      }
       const hasActiveIssues = Boolean(
         spaceDataRow.rows[0]?.issues || spaceAlarmState.get(sk) || alarmSinceArmed.get(sk),
       );
