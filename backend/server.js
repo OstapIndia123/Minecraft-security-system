@@ -3577,10 +3577,14 @@ app.post('/api/hub/events', requireWebhookToken, async (req, res) => {
       }
 
       const sk = stateKey(spaceId, zoneGroupId);
+      const zoneType = config.zoneType ?? 'instant';
+      if (zoneType === 'delayed' && isNormal && entryDelayTimers.has(sk)) {
+        await clearEntryDelay(spaceId, spaceDataRow.rows[0]?.hub_id, zoneGroupId);
+        continue;
+      }
       const hasActiveIssues = Boolean(
         spaceDataRow.rows[0]?.issues || spaceAlarmState.get(sk) || alarmSinceArmed.get(sk),
       );
-      const zoneType = config.zoneType ?? 'instant';
       const bypass = Boolean(config.bypass);
       const silent = Boolean(config.silent);
       const shouldCheck = zoneType === '24h' || effectiveStatus === 'armed';
