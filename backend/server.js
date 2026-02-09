@@ -936,6 +936,15 @@ const clearGroupZoneAlarms = async (spaceId, groupId) => {
   zones.rows.forEach((zone) => zoneAlarmState.delete(`${spaceId}:${zone.id}`));
 };
 
+const resetGroupAlarmState = async (spaceId, groupId) => {
+  if (!groupId) return;
+  const sk = stateKey(spaceId, groupId);
+  spaceAlarmState.set(sk, false);
+  alarmSinceArmed.set(sk, false);
+  entryDelayFailed.delete(sk);
+  await clearGroupZoneAlarms(spaceId, groupId);
+};
+
 const stopGlobalSirensIfIdle = async (spaceId, hubId) => {
   const groups = await query('SELECT id FROM groups WHERE space_id = $1', [spaceId]);
   const hasActiveAlarms = groups.rows.some((group) => spaceAlarmState.get(stateKey(spaceId, group.id)));
@@ -998,6 +1007,7 @@ const startPendingArm = async (spaceId, hubId, delaySeconds, who, logMessage, gr
       const computedStatus = await computeSpaceStatusFromGroups(spaceId);
       await query('UPDATE spaces SET status = $1 WHERE id = $2', [computedStatus, spaceId]);
       await appendLog(spaceId, logMessage ?? 'Группа поставлена под охрану', who, 'security', groupId);
+      await resetGroupAlarmState(spaceId, groupId);
       await applyLightOutputs(spaceId, hubId, 'armed', groupId);
     } else {
       await updateStatus(spaceId, 'armed', who, logMessage);
@@ -3114,7 +3124,7 @@ app.post('/api/spaces/:id/groups/:groupId/arm', requireAuth, async (req, res) =>
   await applyLightOutputs(spaceId, hubId, 'armed', Number(groupId));
   await appendLog(spaceId, `Группа '${groupName}' поставлена под охрану`, req.user.minecraft_nickname ?? 'UI', 'security', Number(groupId));
   const sk = stateKey(spaceId, Number(groupId));
-  alarmSinceArmed.set(sk, false);
+  await resetGroupAlarmState(spaceId, Number(groupId));
   const result = await query('SELECT * FROM spaces WHERE id = $1', [spaceId]);
   const space = mapSpace(result.rows[0]);
   space.devices = await loadDevices(spaceId, space.hubId, space.hubOnline);
@@ -3431,8 +3441,7 @@ app.post('/api/hub/events', requireWebhookToken, async (req, res) => {
                   await query("UPDATE groups SET status = 'armed' WHERE id = $1 AND space_id = $2", [gId, spaceId]);
                   const spaceRow = await query('SELECT hub_id FROM spaces WHERE id = $1', [spaceId]);
                   await applyLightOutputs(spaceId, spaceRow.rows[0]?.hub_id, 'armed', gId);
-                  const sk = stateKey(spaceId, gId);
-                  alarmSinceArmed.set(sk, false);
+                  await resetGroupAlarmState(spaceId, gId);
                   await appendLog(spaceId, `Постановка группы '${group.name}' ключом: ${session.key_name}`, session.reader_name, 'security', gId);
                 }
               }
