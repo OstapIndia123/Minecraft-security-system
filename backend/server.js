@@ -3578,7 +3578,7 @@ app.post('/api/hub/events', requireWebhookToken, async (req, res) => {
       const newStatus = isNormal ? 'Норма' : 'Нарушение';
       await query('UPDATE devices SET status = $1 WHERE id = $2', [newStatus, zone.id]);
 
-      const zoneGroupId = config.groupId ? Number(config.groupId) : null;
+      const zoneGroupId = spaceGroupsEnabled && config.groupId ? Number(config.groupId) : null;
 
       // If groups mode is on and zone has no group, skip alarm logic
       if (spaceGroupsEnabled && !zoneGroupId) {
