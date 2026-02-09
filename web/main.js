@@ -575,21 +575,28 @@ const registerAlarmFlashes = (logs, flashSince) => {
 const getAlarmStateBySpace = (logs) => {
   const alarmMap = new Map();
   const restoreMap = new Map();
+  const disarmMap = new Map();
   logs.forEach((log) => {
-    if (log.type !== 'alarm' && log.type !== 'restore') return;
     const ts = getLogTimestamp(log);
     if (!ts) return;
     const key = log.spaceId ?? log.spaceName ?? log.space_id ?? '';
     if (!key) return;
+    const text = log.text ?? '';
     if (log.type === 'alarm') {
       const current = alarmMap.get(key);
       if (!current || ts > current) alarmMap.set(key, ts);
-    } else {
+    } else if (log.type === 'restore') {
       const current = restoreMap.get(key);
       if (!current || ts > current) restoreMap.set(key, ts);
+    } else if (
+      log.type === 'security'
+      && (text === 'Объект снят с охраны' || text.startsWith('Группа ') && text.includes(' снята с охраны'))
+    ) {
+      const current = disarmMap.get(key);
+      if (!current || ts > current) disarmMap.set(key, ts);
     }
   });
-  return { alarmMap, restoreMap };
+  return { alarmMap, restoreMap, disarmMap };
 };
 
 const isAlarmActiveForSpace = (space, alarmState) => {
@@ -601,8 +608,10 @@ const isAlarmActiveForSpace = (space, alarmState) => {
   keys.forEach((key) => {
     const alarmTs = alarmState.alarmMap.get(key);
     const restoreTs = alarmState.restoreMap.get(key);
+    const disarmTs = alarmState.disarmMap.get(key);
     if (alarmTs && (!lastAlarm || alarmTs > lastAlarm)) lastAlarm = alarmTs;
-    if (restoreTs && (!lastRestore || restoreTs > lastRestore)) lastRestore = restoreTs;
+    const clearTs = Math.max(restoreTs ?? 0, disarmTs ?? 0);
+    if (clearTs && (!lastRestore || clearTs > lastRestore)) lastRestore = clearTs;
   });
   if (!lastAlarm) return false;
   if (!lastRestore) return true;

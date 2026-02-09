@@ -193,24 +193,30 @@ const notifyLogEvent = async (space, log) => {
 };
 
 const isSpaceAlarmActive = (space) => {
-  if (space?.status === 'disarmed') return false;
   const logs = space?.logs ?? [];
   if (!logs.length) return false;
   let lastAlarm = null;
   let lastRestore = null;
+  let lastDisarm = null;
   logs.forEach((log) => {
-    if (log.type !== 'alarm' && log.type !== 'restore') return;
     const ts = getLogTimestamp(log);
     if (!ts) return;
+    const text = log.text ?? '';
     if (log.type === 'alarm') {
       if (!lastAlarm || ts > lastAlarm) lastAlarm = ts;
     } else if (log.type === 'restore') {
       if (!lastRestore || ts > lastRestore) lastRestore = ts;
+    } else if (
+      log.type === 'security'
+      && (text === 'Объект снят с охраны' || text.startsWith('Группа ') && text.includes(' снята с охраны'))
+    ) {
+      if (!lastDisarm || ts > lastDisarm) lastDisarm = ts;
     }
   });
   if (!lastAlarm) return false;
-  if (!lastRestore) return true;
-  return lastAlarm > lastRestore;
+  const lastClear = Math.max(lastRestore ?? 0, lastDisarm ?? 0);
+  if (!lastClear) return true;
+  return lastAlarm > lastClear;
 };
 
 const hasActiveAlarmFlash = (space) => {

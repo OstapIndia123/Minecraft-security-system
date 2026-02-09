@@ -536,24 +536,30 @@ const getLogTimestamp = (log) => {
   return parsed.getTime();
 };
 
-const isAlarmActive = (logs, status = null) => {
-  if (status === 'disarmed') return false;
+const isAlarmActive = (logs) => {
   if (!logs?.length) return false;
   let lastAlarm = null;
   let lastRestore = null;
+  let lastDisarm = null;
   logs.forEach((log) => {
-    if (log.type !== 'alarm' && log.type !== 'restore') return;
     const ts = getLogTimestamp(log);
     if (!ts) return;
+    const text = log.text ?? '';
     if (log.type === 'alarm') {
       if (!lastAlarm || ts > lastAlarm) lastAlarm = ts;
-    } else {
+    } else if (log.type === 'restore') {
       if (!lastRestore || ts > lastRestore) lastRestore = ts;
+    } else if (
+      log.type === 'security'
+      && (text === 'Объект снят с охраны' || text.startsWith('Группа ') && text.includes(' снята с охраны'))
+    ) {
+      if (!lastDisarm || ts > lastDisarm) lastDisarm = ts;
     }
   });
   if (!lastAlarm) return false;
-  if (!lastRestore) return true;
-  return lastAlarm > lastRestore;
+  const lastClear = Math.max(lastRestore ?? 0, lastDisarm ?? 0);
+  if (!lastClear) return true;
+  return lastAlarm > lastClear;
 };
 
 const hasActiveAlarmFlash = (spaceId) => {
@@ -884,14 +890,13 @@ const filterLogs = (logs) => {
 };
 
 const renderLogs = (logs, { flashSince } = {}) => {
-  const selectedSpace = spacesCache.find((space) => space.id === state.selectedSpaceId);
   const filtered = filterLogs(logs)
     .filter((log) => !/^Событие хаба/.test(log.text ?? ''));
   logTable.innerHTML = '';
   if (!filtered.length) {
     logTable.innerHTML = `<div class="empty-state">${t('user.empty.logs')}</div>`;
     logMoreButton?.classList.add('hidden');
-    currentAlarmActive = isAlarmActive(logs, selectedSpace?.status);
+    currentAlarmActive = isAlarmActive(logs);
     currentAlarmFlash = hasActiveAlarmFlash(state.selectedSpaceId);
     setAlarmSoundActive(currentAlarmActive).catch(() => null);
     renderSpaces(spacesCache);
@@ -921,7 +926,7 @@ const renderLogs = (logs, { flashSince } = {}) => {
     logTable.appendChild(row);
   });
   logMoreButton?.classList.toggle('hidden', !state.logsHasMore);
-  currentAlarmActive = isAlarmActive(logs, selectedSpace?.status);
+  currentAlarmActive = isAlarmActive(logs);
   currentAlarmFlash = hasActiveAlarmFlash(state.selectedSpaceId);
   setAlarmSoundActive(currentAlarmActive).catch(() => null);
   renderSpaces(spacesCache);
