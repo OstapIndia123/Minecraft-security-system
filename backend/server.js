@@ -2825,6 +2825,10 @@ const checkHubExtensionLink = async (spaceId, extensionDevice) => {
     lastKnownResult,
   });
 
+  if (cached?.promise) {
+    logExtensionTest('link_check_cached_promise', { cacheKey });
+    return cached.promise;
+  }
   if (cached && now - cached.lastCheckAt < EXTENSION_TEST_WINDOW_MS) {
     if (lastKnownResult !== undefined) {
       logExtensionTest('link_check_cached_result', {
@@ -2839,10 +2843,6 @@ const checkHubExtensionLink = async (spaceId, extensionDevice) => {
       ageMs: now - cached.lastCheckAt,
     });
     return false;
-  }
-  if (cached?.promise) {
-    logExtensionTest('link_check_cached_promise', { cacheKey });
-    return cached.promise;
   }
 
   const promise = (async () => {
