@@ -604,6 +604,28 @@ const sendHubOutputChecked = async (spaceId, hubId, side, level, { force = false
   await sendHubOutput(hubId, side, level, { force });
 };
 
+const ensureExtensionLinksForOutputs = async (spaceId, groupId = null) => {
+  const outputs = groupId
+    ? await query("SELECT config FROM devices WHERE space_id = $1 AND type = $2 AND (config->>'groupId')::int = $3", [spaceId, 'output-light', groupId])
+    : await query('SELECT config FROM devices WHERE space_id = $1 AND type = $2', [spaceId, 'output-light']);
+  if (!outputs.rows.length) return true;
+  const extensionIds = new Set();
+  outputs.rows.forEach((output) => {
+    if (output.config?.bindTarget !== 'hub_extension') return;
+    const extensionId = normalizeHubExtensionId(output.config?.extensionId);
+    extensionIds.add(extensionId ?? null);
+  });
+  if (!extensionIds.size) return true;
+  if (extensionIds.has(null)) return false;
+  for (const extensionId of extensionIds) {
+    const extensionDevice = await getExtensionDeviceById(spaceId, extensionId);
+    if (!extensionDevice) return false;
+    const ok = await checkHubExtensionLink(spaceId, extensionDevice);
+    if (!ok) return false;
+  }
+  return true;
+};
+
 const sendReaderOutput = async (readerId, level) => {
   if (!readerId) return;
   const url = new URL(`/api/reader/${encodeURIComponent(readerId)}/output`, hubApiUrl);
@@ -3322,6 +3344,17 @@ app.post('/api/hub/events', requireWebhookToken, async (req, res) => {
             if (session.action === 'group_disarm') {
               for (const group of groupRows.rows) {
                 if (group.status !== 'armed') continue;
+                const extensionOk = await ensureExtensionLinksForOutputs(spaceId, group.id);
+                if (!extensionOk) {
+                  await appendLog(
+                    spaceId,
+                    `Неудачное снятие группы '${group.name}' ключом (модуль расширения не в сети): ${session.key_name}`,
+                    session.reader_name,
+                    'security',
+                    group.id,
+                  );
+                  continue;
+                }
                 const gId = group.id;
                 const sk = stateKey(spaceId, gId);
                 await query("UPDATE groups SET status = 'disarmed' WHERE id = $1 AND space_id = $2", [gId, spaceId]);
@@ -3341,6 +3374,17 @@ app.post('/api/hub/events', requireWebhookToken, async (req, res) => {
             } else {
               for (const group of groupRows.rows) {
                 if (group.status === 'armed') continue;
+                const extensionOk = await ensureExtensionLinksForOutputs(spaceId, group.id);
+                if (!extensionOk) {
+                  await appendLog(
+                    spaceId,
+                    `Неудачная постановка группы '${group.name}' ключом (модуль расширения не в сети): ${session.key_name}`,
+                    session.reader_name,
+                    'security',
+                    group.id,
+                  );
+                  continue;
+                }
                 const gId = group.id;
                 const zones = await query(
                   "SELECT name, status, config FROM devices WHERE space_id = $1 AND type = 'zone' AND (config->>'groupId')::int = $2",
@@ -3376,6 +3420,16 @@ app.post('/api/hub/events', requireWebhookToken, async (req, res) => {
             await query('UPDATE spaces SET status = $1 WHERE id = $2', [computedStatus, spaceId]);
             await evaluateZoneIssues(spaceId);
           } else if (session.action === 'arm') {
+            const extensionOk = await ensureExtensionLinksForOutputs(spaceId, null);
+            if (!extensionOk) {
+              await appendLog(
+                spaceId,
+                `Неудачная постановка (модуль расширения не в сети): ${session.key_name}`,
+                session.reader_name,
+                'security',
+              );
+              return;
+            }
             const zones = await query('SELECT name, status, config FROM devices WHERE space_id = $1 AND type = $2', [
               spaceId,
               'zone',
@@ -3424,7 +3478,20 @@ app.post('/api/hub/events', requireWebhookToken, async (req, res) => {
             const spaceRow = await query('SELECT hub_id, groups_enabled FROM spaces WHERE id = $1', [spaceId]);
             const hubId = spaceRow.rows[0]?.hub_id;
             if (spaceRow.rows[0]?.groups_enabled) {
-              const groups = await query('SELECT id FROM groups WHERE space_id = $1', [spaceId]);
+              const groups = await query('SELECT id, name FROM groups WHERE space_id = $1', [spaceId]);
+              for (const group of groups.rows) {
+                const extensionOk = await ensureExtensionLinksForOutputs(spaceId, group.id);
+                if (!extensionOk) {
+                  await appendLog(
+                    spaceId,
+                    `Неудачное снятие группы '${group.name}' ключом (модуль расширения не в сети): ${session.key_name}`,
+                    session.reader_name,
+                    'security',
+                    group.id,
+                  );
+                  return;
+                }
+              }
               for (const group of groups.rows) {
                 const gId = group.id;
                 const sk = stateKey(spaceId, gId);
@@ -3438,6 +3505,18 @@ app.post('/api/hub/events', requireWebhookToken, async (req, res) => {
                 await stopBlinkingLights(spaceId, hubId, 'entry-delay', gId);
                 await stopBlinkingLights(spaceId, hubId, 'exit-delay', gId);
                 await applyLightOutputs(spaceId, hubId, 'disarmed', gId, { force: true });
+              }
+            } else {
+              const extensionOk = await ensureExtensionLinksForOutputs(spaceId, null);
+              if (!extensionOk) {
+                await appendLog(
+                  spaceId,
+                  `Неудачное снятие (модуль расширения не в сети): ${session.key_name}`,
+                  session.reader_name,
+                  'security',
+                  null,
+                );
+                return;
               }
             }
             await updateStatus(
