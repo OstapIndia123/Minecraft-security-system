@@ -998,34 +998,24 @@ const startEntryDelay = async (spaceId, hubId, delaySeconds, zoneName, zoneId, g
   const timer = setTimeout(async () => {
     entryDelayTimers.delete(sk);
     await stopBlinkingLights(spaceId, hubId, 'entry-delay', groupId);
-    let effectiveStatus;
+    entryDelayFailed.set(sk, true);
+    alarmSinceArmed.set(sk, true);
+    let groupSuffix = '';
     if (groupId) {
-      const groupRow = await query('SELECT status FROM groups WHERE id = $1 AND space_id = $2', [groupId, spaceId]);
-      effectiveStatus = groupRow.rows[0]?.status ?? 'disarmed';
-    } else {
-      const spaceRow = await query('SELECT status FROM spaces WHERE id = $1', [spaceId]);
-      effectiveStatus = spaceRow.rows[0]?.status ?? 'disarmed';
+      const gNameRow = await query('SELECT name FROM groups WHERE id = $1', [groupId]);
+      if (gNameRow.rows.length) groupSuffix = ` [${gNameRow.rows[0].name}]`;
     }
-    if (effectiveStatus !== 'disarmed') {
-      entryDelayFailed.set(sk, true);
-      alarmSinceArmed.set(sk, true);
-      let groupSuffix = '';
-      if (groupId) {
-        const gNameRow = await query('SELECT name FROM groups WHERE id = $1', [groupId]);
-        if (gNameRow.rows.length) groupSuffix = ` [${gNameRow.rows[0].name}]`;
-      }
-      await appendLog(spaceId, 'Неудачное снятие с охраны, выслать группу реагирования!', 'Zone', 'alarm', groupId);
-      if (zoneName) {
-        await appendLog(spaceId, `Тревога шлейфа: ${zoneName}${groupSuffix}`, 'Zone', 'alarm', groupId);
-      }
-      if (zoneId) {
-        zoneAlarmState.set(`${spaceId}:${zoneId}`, true);
-      }
-      spaceAlarmState.set(sk, true);
-      const spaceRow = await query('SELECT hub_id FROM spaces WHERE id = $1', [spaceId]);
-      await startSirenTimers(spaceId, spaceRow.rows[0]?.hub_id, groupId);
-      await query('UPDATE spaces SET issues = true WHERE id = $1', [spaceId]);
+    await appendLog(spaceId, 'Неудачное снятие с охраны, выслать группу реагирования!', 'Zone', 'alarm', groupId);
+    if (zoneName) {
+      await appendLog(spaceId, `Тревога шлейфа: ${zoneName}${groupSuffix}`, 'Zone', 'alarm', groupId);
     }
+    if (zoneId) {
+      zoneAlarmState.set(`${spaceId}:${zoneId}`, true);
+    }
+    spaceAlarmState.set(sk, true);
+    const spaceRow = await query('SELECT hub_id FROM spaces WHERE id = $1', [spaceId]);
+    await startSirenTimers(spaceId, spaceRow.rows[0]?.hub_id, groupId);
+    await query('UPDATE spaces SET issues = true WHERE id = $1', [spaceId]);
   }, resolvedDelay * 1000);
   entryDelayTimers.set(sk, { timer, zoneName });
 };
