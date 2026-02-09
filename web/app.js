@@ -198,6 +198,7 @@ const isSpaceAlarmActive = (space) => {
   let lastAlarm = null;
   let lastRestore = null;
   let lastDisarm = null;
+  let lastArm = null;
   logs.forEach((log) => {
     const ts = getLogTimestamp(log);
     if (!ts) return;
@@ -211,10 +212,15 @@ const isSpaceAlarmActive = (space) => {
       && (text === 'Объект снят с охраны' || text.startsWith('Группа ') && text.includes(' снята с охраны'))
     ) {
       if (!lastDisarm || ts > lastDisarm) lastDisarm = ts;
+    } else if (
+      log.type === 'security'
+      && (text === 'Объект поставлен под охрану' || text.startsWith('Группа ') && text.includes(' поставлена под охрану'))
+    ) {
+      if (!lastArm || ts > lastArm) lastArm = ts;
     }
   });
   if (!lastAlarm) return false;
-  const lastClear = Math.max(lastRestore ?? 0, lastDisarm ?? 0);
+  const lastClear = Math.max(lastRestore ?? 0, lastDisarm ?? 0, lastArm ?? 0);
   if (!lastClear) return true;
   return lastAlarm > lastClear;
 };
