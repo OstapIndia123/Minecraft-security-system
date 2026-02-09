@@ -936,6 +936,14 @@ const clearGroupZoneAlarms = async (spaceId, groupId) => {
   zones.rows.forEach((zone) => zoneAlarmState.delete(`${spaceId}:${zone.id}`));
 };
 
+const stopGlobalSirensIfIdle = async (spaceId, hubId) => {
+  const groups = await query('SELECT id FROM groups WHERE space_id = $1', [spaceId]);
+  const hasActiveAlarms = groups.rows.some((group) => spaceAlarmState.get(stateKey(spaceId, group.id)));
+  if (!hasActiveAlarms) {
+    await stopSirenTimers(spaceId, hubId);
+  }
+};
+
 const startSirenTimers = async (spaceId, hubId, groupId = null) => {
   const sk = stateKey(spaceId, groupId);
   const sirens = groupId
@@ -3144,6 +3152,7 @@ app.post('/api/spaces/:id/groups/:groupId/disarm', requireAuth, async (req, res)
   await stopBlinkingLights(spaceId, hubId, 'entry-delay', gId);
   await stopBlinkingLights(spaceId, hubId, 'exit-delay', gId);
   await applyLightOutputs(spaceId, hubId, 'disarmed', gId, { force: true });
+  await stopGlobalSirensIfIdle(spaceId, hubId);
   const computedStatus = await computeSpaceStatusFromGroups(spaceId);
   await query('UPDATE spaces SET status = $1 WHERE id = $2', [computedStatus, spaceId]);
   await evaluateZoneIssues(spaceId);
@@ -3381,6 +3390,7 @@ app.post('/api/hub/events', requireWebhookToken, async (req, res) => {
                 await stopBlinkingLights(spaceId, hubId, 'entry-delay', gId);
                 await stopBlinkingLights(spaceId, hubId, 'exit-delay', gId);
                 await applyLightOutputs(spaceId, hubId, 'disarmed', gId, { force: true });
+                await stopGlobalSirensIfIdle(spaceId, hubId);
                 await appendLog(spaceId, `Снятие группы '${group.name}' ключом: ${session.key_name}`, session.reader_name, 'security', gId);
               }
             } else {
@@ -3518,6 +3528,7 @@ app.post('/api/hub/events', requireWebhookToken, async (req, res) => {
                 await stopBlinkingLights(spaceId, hubId, 'entry-delay', gId);
                 await stopBlinkingLights(spaceId, hubId, 'exit-delay', gId);
                 await applyLightOutputs(spaceId, hubId, 'disarmed', gId, { force: true });
+                await stopGlobalSirensIfIdle(spaceId, hubId);
               }
             } else {
               const extensionOk = await ensureExtensionLinksForOutputs(spaceId, null);
