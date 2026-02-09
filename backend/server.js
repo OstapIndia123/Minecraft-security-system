@@ -1009,14 +1009,22 @@ const startEntryDelay = async (spaceId, hubId, delaySeconds, zoneName, zoneId, g
     if (effectiveStatus === 'disarmed') {
       return;
     }
-    if (zoneId) {
-      const zoneRow = await query(
-        'SELECT status FROM devices WHERE id = $1 AND space_id = $2',
-        [zoneId, spaceId],
+    const zonesQuery = groupId
+      ? await query(
+        "SELECT id, name, status, config FROM devices WHERE space_id = $1 AND type = $2 AND (config->>'groupId')::int = $3",
+        [spaceId, 'zone', groupId],
+      )
+      : await query(
+        'SELECT id, name, status, config FROM devices WHERE space_id = $1 AND type = $2',
+        [spaceId, 'zone'],
       );
-      if (zoneRow.rows[0]?.status === 'Норма') {
-        return;
-      }
+    const violatedDelayedZones = zonesQuery.rows.filter((zone) => {
+      const zoneType = zone.config?.zoneType ?? 'instant';
+      if (zoneType !== 'delayed') return false;
+      return zone.status !== 'Норма';
+    });
+    if (!violatedDelayedZones.length) {
+      return;
     }
     entryDelayFailed.set(sk, true);
     alarmSinceArmed.set(sk, true);
@@ -1026,11 +1034,9 @@ const startEntryDelay = async (spaceId, hubId, delaySeconds, zoneName, zoneId, g
       if (gNameRow.rows.length) groupSuffix = ` [${gNameRow.rows[0].name}]`;
     }
     await appendLog(spaceId, 'Неудачное снятие с охраны, выслать группу реагирования!', 'Zone', 'alarm', groupId);
-    if (zoneName) {
-      await appendLog(spaceId, `Тревога шлейфа: ${zoneName}${groupSuffix}`, 'Zone', 'alarm', groupId);
-    }
-    if (zoneId) {
-      zoneAlarmState.set(`${spaceId}:${zoneId}`, true);
+    for (const zone of violatedDelayedZones) {
+      await appendLog(spaceId, `Тревога шлейфа: ${zone.name}${groupSuffix}`, 'Zone', 'alarm', groupId);
+      zoneAlarmState.set(`${spaceId}:${zone.id}`, true);
     }
     spaceAlarmState.set(sk, true);
     const spaceRow = await query('SELECT hub_id FROM spaces WHERE id = $1', [spaceId]);
