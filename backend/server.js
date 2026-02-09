@@ -981,6 +981,7 @@ const startPendingArm = async (spaceId, hubId, delaySeconds, who, logMessage, gr
       const computedStatus = await computeSpaceStatusFromGroups(spaceId);
       await query('UPDATE spaces SET status = $1 WHERE id = $2', [computedStatus, spaceId]);
       await appendLog(spaceId, logMessage ?? 'Группа поставлена под охрану', who, 'security', groupId);
+      entryDelayFailed.delete(sk);
       await applyLightOutputs(spaceId, hubId, 'armed', groupId);
     } else {
       await updateStatus(spaceId, 'armed', who, logMessage);
@@ -2650,6 +2651,7 @@ const updateStatus = async (spaceId, status, who, logMessage) => {
   }
   if (status === 'armed') {
     alarmSinceArmed.set(spaceId, false);
+    entryDelayFailed.delete(spaceId);
   }
   space.devices = await loadDevices(spaceId, space.hubId, space.hubOnline);
   return space;
@@ -3087,6 +3089,7 @@ app.post('/api/spaces/:id/groups/:groupId/arm', requireAuth, async (req, res) =>
   await appendLog(spaceId, `Группа '${groupName}' поставлена под охрану`, req.user.minecraft_nickname ?? 'UI', 'security', Number(groupId));
   const sk = stateKey(spaceId, Number(groupId));
   alarmSinceArmed.set(sk, false);
+  entryDelayFailed.delete(sk);
   const result = await query('SELECT * FROM spaces WHERE id = $1', [spaceId]);
   const space = mapSpace(result.rows[0]);
   space.devices = await loadDevices(spaceId, space.hubId, space.hubOnline);
@@ -3401,6 +3404,7 @@ app.post('/api/hub/events', requireWebhookToken, async (req, res) => {
                   await applyLightOutputs(spaceId, spaceRow.rows[0]?.hub_id, 'armed', gId);
                   const sk = stateKey(spaceId, gId);
                   alarmSinceArmed.set(sk, false);
+                  entryDelayFailed.delete(sk);
                   await appendLog(spaceId, `Постановка группы '${group.name}' ключом: ${session.key_name}`, session.reader_name, 'security', gId);
                 }
               }
