@@ -604,6 +604,28 @@ const sendHubOutputChecked = async (spaceId, hubId, side, level, { force = false
   await sendHubOutput(hubId, side, level, { force });
 };
 
+const ensureExtensionLinksForOutputs = async (spaceId, groupId = null) => {
+  const outputs = groupId
+    ? await query("SELECT config FROM devices WHERE space_id = $1 AND type = $2 AND (config->>'groupId')::int = $3", [spaceId, 'output-light', groupId])
+    : await query('SELECT config FROM devices WHERE space_id = $1 AND type = $2', [spaceId, 'output-light']);
+  if (!outputs.rows.length) return true;
+  const extensionIds = new Set();
+  outputs.rows.forEach((output) => {
+    if (output.config?.bindTarget !== 'hub_extension') return;
+    const extensionId = normalizeHubExtensionId(output.config?.extensionId);
+    extensionIds.add(extensionId ?? null);
+  });
+  if (!extensionIds.size) return true;
+  if (extensionIds.has(null)) return false;
+  for (const extensionId of extensionIds) {
+    const extensionDevice = await getExtensionDeviceById(spaceId, extensionId);
+    if (!extensionDevice) return false;
+    const ok = await checkHubExtensionLink(spaceId, extensionDevice);
+    if (!ok) return false;
+  }
+  return true;
+};
+
 const sendReaderOutput = async (readerId, level) => {
   if (!readerId) return;
   const url = new URL(`/api/reader/${encodeURIComponent(readerId)}/output`, hubApiUrl);
@@ -972,10 +994,10 @@ const startEntryDelay = async (spaceId, hubId, delaySeconds, zoneName, zoneId, g
   if (!hubId || entryDelayTimers.has(sk) || entryDelayFailed.get(sk)) return;
   const resolvedDelay = clampDelaySeconds(delaySeconds) ?? 0;
   await appendLog(spaceId, 'Начало снятия', 'Zone', 'security', groupId);
-  await startBlinkingLights(spaceId, hubId, 'entry-delay', groupId);
+  await startBlinkingLights(spaceId, hubId, 'entry-delay', groupId).catch(() => null);
   const timer = setTimeout(async () => {
     entryDelayTimers.delete(sk);
-    await stopBlinkingLights(spaceId, hubId, 'entry-delay', groupId);
+    await stopBlinkingLights(spaceId, hubId, 'entry-delay', groupId).catch(() => null);
     let effectiveStatus;
     if (groupId) {
       const groupRow = await query('SELECT status FROM groups WHERE id = $1 AND space_id = $2', [groupId, spaceId]);
@@ -984,26 +1006,36 @@ const startEntryDelay = async (spaceId, hubId, delaySeconds, zoneName, zoneId, g
       const spaceRow = await query('SELECT status FROM spaces WHERE id = $1', [spaceId]);
       effectiveStatus = spaceRow.rows[0]?.status ?? 'disarmed';
     }
-    if (effectiveStatus === 'armed') {
-      entryDelayFailed.set(sk, true);
-      alarmSinceArmed.set(sk, true);
-      let groupSuffix = '';
-      if (groupId) {
-        const gNameRow = await query('SELECT name FROM groups WHERE id = $1', [groupId]);
-        if (gNameRow.rows.length) groupSuffix = ` [${gNameRow.rows[0].name}]`;
-      }
-      await appendLog(spaceId, 'Неудачное снятие с охраны, выслать группу реагирования!', 'Zone', 'alarm', groupId);
-      if (zoneName) {
-        await appendLog(spaceId, `Тревога шлейфа: ${zoneName}${groupSuffix}`, 'Zone', 'alarm', groupId);
-      }
-      if (zoneId) {
-        zoneAlarmState.set(`${spaceId}:${zoneId}`, true);
-      }
-      spaceAlarmState.set(sk, true);
-      const spaceRow = await query('SELECT hub_id FROM spaces WHERE id = $1', [spaceId]);
-      await startSirenTimers(spaceId, spaceRow.rows[0]?.hub_id, groupId);
-      await query('UPDATE spaces SET issues = true WHERE id = $1', [spaceId]);
+    if (effectiveStatus === 'disarmed') {
+      return;
     }
+    if (zoneId) {
+      const zoneRow = await query(
+        'SELECT status FROM devices WHERE id = $1 AND space_id = $2',
+        [zoneId, spaceId],
+      );
+      if (zoneRow.rows[0]?.status === 'Норма') {
+        return;
+      }
+    }
+    entryDelayFailed.set(sk, true);
+    alarmSinceArmed.set(sk, true);
+    let groupSuffix = '';
+    if (groupId) {
+      const gNameRow = await query('SELECT name FROM groups WHERE id = $1', [groupId]);
+      if (gNameRow.rows.length) groupSuffix = ` [${gNameRow.rows[0].name}]`;
+    }
+    await appendLog(spaceId, 'Неудачное снятие с охраны, выслать группу реагирования!', 'Zone', 'alarm', groupId);
+    if (zoneName) {
+      await appendLog(spaceId, `Тревога шлейфа: ${zoneName}${groupSuffix}`, 'Zone', 'alarm', groupId);
+    }
+    if (zoneId) {
+      zoneAlarmState.set(`${spaceId}:${zoneId}`, true);
+    }
+    spaceAlarmState.set(sk, true);
+    const spaceRow = await query('SELECT hub_id FROM spaces WHERE id = $1', [spaceId]);
+    await startSirenTimers(spaceId, spaceRow.rows[0]?.hub_id, groupId).catch(() => null);
+    await query('UPDATE spaces SET issues = true WHERE id = $1', [spaceId]);
   }, resolvedDelay * 1000);
   entryDelayTimers.set(sk, { timer, zoneName });
 };
@@ -3322,6 +3354,17 @@ app.post('/api/hub/events', requireWebhookToken, async (req, res) => {
             if (session.action === 'group_disarm') {
               for (const group of groupRows.rows) {
                 if (group.status !== 'armed') continue;
+                const extensionOk = await ensureExtensionLinksForOutputs(spaceId, group.id);
+                if (!extensionOk) {
+                  await appendLog(
+                    spaceId,
+                    `Неудачное снятие группы '${group.name}' ключом (модуль расширения не в сети): ${session.key_name}`,
+                    session.reader_name,
+                    'security',
+                    group.id,
+                  );
+                  continue;
+                }
                 const gId = group.id;
                 const sk = stateKey(spaceId, gId);
                 await query("UPDATE groups SET status = 'disarmed' WHERE id = $1 AND space_id = $2", [gId, spaceId]);
@@ -3341,6 +3384,17 @@ app.post('/api/hub/events', requireWebhookToken, async (req, res) => {
             } else {
               for (const group of groupRows.rows) {
                 if (group.status === 'armed') continue;
+                const extensionOk = await ensureExtensionLinksForOutputs(spaceId, group.id);
+                if (!extensionOk) {
+                  await appendLog(
+                    spaceId,
+                    `Неудачная постановка группы '${group.name}' ключом (модуль расширения не в сети): ${session.key_name}`,
+                    session.reader_name,
+                    'security',
+                    group.id,
+                  );
+                  continue;
+                }
                 const gId = group.id;
                 const zones = await query(
                   "SELECT name, status, config FROM devices WHERE space_id = $1 AND type = 'zone' AND (config->>'groupId')::int = $2",
@@ -3376,6 +3430,16 @@ app.post('/api/hub/events', requireWebhookToken, async (req, res) => {
             await query('UPDATE spaces SET status = $1 WHERE id = $2', [computedStatus, spaceId]);
             await evaluateZoneIssues(spaceId);
           } else if (session.action === 'arm') {
+            const extensionOk = await ensureExtensionLinksForOutputs(spaceId, null);
+            if (!extensionOk) {
+              await appendLog(
+                spaceId,
+                `Неудачная постановка (модуль расширения не в сети): ${session.key_name}`,
+                session.reader_name,
+                'security',
+              );
+              return;
+            }
             const zones = await query('SELECT name, status, config FROM devices WHERE space_id = $1 AND type = $2', [
               spaceId,
               'zone',
@@ -3424,7 +3488,20 @@ app.post('/api/hub/events', requireWebhookToken, async (req, res) => {
             const spaceRow = await query('SELECT hub_id, groups_enabled FROM spaces WHERE id = $1', [spaceId]);
             const hubId = spaceRow.rows[0]?.hub_id;
             if (spaceRow.rows[0]?.groups_enabled) {
-              const groups = await query('SELECT id FROM groups WHERE space_id = $1', [spaceId]);
+              const groups = await query('SELECT id, name FROM groups WHERE space_id = $1', [spaceId]);
+              for (const group of groups.rows) {
+                const extensionOk = await ensureExtensionLinksForOutputs(spaceId, group.id);
+                if (!extensionOk) {
+                  await appendLog(
+                    spaceId,
+                    `Неудачное снятие группы '${group.name}' ключом (модуль расширения не в сети): ${session.key_name}`,
+                    session.reader_name,
+                    'security',
+                    group.id,
+                  );
+                  return;
+                }
+              }
               for (const group of groups.rows) {
                 const gId = group.id;
                 const sk = stateKey(spaceId, gId);
@@ -3438,6 +3515,18 @@ app.post('/api/hub/events', requireWebhookToken, async (req, res) => {
                 await stopBlinkingLights(spaceId, hubId, 'entry-delay', gId);
                 await stopBlinkingLights(spaceId, hubId, 'exit-delay', gId);
                 await applyLightOutputs(spaceId, hubId, 'disarmed', gId, { force: true });
+              }
+            } else {
+              const extensionOk = await ensureExtensionLinksForOutputs(spaceId, null);
+              if (!extensionOk) {
+                await appendLog(
+                  spaceId,
+                  `Неудачное снятие (модуль расширения не в сети): ${session.key_name}`,
+                  session.reader_name,
+                  'security',
+                  null,
+                );
+                return;
               }
             }
             await updateStatus(
@@ -3504,10 +3593,10 @@ app.post('/api/hub/events', requireWebhookToken, async (req, res) => {
       }
 
       const sk = stateKey(spaceId, zoneGroupId);
+      const zoneType = config.zoneType ?? 'instant';
       const hasActiveIssues = Boolean(
         spaceDataRow.rows[0]?.issues || spaceAlarmState.get(sk) || alarmSinceArmed.get(sk),
       );
-      const zoneType = config.zoneType ?? 'instant';
       const bypass = Boolean(config.bypass);
       const silent = Boolean(config.silent);
       const shouldCheck = zoneType === '24h' || effectiveStatus === 'armed';
