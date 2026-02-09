@@ -1006,7 +1006,7 @@ const startEntryDelay = async (spaceId, hubId, delaySeconds, zoneName, zoneId, g
       const spaceRow = await query('SELECT status FROM spaces WHERE id = $1', [spaceId]);
       effectiveStatus = spaceRow.rows[0]?.status ?? 'disarmed';
     }
-    if (effectiveStatus === 'armed') {
+    if (effectiveStatus !== 'disarmed') {
       entryDelayFailed.set(sk, true);
       alarmSinceArmed.set(sk, true);
       let groupSuffix = '';
