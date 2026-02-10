@@ -2787,9 +2787,10 @@ const renderLogs = (space) => {
     if (!shouldFlash) {
       logFlashActive.delete(flashKey);
     }
-    const translated = translateLogText(log.text);
-    const isHubOffline = log.text === 'Хаб не в сети' || translated === 'Hub offline';
-    const isExtensionOffline = log.text === 'Модуль расширения не в сети' || translated === 'Hub extension offline';
+    const rawText = decodeHtmlEntities(log.text);
+    const translated = translateLogText(rawText);
+    const isHubOffline = rawText === 'Хаб не в сети' || translated === 'Hub offline';
+    const isExtensionOffline = rawText === 'Модуль расширения не в сети' || translated === 'Hub extension offline';
     row.className = `log-row ${isAlarm ? 'log-row--alarm' : ''} ${shouldFlash ? 'log-row--alarm-flash' : ''} ${isRestore ? 'log-row--restore' : ''} ${isHub ? 'log-row--hub' : ''} ${(isHubOffline || isExtensionOffline) ? 'log-row--hub-offline' : ''}`;
     const safeText = escapeHtml(translated);
     const text = isHub ? safeText.replace(/\n/g, '<br />') : safeText;

@@ -814,7 +814,7 @@ const renderLogs = (logs) => {
     if (!shouldFlash) {
       logFlashActive.delete(flashKey);
     }
-    const rawText = isHub ? log.text : log.text;
+    const rawText = decodeHtmlEntities(log.text);
     const translatedText = translateLogText(rawText);
     const isHubOffline = rawText === 'Хаб не в сети' || translatedText === 'Hub offline';
     const isExtensionOffline = rawText === 'Модуль расширения не в сети' || translatedText === 'Hub extension offline';
