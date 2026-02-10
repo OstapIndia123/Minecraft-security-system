@@ -363,6 +363,7 @@ const statusMap = {
   online: 'В сети',
   offline: 'Не в сети',
   normal: 'Норма',
+  violation: 'Нарушение',
 };
 
 const normalizeStatusValue = (status) => {
@@ -373,9 +374,11 @@ const normalizeStatusValue = (status) => {
     'не в сети': 'offline',
     'в сети': 'online',
     'норма': 'normal',
+    'нарушение': 'violation',
     online: 'online',
     offline: 'offline',
     normal: 'normal',
+    violation: 'violation',
   };
   return aliases[lower] ?? (statusMap[lower] ? lower : raw);
 };
@@ -521,6 +524,7 @@ const translations = {
     'status.online': 'В сети',
     'status.offline': 'Не в сети',
     'status.normal': 'Норма',
+    'status.violation': 'Нарушение',
     'engineer.tabs.groups': 'Группы',
     'engineer.groups.title': 'Группы охраны',
     'engineer.groups.enable': 'Включить режим групп',
@@ -834,6 +838,7 @@ const translations = {
     'status.online': 'Online',
     'status.offline': 'Offline',
     'status.normal': 'Normal',
+    'status.violation': 'Violation',
     'engineer.tabs.groups': 'Groups',
     'engineer.groups.title': 'Security groups',
     'engineer.groups.enable': 'Enable groups mode',

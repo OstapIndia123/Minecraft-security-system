@@ -260,6 +260,7 @@ const translations = {
     'status.online': 'В сети',
     'status.offline': 'Не в сети',
     'status.normal': 'Норма',
+    'status.violation': 'Нарушение',
     'user.groups.manage': 'Управление',
     'user.groups.manageTitle': 'Управление группами',
     'user.groups.arm': 'Под охрану',
@@ -306,6 +307,7 @@ const translations = {
     'status.online': 'Online',
     'status.offline': 'Offline',
     'status.normal': 'Normal',
+    'status.violation': 'Violation',
     'user.groups.manage': 'Manage',
     'user.groups.manageTitle': 'Manage groups',
     'user.groups.arm': 'Arm',
@@ -344,6 +346,7 @@ const statusKeys = new Set([
   'online',
   'offline',
   'normal',
+  'violation',
 ]);
 
 const normalizeStatusValue = (status) => {
@@ -354,9 +357,11 @@ const normalizeStatusValue = (status) => {
     'не в сети': 'offline',
     'в сети': 'online',
     'норма': 'normal',
+    'нарушение': 'violation',
     online: 'online',
     offline: 'offline',
     normal: 'normal',
+    violation: 'violation',
   };
   return aliases[lower] ?? (statusKeys.has(lower) ? lower : raw);
 };

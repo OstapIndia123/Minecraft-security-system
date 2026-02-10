@@ -141,6 +141,7 @@ const translations = {
     'status.online': 'В сети',
     'status.offline': 'Не в сети',
     'status.normal': 'Норма',
+    'status.violation': 'Нарушение',
     'profile.title': 'Профиль',
     'profile.nickname': 'Игровой ник',
     'profile.nickname.change': 'Сменить',
@@ -178,6 +179,7 @@ const translations = {
     'status.online': 'Online',
     'status.offline': 'Offline',
     'status.normal': 'Normal',
+    'status.violation': 'Violation',
     'profile.title': 'Profile',
     'profile.nickname': 'Game nickname',
     'profile.nickname.change': 'Change',
@@ -218,6 +220,7 @@ const statusMap = {
   online: 'В сети',
   offline: 'Не в сети',
   normal: 'Норма',
+  violation: 'Нарушение',
 };
 
 const normalizeStatusValue = (status) => {
@@ -228,9 +231,11 @@ const normalizeStatusValue = (status) => {
     'не в сети': 'offline',
     'в сети': 'online',
     'норма': 'normal',
+    'нарушение': 'violation',
     online: 'online',
     offline: 'offline',
     normal: 'normal',
+    violation: 'violation',
   };
   return aliases[lower] ?? (statusMap[lower] ? lower : raw);
 };
