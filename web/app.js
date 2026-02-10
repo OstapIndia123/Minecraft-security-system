@@ -1870,6 +1870,29 @@ const getReaderOptions = (space, selectedId = '') => {
   return `<option value="">${t('engineer.deviceModal.key.readerId')}</option>${options}`;
 };
 
+
+const ensureSelectHasOption = (selectEl, value) => {
+  if (!selectEl || !value) return;
+  const normalizedValue = String(value);
+  const exists = Array.from(selectEl.options).some((option) => option.value === normalizedValue);
+  if (exists) return;
+  const option = document.createElement('option');
+  option.value = normalizedValue;
+  option.textContent = normalizedValue;
+  selectEl.appendChild(option);
+};
+
+const refreshCreateKeyReaderOptions = () => {
+  if (!keyReaderSelect) return;
+  const selected = keyReaderSelect.value;
+  const space = spaces.find((item) => item.id === state.selectedSpaceId);
+  keyReaderSelect.innerHTML = getReaderOptions(space, selected);
+  if (selected) {
+    ensureSelectHasOption(keyReaderSelect, selected);
+    keyReaderSelect.value = selected;
+  }
+};
+
 const updateEditExtensionOptions = async ({ spaceId, selectEl, selectedId }) => {
   if (!selectEl || !spaceId) return;
   selectEl.dataset.loading = 'true';
@@ -3553,6 +3576,9 @@ if (deviceType) {
         input.required = isKey;
       }
     });
+    if (isKey) {
+      refreshCreateKeyReaderOptions();
+    }
 
     if (sideInput) {
       sideInput.disabled = isKey || isExtension;
@@ -3601,11 +3627,7 @@ if (deviceType) {
   updateDeviceFields();
   setupZoneDelayFields(deviceForm);
 
-  if (keyReaderSelect) {
-    const selected = keyReaderSelect.value;
-    const space = spaces.find((item) => item.id === state.selectedSpaceId);
-    keyReaderSelect.innerHTML = getReaderOptions(space, selected);
-  }
+  refreshCreateKeyReaderOptions();
 }
 
 if (deviceForm) {
@@ -3676,7 +3698,12 @@ if (readKeyButton && deviceForm) {
       const keyInput = deviceForm.querySelector('input[name=\"keyName\"]');
       const readerInput = deviceForm.querySelector('[name=\"readerId\"]');
       if (keyInput) keyInput.value = scan.keyName ?? '';
-      if (readerInput) readerInput.value = scan.readerId ?? '';
+      if (readerInput) {
+        if (readerInput.tagName === 'SELECT') {
+          ensureSelectHasOption(readerInput, scan.readerId ?? '');
+        }
+        readerInput.value = scan.readerId ?? '';
+      }
       showToast(t('toast.keyRead'));
     } catch (error) {
       console.error(error);
