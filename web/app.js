@@ -57,11 +57,16 @@ const escapeHtml = (value) => String(value ?? '')
   .replace(/'/g, '&#39;');
 
 const decodeHtmlEntities = (value) => {
-  const text = String(value ?? '');
+  let text = String(value ?? '');
   if (!text.includes('&')) return text;
   const textarea = document.createElement('textarea');
-  textarea.innerHTML = text;
-  return textarea.value;
+  for (let i = 0; i < 3 && text.includes('&'); i += 1) {
+    textarea.innerHTML = text;
+    const decoded = textarea.value;
+    if (decoded === text) break;
+    text = decoded;
+  }
+  return text;
 };
 
 const getDeviceTypeToken = (type) => {
@@ -195,8 +200,12 @@ const notifyLogEvent = async (space, log) => {
   const key = `notify:${space.id}:${log.createdAt ?? log.time}:${log.text}`;
   if (localStorage.getItem(key)) return;
   localStorage.setItem(key, String(Date.now()));
-  const title = log.type === 'alarm' ? 'Охранное событие: тревога' : 'Охранное событие';
-  const body = `${space.name}: ${log.text}`;
+  const decodedText = decodeHtmlEntities(log.text);
+  const translatedText = translateLogText(decodedText);
+  const title = state.language === 'en-US'
+    ? (log.type === 'alarm' ? 'Security event: alarm' : 'Security event')
+    : (log.type === 'alarm' ? 'Охранное событие: тревога' : 'Охранное событие');
+  const body = `${space.name}: ${translatedText}`;
   await notifySecurityEvent({ title, body, tag: key });
 };
 
@@ -311,6 +320,7 @@ const deviceNameInput = deviceForm?.querySelector('input[name="name"]');
 const deviceRoomInput = deviceForm?.querySelector('input[name="room"]');
 const bindTargetInput = deviceForm?.querySelector('select[name="bindTarget"]');
 const bindExtensionInput = deviceForm?.querySelector('select[name="bindExtensionId"]');
+const keyReaderSelect = deviceForm?.querySelector('select[name="readerId"]');
 const deviceGroupSelect = document.getElementById('deviceGroupSelect');
 const bindingFields = document.getElementById('bindingFields');
 const extensionFields = document.getElementById('extensionFields');
@@ -353,6 +363,7 @@ const statusMap = {
   online: 'В сети',
   offline: 'Не в сети',
   normal: 'Норма',
+  violation: 'Нарушение',
 };
 
 const normalizeStatusValue = (status) => {
@@ -363,9 +374,11 @@ const normalizeStatusValue = (status) => {
     'не в сети': 'offline',
     'в сети': 'online',
     'норма': 'normal',
+    'нарушение': 'violation',
     online: 'online',
     offline: 'offline',
     normal: 'normal',
+    violation: 'violation',
   };
   return aliases[lower] ?? (statusMap[lower] ? lower : raw);
 };
@@ -511,6 +524,7 @@ const translations = {
     'status.online': 'В сети',
     'status.offline': 'Не в сети',
     'status.normal': 'Норма',
+    'status.violation': 'Нарушение',
     'engineer.tabs.groups': 'Группы',
     'engineer.groups.title': 'Группы охраны',
     'engineer.groups.enable': 'Включить режим групп',
@@ -712,6 +726,7 @@ const translations = {
     'engineer.deviceModal.key.readerId': 'ID считывателя',
     'engineer.deviceModal.key.read': 'Считать ключ',
     'engineer.deviceModal.key.generate': 'Сгенерировать',
+    'engineer.deviceModal.key.reading': 'Считывание',
     'engineer.deviceModal.submit': 'Добавить',
     'page.title.engineer': 'Minecraft Security System — Режим инженера',
     'page.title.admin': 'Minecraft Security System — Админ-панель',
@@ -823,6 +838,7 @@ const translations = {
     'status.online': 'Online',
     'status.offline': 'Offline',
     'status.normal': 'Normal',
+    'status.violation': 'Violation',
     'engineer.tabs.groups': 'Groups',
     'engineer.groups.title': 'Security groups',
     'engineer.groups.enable': 'Enable groups mode',
@@ -1024,6 +1040,7 @@ const translations = {
     'engineer.deviceModal.key.readerId': 'Reader ID',
     'engineer.deviceModal.key.read': 'Read key',
     'engineer.deviceModal.key.generate': 'Generate',
+    'engineer.deviceModal.key.reading': 'Reading',
     'engineer.deviceModal.submit': 'Add',
     'page.title.engineer': 'Minecraft Security System — Engineer mode',
     'page.title.admin': 'Minecraft Security System — Admin panel',
@@ -1840,6 +1857,47 @@ const getExtensionOptions = (extensions, selectedId = '') => {
 const getSpaceExtensionDevices = (space) => (space?.devices ?? [])
   .filter((device) => isHubExtensionType(device.type));
 
+
+const getReaderOptions = (space, selectedId = '') => {
+  const readers = (space?.devices ?? []).filter((device) => device.type === 'reader');
+  if (!readers.length) {
+    return `<option value="">${t('engineer.deviceModal.key.readerId')}</option>`;
+  }
+  const options = readers
+    .map((device) => {
+      const id = String(device.id ?? '');
+      const safeId = escapeHtml(id);
+      const safeName = escapeHtml(device.name ?? id);
+      const selected = id === selectedId ? ' selected' : '';
+      return `<option value="${safeId}"${selected}>${safeName} (${safeId})</option>`;
+    })
+    .join('');
+  return `<option value="">${t('engineer.deviceModal.key.readerId')}</option>${options}`;
+};
+
+
+const ensureSelectHasOption = (selectEl, value) => {
+  if (!selectEl || !value) return;
+  const normalizedValue = String(value);
+  const exists = Array.from(selectEl.options).some((option) => option.value === normalizedValue);
+  if (exists) return;
+  const option = document.createElement('option');
+  option.value = normalizedValue;
+  option.textContent = normalizedValue;
+  selectEl.appendChild(option);
+};
+
+const refreshCreateKeyReaderOptions = () => {
+  if (!keyReaderSelect) return;
+  const selected = keyReaderSelect.value;
+  const space = spaces.find((item) => item.id === state.selectedSpaceId);
+  keyReaderSelect.innerHTML = getReaderOptions(space, selected);
+  if (selected) {
+    ensureSelectHasOption(keyReaderSelect, selected);
+    keyReaderSelect.value = selected;
+  }
+};
+
 const updateEditExtensionOptions = async ({ spaceId, selectEl, selectedId }) => {
   if (!selectEl || !spaceId) return;
   selectEl.dataset.loading = 'true';
@@ -1893,7 +1951,7 @@ const renderDeviceDetails = (device) => {
   const safeSide = escapeHtml(device.side ?? '');
   const statusLabel = getDeviceStatusLabel(device.status);
   const safeStatus = escapeHtml(statusLabel);
-  const safeReaderId = escapeHtml(device.config?.readerId ?? '');
+  const safeReaderId = String(device.config?.readerId ?? '');
   const safeType = escapeHtml(device.type);
   const safeId = escapeHtml(device.id);
   const deviceTypeToken = getDeviceTypeToken(device.type);
@@ -1932,7 +1990,9 @@ const renderDeviceDetails = (device) => {
     : (() => {
       let keyFields = `
         <input type="text" name="name" value="${escapeHtml(device.name.replace('Ключ: ', ''))}" placeholder="Имя ключа" required />
-        <input type="text" name="readerId" value="${safeReaderId}" placeholder="ID считывателя" />
+        <select name="readerId">
+          ${getReaderOptions(space, safeReaderId)}
+        </select>
       `;
       if (space?.groupsEnabled) {
         const groups = space.groups ?? [];
@@ -2672,7 +2732,7 @@ const renderPhotos = (space) => {
 
 const translateLogText = (text) => {
   if (state.language !== 'en-US' || !text) return text;
-  const normalizedText = String(text).replace(/&#39;/g, "'");
+  const normalizedText = decodeHtmlEntities(text);
   const [firstLine, ...restLines] = normalizedText.split('\n');
   const hubHeaderTranslations = [
     { pattern: /^Событие хаба: (.+)$/u, replacement: 'Hub event: $1' },
@@ -2693,7 +2753,15 @@ const translateLogText = (text) => {
     { pattern: /^Объект снят с охраны$/, replacement: 'Object disarmed' },
     { pattern: /^Начало снятия$/, replacement: 'Disarm started' },
     { pattern: /^Неудачная попытка постановки под охрану$/, replacement: 'Failed to arm' },
+    { pattern: /^Неудачная попытка постановки под охрану \(зоны не восстановлены: (.+)\)$/, replacement: 'Failed to arm (zones not restored: $1)' },
     { pattern: /^Неудачная постановка \(зоны не в норме\): (.+)$/, replacement: 'Failed to arm (zones not ready): $1' },
+    { pattern: /^Неудачная постановка \(зоны не восстановлены: (.+)\): (.+)$/, replacement: 'Failed to arm (zones not restored: $1): $2' },
+    { pattern: /^Неудачная постановка \(зоны не восстановлены\): (.+)$/, replacement: 'Failed to arm (zones not restored): $1' },
+    { pattern: /^Неудачная постановка \(зоны не восстановлены: (.+)\)$/, replacement: 'Failed to arm (zones not restored: $1)' },
+    { pattern: /^Неудачная постановка \(зоны не восстановлены\)$/, replacement: 'Failed to arm (zones not restored)' },
+    { pattern: /^Неудачная постановка группы '(.+)' \(зоны не восстановлены: (.+)\)$/, replacement: "Failed to arm group '$1' (zones not restored: $2)" },
+    { pattern: /^Неудачная постановка группы '(.+)' \(зоны не восстановлены\)$/, replacement: "Failed to arm group '$1' (zones not restored)" },
+    { pattern: /^Неудачное снятие с охраны, выслать группу реагирования!$/, replacement: 'Disarm failed, dispatch response team!' },
     { pattern: /^Тревога шлейфа: (.+)$/, replacement: 'Zone alarm: $1' },
     { pattern: /^Восстановление шлейфа: (.+)$/, replacement: 'Zone restored: $1' },
     { pattern: /^Неизвестный ключ: (.+)$/, replacement: 'Unknown key: $1' },
@@ -2720,6 +2788,14 @@ const translateLogText = (text) => {
     { pattern: /^Добавлен ключ: (.+)$/, replacement: 'Key added: $1' },
     { pattern: /^Удалён ключ: (.+)$/, replacement: 'Key removed: $1' },
     { pattern: /^Обновлён ключ: (.+)$/, replacement: 'Key updated: $1' },
+    { pattern: /^Скан ключа: (.+)$/, replacement: 'Key scan: $1' },
+    { pattern: /^Неудачная постановка \(нет подтверждения от хаба\): (.+)$/, replacement: 'Failed to arm (no hub confirmation): $1' },
+    { pattern: /^Неудачное снятие \(нет подтверждения от хаба\): (.+)$/, replacement: 'Failed to disarm (no hub confirmation): $1' },
+    { pattern: /^Неудачная постановка группы '(.+)' ключом \(зоны не восстановлены: (.+)\): (.+)$/, replacement: "Failed to arm group '$1' by key (zones not restored: $2): $3" },
+    { pattern: /^Неудачная постановка группы '(.+)' ключом \(зоны не восстановлены\): (.+)$/, replacement: "Failed to arm group '$1' by key (zones not restored): $2" },
+    { pattern: /^Неудачная постановка группы '(.+)' ключом \(обход зоны активен\): (.+)$/, replacement: "Failed to arm group '$1' by key (zone bypass active): $2" },
+    { pattern: /^Неудачная постановка группы '(.+)' ключом \(модуль расширения не в сети\): (.+)$/, replacement: "Failed to arm group '$1' by key (extension offline): $2" },
+    { pattern: /^Неудачное снятие группы '(.+)' ключом \(модуль расширения не в сети\): (.+)$/, replacement: "Failed to disarm group '$1' by key (extension offline): $2" },
     { pattern: /^Пользователь покинул пространство: (.+)$/, replacement: 'User left space: $1' },
     { pattern: /^Пользователь удалён из пространства: (.+)$/, replacement: 'User removed from space: $1' },
     { pattern: /^Пользователь (.+) получил доступ$/, replacement: 'User $1 gained access' },
@@ -2784,9 +2860,10 @@ const renderLogs = (space) => {
     if (!shouldFlash) {
       logFlashActive.delete(flashKey);
     }
-    const translated = translateLogText(log.text);
-    const isHubOffline = log.text === 'Хаб не в сети' || translated === 'Hub offline';
-    const isExtensionOffline = log.text === 'Модуль расширения не в сети' || translated === 'Hub extension offline';
+    const rawText = decodeHtmlEntities(log.text);
+    const translated = translateLogText(rawText);
+    const isHubOffline = rawText === 'Хаб не в сети' || translated === 'Hub offline';
+    const isExtensionOffline = rawText === 'Модуль расширения не в сети' || translated === 'Hub extension offline';
     row.className = `log-row ${isAlarm ? 'log-row--alarm' : ''} ${shouldFlash ? 'log-row--alarm-flash' : ''} ${isRestore ? 'log-row--restore' : ''} ${isHub ? 'log-row--hub' : ''} ${(isHubOffline || isExtensionOffline) ? 'log-row--hub-offline' : ''}`;
     const safeText = escapeHtml(translated);
     const text = isHub ? safeText.replace(/\n/g, '<br />') : safeText;
@@ -3506,12 +3583,15 @@ if (deviceType) {
         input.required = isZone;
       }
     });
-    keyFields?.querySelectorAll('input').forEach((input) => {
+    keyFields?.querySelectorAll('input, select').forEach((input) => {
       input.disabled = !isKey;
       if (input.name === 'keyName') {
         input.required = isKey;
       }
     });
+    if (isKey) {
+      refreshCreateKeyReaderOptions();
+    }
 
     if (sideInput) {
       sideInput.disabled = isKey || isExtension;
@@ -3559,6 +3639,8 @@ if (deviceType) {
   bindTargetInput?.addEventListener('change', updateDeviceFields);
   updateDeviceFields();
   setupZoneDelayFields(deviceForm);
+
+  refreshCreateKeyReaderOptions();
 }
 
 if (deviceForm) {
@@ -3618,25 +3700,30 @@ if (readKeyButton && deviceForm) {
     try {
       readKeyButton.disabled = true;
       let remaining = 60;
-      readKeyButton.textContent = `Считывание (${remaining})`;
+      readKeyButton.textContent = `${t('engineer.deviceModal.key.reading')} (${remaining})`;
       countdown = setInterval(() => {
         remaining -= 1;
         if (remaining <= 0) return;
-        readKeyButton.textContent = `Считывание (${remaining})`;
+        readKeyButton.textContent = `${t('engineer.deviceModal.key.reading')} (${remaining})`;
       }, 1000);
 
       const scan = await apiFetch(`/api/spaces/${space.id}/await-key-scan`);
       const keyInput = deviceForm.querySelector('input[name=\"keyName\"]');
-      const readerInput = deviceForm.querySelector('input[name=\"readerId\"]');
+      const readerInput = deviceForm.querySelector('[name=\"readerId\"]');
       if (keyInput) keyInput.value = scan.keyName ?? '';
-      if (readerInput) readerInput.value = scan.readerId ?? '';
+      if (readerInput) {
+        if (readerInput.tagName === 'SELECT') {
+          ensureSelectHasOption(readerInput, scan.readerId ?? '');
+        }
+        readerInput.value = scan.readerId ?? '';
+      }
       showToast(t('toast.keyRead'));
     } catch (error) {
       console.error(error);
       handleApiError(error, t('errors.keyReadFailed'));
     } finally {
       readKeyButton.disabled = false;
-      readKeyButton.textContent = 'Считать ключ';
+      readKeyButton.textContent = t('engineer.deviceModal.key.read');
       if (countdown) {
         clearInterval(countdown);
       }

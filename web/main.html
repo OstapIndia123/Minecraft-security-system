@@ -409,7 +409,9 @@
 
           <div class="form-inline hidden" id="keyFields">
             <input type="text" name="keyName" data-i18n-placeholder="engineer.deviceModal.key.name" placeholder="Имя ключа" maxlength="60" />
-            <input type="text" name="readerId" data-i18n-placeholder="engineer.deviceModal.key.readerId" placeholder="ID считывателя" maxlength="80" />
+            <select name="readerId" id="keyReaderIdSelect">
+              <option value="" data-i18n="engineer.deviceModal.key.readerId">ID считывателя</option>
+            </select>
             <button type="button" class="button button--ghost" id="readKey" data-i18n="engineer.deviceModal.key.read">Считать ключ</button>
             <button type="button" class="button button--ghost" id="generateKey" data-i18n="engineer.deviceModal.key.generate">Сгенерировать</button>
           </div>
@@ -467,6 +469,6 @@
       </div>
     </div>
 
-    <script src="app.js?v=2026-01-24"></script>
+    <script src="app.js?v=2026-02-10b"></script>
   </body>
 </html>
