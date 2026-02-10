@@ -56,6 +56,14 @@ const escapeHtml = (value) => String(value ?? '')
   .replace(/"/g, '&quot;')
   .replace(/'/g, '&#39;');
 
+const decodeHtmlEntities = (value) => {
+  const text = String(value ?? '');
+  if (!text.includes('&')) return text;
+  const textarea = document.createElement('textarea');
+  textarea.innerHTML = text;
+  return textarea.value;
+};
+
 const getDeviceTypeToken = (type) => {
   const raw = String(type ?? '').trim().toLowerCase();
   if (isHubExtensionType(raw)) return 'hub_extension';
@@ -2710,9 +2718,10 @@ const renderLogs = (space) => {
     if (!shouldFlash) {
       logFlashActive.delete(flashKey);
     }
-    const translated = isHub ? log.text : translateLogText(log.text);
-    const isHubOffline = log.text === 'Хаб не в сети' || translated === 'Hub offline';
-    const isExtensionOffline = log.text === 'Модуль расширения не в сети' || translated === 'Hub extension offline';
+    const decodedText = decodeHtmlEntities(log.text);
+    const translated = isHub ? decodedText : translateLogText(decodedText);
+    const isHubOffline = decodedText === 'Хаб не в сети' || translated === 'Hub offline';
+    const isExtensionOffline = decodedText === 'Модуль расширения не в сети' || translated === 'Hub extension offline';
     row.className = `log-row ${isAlarm ? 'log-row--alarm' : ''} ${shouldFlash ? 'log-row--alarm-flash' : ''} ${isRestore ? 'log-row--restore' : ''} ${isHub ? 'log-row--hub' : ''} ${(isHubOffline || isExtensionOffline) ? 'log-row--hub-offline' : ''}`;
     const safeText = escapeHtml(translated);
     const text = isHub ? safeText.replace(/\n/g, '<br />') : safeText;

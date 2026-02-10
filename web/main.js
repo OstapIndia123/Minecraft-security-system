@@ -35,6 +35,14 @@ const escapeHtml = (value) => String(value ?? '')
   .replace(/"/g, '&quot;')
   .replace(/'/g, '&#39;');
 
+const decodeHtmlEntities = (value) => {
+  const text = String(value ?? '');
+  if (!text.includes('&')) return text;
+  const textarea = document.createElement('textarea');
+  textarea.innerHTML = text;
+  return textarea.value;
+};
+
 const alarmAudio = typeof Audio !== 'undefined' ? new Audio(ALARM_SOUND_PATH) : null;
 if (alarmAudio) {
   alarmAudio.loop = true;
@@ -788,10 +796,10 @@ const renderLogs = (logs) => {
     if (!shouldFlash) {
       logFlashActive.delete(flashKey);
     }
-    const rawText = isHub ? log.text : log.text;
-    const translatedText = isHub ? rawText : translateLogText(rawText);
-    const isHubOffline = rawText === 'Хаб не в сети' || translatedText === 'Hub offline';
-    const isExtensionOffline = rawText === 'Модуль расширения не в сети' || translatedText === 'Hub extension offline';
+    const decodedText = decodeHtmlEntities(log.text);
+    const translatedText = isHub ? decodedText : translateLogText(decodedText);
+    const isHubOffline = decodedText === 'Хаб не в сети' || translatedText === 'Hub offline';
+    const isExtensionOffline = decodedText === 'Модуль расширения не в сети' || translatedText === 'Hub extension offline';
     row.className = `log-row ${isAlarm ? 'log-row--alarm' : ''} ${shouldFlash ? 'log-row--alarm-flash' : ''} ${isRestore ? 'log-row--restore' : ''} ${isHub ? 'log-row--hub' : ''} ${(isHubOffline || isExtensionOffline) ? 'log-row--hub-offline' : ''}`;
     const safeText = escapeHtml(translatedText);
     const text = isHub ? safeText.replace(/\n/g, '<br />') : safeText;
