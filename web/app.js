@@ -2702,6 +2702,8 @@ const translateLogText = (text) => {
     { pattern: /^Неудачная постановка \(зоны не в норме\): (.+)$/, replacement: 'Failed to arm (zones not ready): $1' },
     { pattern: /^Неудачная постановка \(зоны не восстановлены: (.+)\): (.+)$/, replacement: 'Failed to arm (zones not restored: $1): $2' },
     { pattern: /^Неудачная постановка \(зоны не восстановлены\): (.+)$/, replacement: 'Failed to arm (zones not restored): $1' },
+    { pattern: /^Неудачная постановка \(зоны не восстановлены: (.+)\)$/, replacement: 'Failed to arm (zones not restored: $1)' },
+    { pattern: /^Неудачная постановка \(зоны не восстановлены\)$/, replacement: 'Failed to arm (zones not restored)' },
     { pattern: /^Тревога шлейфа: (.+)$/, replacement: 'Zone alarm: $1' },
     { pattern: /^Восстановление шлейфа: (.+)$/, replacement: 'Zone restored: $1' },
     { pattern: /^Неизвестный ключ: (.+)$/, replacement: 'Unknown key: $1' },

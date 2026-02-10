@@ -513,8 +513,6 @@ const appendLog = async (spaceId, text, who, type, groupId = null) => {
 };
 
 const getArmingViolations = (zones = []) => zones.filter((zone) => {
-  const zoneType = zone?.config?.zoneType ?? 'instant';
-  if (zoneType === 'delayed' || zoneType === 'pass') return false;
   return zone?.status !== 'Норма';
 });
 
@@ -3049,6 +3047,24 @@ app.post('/api/spaces/:id/arm', requireAuth, async (req, res) => {
   if (spaceCheck.rows[0]?.groups_enabled) {
     return res.status(409).json({ error: 'groups_mode_active' });
   }
+
+  const zones = await query('SELECT name, status, config FROM devices WHERE space_id = $1 AND type = $2', [
+    req.params.id,
+    'zone',
+  ]);
+  const hasBypass = zones.rows.some((zone) => zone.config?.bypass);
+  if (hasBypass) {
+    await appendLog(req.params.id, 'Неудачная постановка (обход зоны активен)', req.user.minecraft_nickname ?? 'UI', 'security');
+    return res.status(409).json({ error: 'bypass_active' });
+  }
+  const violations = getArmingViolations(zones.rows);
+  if (violations.length) {
+    const violationNames = formatViolationZoneNames(violations);
+    const details = violationNames ? `: ${violationNames}` : '';
+    await appendLog(req.params.id, `Неудачная постановка (зоны не восстановлены${details})`, req.user.minecraft_nickname ?? 'UI', 'security');
+    return res.status(409).json({ error: 'zone_state' });
+  }
+
   const updated = await updateStatus(req.params.id, 'armed', req.user.minecraft_nickname ?? 'UI');
   if (!updated) return res.status(404).json({ error: 'space_not_found' });
   res.json(updated);
