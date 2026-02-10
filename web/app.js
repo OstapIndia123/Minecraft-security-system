@@ -2672,7 +2672,7 @@ const renderPhotos = (space) => {
 
 const translateLogText = (text) => {
   if (state.language !== 'en-US' || !text) return text;
-  const normalizedText = String(text).replace(/&#39;/g, "'");
+  const normalizedText = decodeHtmlEntities(text);
   const [firstLine, ...restLines] = normalizedText.split('\n');
   const hubHeaderTranslations = [
     { pattern: /^Событие хаба: (.+)$/u, replacement: 'Hub event: $1' },
@@ -2693,7 +2693,10 @@ const translateLogText = (text) => {
     { pattern: /^Объект снят с охраны$/, replacement: 'Object disarmed' },
     { pattern: /^Начало снятия$/, replacement: 'Disarm started' },
     { pattern: /^Неудачная попытка постановки под охрану$/, replacement: 'Failed to arm' },
+    { pattern: /^Неудачная попытка постановки под охрану \(зоны не восстановлены: (.+)\)$/, replacement: 'Failed to arm (zones not restored: $1)' },
     { pattern: /^Неудачная постановка \(зоны не в норме\): (.+)$/, replacement: 'Failed to arm (zones not ready): $1' },
+    { pattern: /^Неудачная постановка \(зоны не восстановлены: (.+)\): (.+)$/, replacement: 'Failed to arm (zones not restored: $1): $2' },
+    { pattern: /^Неудачная постановка \(зоны не восстановлены\): (.+)$/, replacement: 'Failed to arm (zones not restored): $1' },
     { pattern: /^Тревога шлейфа: (.+)$/, replacement: 'Zone alarm: $1' },
     { pattern: /^Восстановление шлейфа: (.+)$/, replacement: 'Zone restored: $1' },
     { pattern: /^Неизвестный ключ: (.+)$/, replacement: 'Unknown key: $1' },
