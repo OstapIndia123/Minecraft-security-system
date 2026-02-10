@@ -1201,6 +1201,13 @@ body {
   margin-top: 16px;
 }
 
+.field-hint {
+  grid-column: 1 / -1;
+  font-size: 12px;
+  color: #ff8f8f;
+  margin-top: -4px;
+}
+
 .muted {
   color: var(--muted);
 }
