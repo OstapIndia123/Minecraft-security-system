@@ -101,6 +101,14 @@ const verifyPassword = async (password, stored) => {
 
 const normalizeText = (value) => (value ?? '').toString().trim();
 
+let schemaCompatibilityEnsured = false;
+
+const ensureSchemaCompatibility = async () => {
+  if (schemaCompatibilityEnsured) return;
+  await query("ALTER TABLE spaces ADD COLUMN IF NOT EXISTS hub_room TEXT NOT NULL DEFAULT '—'");
+  schemaCompatibilityEnsured = true;
+};
+
 const isOverMaxLength = (value, maxLength) => {
   if (!value) return false;
   return value.length > maxLength;
@@ -1795,10 +1803,20 @@ app.patch('/api/spaces/:id/hub', requireAuth, requireInstaller, async (req, res)
     return res.status(400).json({ error: 'field_too_long' });
   }
 
-  const updated = await query(
-    'UPDATE spaces SET hub_room = $1 WHERE id = $2 RETURNING *',
-    [normalizedRoom, req.params.id],
-  );
+  let updated;
+  try {
+    updated = await query(
+      'UPDATE spaces SET hub_room = $1 WHERE id = $2 RETURNING *',
+      [normalizedRoom, req.params.id],
+    );
+  } catch (error) {
+    if (error?.code !== '42703') throw error;
+    await ensureSchemaCompatibility();
+    updated = await query(
+      'UPDATE spaces SET hub_room = $1 WHERE id = $2 RETURNING *',
+      [normalizedRoom, req.params.id],
+    );
+  }
   await appendLog(req.params.id, 'Обновлена информация о хабе', 'UI', 'system');
   const result = mapSpace(updated.rows[0]);
   result.devices = await loadDevices(result.id, result.hubId, result.hubOnline, result.hubRoom);
@@ -3791,6 +3809,12 @@ app.use((error, req, res, next) => {
   }
   res.status(500).json({ error: 'server_error' });
 });
+
+try {
+  await ensureSchemaCompatibility();
+} catch (error) {
+  console.error('Schema compatibility check failed:', error);
+}
 
 app.listen(port, () => {
   console.log(`Backend listening on http://localhost:${port}`);
