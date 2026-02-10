@@ -687,6 +687,8 @@ const translations = {
     'engineer.deviceModal.bindTarget.extension': 'К модулю расширения',
     'engineer.deviceModal.bindExtension.empty': 'Нет модулей расширения',
     'engineer.deviceModal.bindExtension.select': 'Выберите модуль',
+    'engineer.deviceModal.bindExtension.loading': 'Загрузка модулей расширения...',
+    'engineer.deviceModal.bindExtension.missing': 'Выбранный модуль недоступен. Выберите другой модуль расширения.',
     'engineer.deviceModal.extension.id': 'ID модуля (HUB_EXT-...)',
     'engineer.deviceModal.extension.hubSide': 'Сторона хаба (N/S/E/W/U/D)',
     'engineer.deviceModal.extension.extensionSide': 'Сторона модуля (N/S/E/W/U/D)',
@@ -997,6 +999,8 @@ const translations = {
     'engineer.deviceModal.bindTarget.extension': 'To extension module',
     'engineer.deviceModal.bindExtension.empty': 'No extension modules',
     'engineer.deviceModal.bindExtension.select': 'Select a module',
+    'engineer.deviceModal.bindExtension.loading': 'Loading extension modules...',
+    'engineer.deviceModal.bindExtension.missing': 'The selected module is unavailable. Choose another extension module.',
     'engineer.deviceModal.extension.id': 'Module ID (HUB_EXT-...)',
     'engineer.deviceModal.extension.hubSide': 'Hub side (N/S/E/W/U/D)',
     'engineer.deviceModal.extension.extensionSide': 'Module side (N/S/E/W/U/D)',
@@ -1838,6 +1842,8 @@ const getSpaceExtensionDevices = (space) => (space?.devices ?? [])
 
 const updateEditExtensionOptions = async ({ spaceId, selectEl, selectedId }) => {
   if (!selectEl || !spaceId) return;
+  selectEl.dataset.loading = 'true';
+  selectEl.dataset.selectedId = selectedId ?? '';
   try {
     const response = await apiFetch(`/api/spaces/${spaceId}/extensions`);
     const extensions = response.extensions ?? [];
@@ -1851,6 +1857,8 @@ const updateEditExtensionOptions = async ({ spaceId, selectEl, selectedId }) => 
     selectEl.innerHTML = getExtensionOptions([], selectedId);
     selectEl.disabled = true;
     selectEl.value = '';
+  } finally {
+    selectEl.dataset.loading = 'false';
   }
 };
 
@@ -1984,6 +1992,7 @@ const renderDeviceDetails = (device) => {
         >
           ${getExtensionOptions(extensionDevices, bindTarget === 'hub_extension' ? bindExtensionId : '')}
         </select>
+        <div id="bindExtensionHint" class="field-hint hidden"></div>
         <select name="zoneType">
           <option value="instant" ${device.config?.zoneType === 'instant' ? 'selected' : ''}>Нормальная</option>
           <option value="delayed" ${device.config?.zoneType === 'delayed' ? 'selected' : ''}>Задержанная</option>
@@ -2025,6 +2034,7 @@ const renderDeviceDetails = (device) => {
         >
           ${getExtensionOptions(extensionDevices, bindTarget === 'hub_extension' ? bindExtensionId : '')}
         </select>
+        <div id="bindExtensionHint" class="field-hint hidden"></div>
         <input type="number" name="outputLevel" value="${device.config?.level ?? 15}" min="0" max="15" />
       `;
     }
@@ -2043,6 +2053,7 @@ const renderDeviceDetails = (device) => {
         >
           ${getExtensionOptions(extensionDevices, bindTarget === 'hub_extension' ? bindExtensionId : '')}
         </select>
+        <div id="bindExtensionHint" class="field-hint hidden"></div>
         <input type="number" name="outputLevel" value="${device.config?.level ?? 15}" min="0" max="15" />
         <input type="number" name="intervalMs" value="${device.config?.intervalMs ?? 1000}" min="300" max="60000" />
         <input type="number" name="alarmDuration" value="${device.config?.alarmDuration ?? ''}" min="1" max="120" placeholder="Время тревоги (сек)" />
@@ -2125,23 +2136,59 @@ const renderDeviceDetails = (device) => {
     }
     const bindTargetSelect = editForm.querySelector('#bindTargetEdit');
     const bindExtensionField = editForm.querySelector('#bindExtensionIdEdit');
+    const bindExtensionHint = editForm.querySelector('#bindExtensionHint');
+    const initialExtensionId = device.config?.extensionId ?? '';
+    const setBindExtensionHint = (status) => {
+      if (!bindExtensionHint) return;
+      if (status === 'loading') {
+        bindExtensionHint.textContent = t('engineer.deviceModal.bindExtension.loading');
+        bindExtensionHint.classList.remove('hidden');
+        return;
+      }
+      if (status === 'missing') {
+        bindExtensionHint.textContent = t('engineer.deviceModal.bindExtension.missing');
+        bindExtensionHint.classList.remove('hidden');
+        return;
+      }
+      bindExtensionHint.textContent = '';
+      bindExtensionHint.classList.add('hidden');
+    };
     const updateBindingFields = () => {
       if (!bindTargetSelect || !bindExtensionField) return;
       const isExtension = bindTargetSelect.value === 'hub_extension';
+      const isLoading = bindExtensionField.dataset.loading === 'true';
+      const selectedId = bindExtensionField.dataset.selectedId || bindExtensionField.value || initialExtensionId;
       const hasExtensions = Array.from(bindExtensionField.options).some((option) => option.value);
+      const hasSelectedOption = selectedId
+        ? Array.from(bindExtensionField.options).some((option) => option.value === selectedId)
+        : false;
       bindExtensionField.classList.toggle('hidden', !isExtension);
-      bindExtensionField.required = isExtension && hasExtensions;
-      bindExtensionField.disabled = !isExtension || !hasExtensions;
-      if (!isExtension || !hasExtensions) {
+      if (!isExtension) {
+        bindExtensionField.required = false;
+        bindExtensionField.disabled = true;
+        bindExtensionField.value = '';
+        setBindExtensionHint(null);
+        return;
+      }
+      if (selectedId && !bindExtensionField.value) {
+        bindExtensionField.value = selectedId;
+      }
+      bindExtensionField.required = hasExtensions;
+      bindExtensionField.disabled = !hasExtensions;
+      if (!isLoading && !hasExtensions && !selectedId) {
         bindExtensionField.value = '';
       }
+      setBindExtensionHint(!isLoading && selectedId && !hasSelectedOption ? 'missing' : null);
     };
     const refreshBindExtensions = async () => {
       if (!bindExtensionField || !space) return;
+      const selectedId = device.config?.extensionId ?? bindExtensionField.value;
+      bindExtensionField.dataset.selectedId = selectedId;
+      setBindExtensionHint('loading');
       await updateEditExtensionOptions({
         spaceId: space.id,
         selectEl: bindExtensionField,
-        selectedId: bindExtensionField.value,
+        selectedId,
       });
       updateBindingFields();
     };
