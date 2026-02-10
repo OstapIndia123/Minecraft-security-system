@@ -200,8 +200,12 @@ const notifyLogEvent = async (space, log) => {
   const key = `notify:${space.id}:${log.createdAt ?? log.time}:${log.text}`;
   if (localStorage.getItem(key)) return;
   localStorage.setItem(key, String(Date.now()));
-  const title = log.type === 'alarm' ? 'Охранное событие: тревога' : 'Охранное событие';
-  const body = `${space.name}: ${log.text}`;
+  const decodedText = decodeHtmlEntities(log.text);
+  const translatedText = translateLogText(decodedText);
+  const title = state.language === 'en-US'
+    ? (log.type === 'alarm' ? 'Security event: alarm' : 'Security event')
+    : (log.type === 'alarm' ? 'Охранное событие: тревога' : 'Охранное событие');
+  const body = `${space.name}: ${translatedText}`;
   await notifySecurityEvent({ title, body, tag: key });
 };
 
