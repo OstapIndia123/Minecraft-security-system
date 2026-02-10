@@ -101,6 +101,14 @@ const verifyPassword = async (password, stored) => {
 
 const normalizeText = (value) => (value ?? '').toString().trim();
 
+let schemaCompatibilityEnsured = false;
+
+const ensureSchemaCompatibility = async () => {
+  if (schemaCompatibilityEnsured) return;
+  await query("ALTER TABLE spaces ADD COLUMN IF NOT EXISTS hub_room TEXT NOT NULL DEFAULT '—'");
+  schemaCompatibilityEnsured = true;
+};
+
 const isOverMaxLength = (value, maxLength) => {
   if (!value) return false;
   return value.length > maxLength;
@@ -503,6 +511,17 @@ const appendLog = async (spaceId, text, who, type, groupId = null) => {
     [spaceId, time, sanitizeLogText(text), sanitizeLogText(who), type, groupId],
   );
 };
+
+const getArmingViolations = (zones = []) => zones.filter((zone) => {
+  const zoneType = zone?.config?.zoneType ?? 'instant';
+  if (zoneType === 'delayed' || zoneType === 'pass') return false;
+  return zone?.status !== 'Норма';
+});
+
+const formatViolationZoneNames = (zones = []) => zones
+  .map((zone) => String(zone?.name ?? '').trim())
+  .filter(Boolean)
+  .join(', ');
 
 const formatUserLabel = (user) => user?.minecraft_nickname ?? user?.email ?? (user?.id ? `ID ${user.id}` : '—');
 
@@ -993,13 +1012,13 @@ const startPendingArm = async (spaceId, hubId, delaySeconds, who, logMessage, gr
     const zonesQuery = groupId
       ? await query("SELECT status, config FROM devices WHERE space_id = $1 AND type = $2 AND (config->>'groupId')::int = $3", [spaceId, 'zone', groupId])
       : await query('SELECT status, config FROM devices WHERE space_id = $1 AND type = $2', [spaceId, 'zone']);
-    const hasViolations = zonesQuery.rows.some((zone) => {
-      const zoneType = zone.config?.zoneType ?? 'instant';
-      if (zoneType === 'delayed' || zoneType === 'pass') return false;
-      return zone.status !== 'Норма';
-    });
-    if (hasViolations) {
-      await appendLog(spaceId, 'Неудачная попытка постановки под охрану', 'Zone', 'security', groupId);
+    const violations = getArmingViolations(zonesQuery.rows);
+    if (violations.length) {
+      const violationNames = formatViolationZoneNames(violations);
+      const message = violationNames
+        ? `Неудачная попытка постановки под охрану (зоны не восстановлены: ${violationNames})`
+        : 'Неудачная попытка постановки под охрану';
+      await appendLog(spaceId, message, 'Zone', 'security', groupId);
       await applyLightOutputs(spaceId, hubId, 'disarmed', groupId);
       return;
     }
@@ -1784,10 +1803,20 @@ app.patch('/api/spaces/:id/hub', requireAuth, requireInstaller, async (req, res)
     return res.status(400).json({ error: 'field_too_long' });
   }
 
-  const updated = await query(
-    'UPDATE spaces SET hub_room = $1 WHERE id = $2 RETURNING *',
-    [normalizedRoom, req.params.id],
-  );
+  let updated;
+  try {
+    updated = await query(
+      'UPDATE spaces SET hub_room = $1 WHERE id = $2 RETURNING *',
+      [normalizedRoom, req.params.id],
+    );
+  } catch (error) {
+    if (error?.code !== '42703') throw error;
+    await ensureSchemaCompatibility();
+    updated = await query(
+      'UPDATE spaces SET hub_room = $1 WHERE id = $2 RETURNING *',
+      [normalizedRoom, req.params.id],
+    );
+  }
   await appendLog(req.params.id, 'Обновлена информация о хабе', 'UI', 'system');
   const result = mapSpace(updated.rows[0]);
   result.devices = await loadDevices(result.id, result.hubId, result.hubOnline, result.hubRoom);
@@ -2844,7 +2873,7 @@ const handleReaderScan = async ({ readerId, payload, ts }) => {
       'zone',
     ]);
     const hasBypass = zones.rows.some((zone) => zone.config?.bypass);
-    const hasViolations = zones.rows.some((zone) => zone.status !== 'Норма');
+    const violations = getArmingViolations(zones.rows);
     if (hasBypass) {
       await appendLog(
         spaceId,
@@ -2854,10 +2883,12 @@ const handleReaderScan = async ({ readerId, payload, ts }) => {
       );
       return { ok: true, blocked: 'bypass' };
     }
-    if (hasViolations) {
+    if (violations.length) {
+      const violationNames = formatViolationZoneNames(violations);
+      const details = violationNames ? `: ${violationNames}` : '';
       await appendLog(
         spaceId,
-        `Неудачная постановка (зоны не в норме): ${keyName}`,
+        `Неудачная постановка (зоны не восстановлены${details}): ${keyName}`,
         name ?? readerId,
         'security',
       );
@@ -3140,17 +3171,15 @@ app.post('/api/spaces/:id/groups/:groupId/arm', requireAuth, async (req, res) =>
     [spaceId, Number(groupId)],
   );
   const hasBypass = zones.rows.some((zone) => zone.config?.bypass);
-  const hasViolations = zones.rows.some((zone) => {
-    const zoneType = zone.config?.zoneType ?? 'instant';
-    if (zoneType === 'delayed' || zoneType === 'pass') return false;
-    return zone.status !== 'Норма';
-  });
+  const violations = getArmingViolations(zones.rows);
   if (hasBypass) {
     await appendLog(spaceId, `Неудачная постановка группы '${groupName}' (обход зоны активен)`, 'UI', 'security', Number(groupId));
     return res.status(409).json({ error: 'bypass_active' });
   }
-  if (hasViolations) {
-    await appendLog(spaceId, `Неудачная постановка группы '${groupName}' (зоны не в норме)`, 'UI', 'security', Number(groupId));
+  if (violations.length) {
+    const violationNames = formatViolationZoneNames(violations);
+    const details = violationNames ? `: ${violationNames}` : '';
+    await appendLog(spaceId, `Неудачная постановка группы '${groupName}' (зоны не восстановлены${details})`, 'UI', 'security', Number(groupId));
     return res.status(409).json({ error: 'zone_state' });
   }
   const spaceRow = await query('SELECT hub_id FROM spaces WHERE id = $1', [spaceId]);
@@ -3461,13 +3490,15 @@ app.post('/api/hub/events', requireWebhookToken, async (req, res) => {
                   [spaceId, gId],
                 );
                 const hasBypass = zones.rows.some((z) => z.config?.bypass);
-                const hasViolations = zones.rows.some((z) => {
-                  const zoneType = z.config?.zoneType ?? 'instant';
-                  if (zoneType === 'delayed' || zoneType === 'pass') return false;
-                  return z.status !== 'Норма';
-                });
-                if (hasBypass || hasViolations) {
-                  await appendLog(spaceId, `Неудачная постановка группы '${group.name}' ключом: ${session.key_name}`, session.reader_name, 'security', gId);
+                const violations = getArmingViolations(zones.rows);
+                if (hasBypass || violations.length) {
+                  if (hasBypass) {
+                    await appendLog(spaceId, `Неудачная постановка группы '${group.name}' ключом (обход зоны активен): ${session.key_name}`, session.reader_name, 'security', gId);
+                  } else {
+                    const violationNames = formatViolationZoneNames(violations);
+                    const details = violationNames ? `: ${violationNames}` : '';
+                    await appendLog(spaceId, `Неудачная постановка группы '${group.name}' ключом (зоны не восстановлены${details}): ${session.key_name}`, session.reader_name, 'security', gId);
+                  }
                   continue;
                 }
                 const delaySeconds = getExitDelaySeconds(zones.rows);
@@ -3504,11 +3535,7 @@ app.post('/api/hub/events', requireWebhookToken, async (req, res) => {
               'zone',
             ]);
             const hasBypass = zones.rows.some((zone) => zone.config?.bypass);
-            const hasViolations = zones.rows.some((zone) => {
-              const zoneType = zone.config?.zoneType ?? 'instant';
-              if (zoneType === 'delayed' || zoneType === 'pass') return false;
-              return zone.status !== 'Норма';
-            });
+            const violations = getArmingViolations(zones.rows);
             if (hasBypass) {
               await appendLog(
                 spaceId,
@@ -3516,10 +3543,12 @@ app.post('/api/hub/events', requireWebhookToken, async (req, res) => {
                 session.reader_name,
                 'security',
               );
-            } else if (hasViolations) {
+            } else if (violations.length) {
+              const violationNames = formatViolationZoneNames(violations);
+              const details = violationNames ? `: ${violationNames}` : '';
               await appendLog(
                 spaceId,
-                `Неудачная постановка (зоны не в норме): ${session.key_name}`,
+                `Неудачная постановка (зоны не восстановлены${details}): ${session.key_name}`,
                 session.reader_name,
                 'security',
               );
@@ -3780,6 +3809,12 @@ app.use((error, req, res, next) => {
   }
   res.status(500).json({ error: 'server_error' });
 });
+
+try {
+  await ensureSchemaCompatibility();
+} catch (error) {
+  console.error('Schema compatibility check failed:', error);
+}
 
 app.listen(port, () => {
   console.log(`Backend listening on http://localhost:${port}`);
