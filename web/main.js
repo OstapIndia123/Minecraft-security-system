@@ -36,11 +36,16 @@ const escapeHtml = (value) => String(value ?? '')
   .replace(/'/g, '&#39;');
 
 const decodeHtmlEntities = (value) => {
-  const text = String(value ?? '');
+  let text = String(value ?? '');
   if (!text.includes('&')) return text;
   const textarea = document.createElement('textarea');
-  textarea.innerHTML = text;
-  return textarea.value;
+  for (let i = 0; i < 3 && text.includes('&'); i += 1) {
+    textarea.innerHTML = text;
+    const decoded = textarea.value;
+    if (decoded === text) break;
+    text = decoded;
+  }
+  return text;
 };
 
 const alarmAudio = typeof Audio !== 'undefined' ? new Audio(ALARM_SOUND_PATH) : null;
@@ -136,6 +141,7 @@ const translations = {
     'status.online': 'В сети',
     'status.offline': 'Не в сети',
     'status.normal': 'Норма',
+    'status.violation': 'Нарушение',
     'profile.title': 'Профиль',
     'profile.nickname': 'Игровой ник',
     'profile.nickname.change': 'Сменить',
@@ -173,6 +179,7 @@ const translations = {
     'status.online': 'Online',
     'status.offline': 'Offline',
     'status.normal': 'Normal',
+    'status.violation': 'Violation',
     'profile.title': 'Profile',
     'profile.nickname': 'Game nickname',
     'profile.nickname.change': 'Change',
@@ -213,6 +220,7 @@ const statusMap = {
   online: 'В сети',
   offline: 'Не в сети',
   normal: 'Норма',
+  violation: 'Нарушение',
 };
 
 const normalizeStatusValue = (status) => {
@@ -223,9 +231,11 @@ const normalizeStatusValue = (status) => {
     'не в сети': 'offline',
     'в сети': 'online',
     'норма': 'normal',
+    'нарушение': 'violation',
     online: 'online',
     offline: 'offline',
     normal: 'normal',
+    violation: 'violation',
   };
   return aliases[lower] ?? (statusMap[lower] ? lower : raw);
 };
@@ -702,7 +712,7 @@ const renderObjects = (spaces) => {
 
 const translateLogText = (text) => {
   if (state.language !== 'en-US' || !text) return text;
-  const normalizedText = String(text).replace(/&#39;/g, "'");
+  const normalizedText = decodeHtmlEntities(text);
   const [firstLine, ...restLines] = normalizedText.split('\n');
   const hubHeaderTranslations = [
     { pattern: /^Событие хаба: (.+)$/u, replacement: 'Hub event: $1' },
@@ -723,7 +733,15 @@ const translateLogText = (text) => {
     { pattern: /^Объект снят с охраны$/, replacement: 'Object disarmed' },
     { pattern: /^Начало снятия$/, replacement: 'Disarm started' },
     { pattern: /^Неудачная попытка постановки под охрану$/, replacement: 'Failed to arm' },
+    { pattern: /^Неудачная попытка постановки под охрану \(зоны не восстановлены: (.+)\)$/, replacement: 'Failed to arm (zones not restored: $1)' },
     { pattern: /^Неудачная постановка \(зоны не в норме\): (.+)$/, replacement: 'Failed to arm (zones not ready): $1' },
+    { pattern: /^Неудачная постановка \(зоны не восстановлены: (.+)\): (.+)$/, replacement: 'Failed to arm (zones not restored: $1): $2' },
+    { pattern: /^Неудачная постановка \(зоны не восстановлены\): (.+)$/, replacement: 'Failed to arm (zones not restored): $1' },
+    { pattern: /^Неудачная постановка \(зоны не восстановлены: (.+)\)$/, replacement: 'Failed to arm (zones not restored: $1)' },
+    { pattern: /^Неудачная постановка \(зоны не восстановлены\)$/, replacement: 'Failed to arm (zones not restored)' },
+    { pattern: /^Неудачная постановка группы '(.+)' \(зоны не восстановлены: (.+)\)$/, replacement: "Failed to arm group '$1' (zones not restored: $2)" },
+    { pattern: /^Неудачная постановка группы '(.+)' \(зоны не восстановлены\)$/, replacement: "Failed to arm group '$1' (zones not restored)" },
+    { pattern: /^Неудачное снятие с охраны, выслать группу реагирования!$/, replacement: 'Disarm failed, dispatch response team!' },
     { pattern: /^Тревога шлейфа: (.+)$/, replacement: 'Zone alarm: $1' },
     { pattern: /^Восстановление шлейфа: (.+)$/, replacement: 'Zone restored: $1' },
     { pattern: /^Неизвестный ключ: (.+)$/, replacement: 'Unknown key: $1' },
@@ -750,6 +768,14 @@ const translateLogText = (text) => {
     { pattern: /^Добавлен ключ: (.+)$/, replacement: 'Key added: $1' },
     { pattern: /^Удалён ключ: (.+)$/, replacement: 'Key removed: $1' },
     { pattern: /^Обновлён ключ: (.+)$/, replacement: 'Key updated: $1' },
+    { pattern: /^Скан ключа: (.+)$/, replacement: 'Key scan: $1' },
+    { pattern: /^Неудачная постановка \(нет подтверждения от хаба\): (.+)$/, replacement: 'Failed to arm (no hub confirmation): $1' },
+    { pattern: /^Неудачное снятие \(нет подтверждения от хаба\): (.+)$/, replacement: 'Failed to disarm (no hub confirmation): $1' },
+    { pattern: /^Неудачная постановка группы '(.+)' ключом \(зоны не восстановлены: (.+)\): (.+)$/, replacement: "Failed to arm group '$1' by key (zones not restored: $2): $3" },
+    { pattern: /^Неудачная постановка группы '(.+)' ключом \(зоны не восстановлены\): (.+)$/, replacement: "Failed to arm group '$1' by key (zones not restored): $2" },
+    { pattern: /^Неудачная постановка группы '(.+)' ключом \(обход зоны активен\): (.+)$/, replacement: "Failed to arm group '$1' by key (zone bypass active): $2" },
+    { pattern: /^Неудачная постановка группы '(.+)' ключом \(модуль расширения не в сети\): (.+)$/, replacement: "Failed to arm group '$1' by key (extension offline): $2" },
+    { pattern: /^Неудачное снятие группы '(.+)' ключом \(модуль расширения не в сети\): (.+)$/, replacement: "Failed to disarm group '$1' by key (extension offline): $2" },
     { pattern: /^Пользователь покинул пространство: (.+)$/, replacement: 'User left space: $1' },
     { pattern: /^Пользователь удалён из пространства: (.+)$/, replacement: 'User removed from space: $1' },
     { pattern: /^Пользователь (.+) получил доступ$/, replacement: 'User $1 gained access' },
@@ -811,7 +837,7 @@ const renderLogs = (logs) => {
     if (!shouldFlash) {
       logFlashActive.delete(flashKey);
     }
-    const rawText = isHub ? log.text : log.text;
+    const rawText = decodeHtmlEntities(log.text);
     const translatedText = translateLogText(rawText);
     const isHubOffline = rawText === 'Хаб не в сети' || translatedText === 'Hub offline';
     const isExtensionOffline = rawText === 'Модуль расширения не в сети' || translatedText === 'Hub extension offline';
