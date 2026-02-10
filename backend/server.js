@@ -3298,8 +3298,8 @@ app.post('/api/hub/events', requireWebhookToken, async (req, res) => {
     : new Date().toLocaleTimeString('ru-RU', { hour: '2-digit', minute: '2-digit', second: '2-digit' });
 
   const payloadText = formatHubPayload(payload);
-  const hubLogLabel = isExtensionEvent ? 'Событие модуля расширения' : 'Событие хаба';
-  const hubLogText = `${hubLogLabel}: ${type}\n${hubId}${payloadText ? `\n${payloadText}` : ''}`;
+  const hubEventKey = isExtensionEvent ? 'hub_extension_event' : 'hub_event';
+  const hubLogText = `${hubEventKey}: ${type}\n${hubId}${payloadText ? `\n${payloadText}` : ''}`;
   await query(
     'INSERT INTO logs (space_id, time, text, who, type, group_id) VALUES ($1,$2,$3,$4,$5,$6)',
     [spaceId, time, hubLogText, hubId, 'hub_raw', null],
