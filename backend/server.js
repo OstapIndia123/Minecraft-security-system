@@ -363,6 +363,7 @@ const buildDiscordAvatarUrl = (discordUser) => {
 const mapSpace = (row) => ({
   id: row.id,
   hubId: row.hub_id,
+  hubRoom: row.hub_room,
   name: row.name,
   address: row.address,
   server: row.server,
@@ -462,7 +463,7 @@ const mirrorOutputSide = (side) => {
   return mirrorMap[normalized] ?? normalized;
 };
 
-const loadDevices = async (spaceId, hubId, hubOnline) => {
+const loadDevices = async (spaceId, hubId, hubOnline, hubRoom) => {
   const devices = await query('SELECT * FROM devices WHERE space_id = $1 ORDER BY id', [spaceId]);
   const keys = await query('SELECT id, name, reader_id, groups FROM keys WHERE space_id = $1 ORDER BY id', [spaceId]);
 
@@ -473,7 +474,7 @@ const loadDevices = async (spaceId, hubId, hubOnline) => {
   const hubDevice = {
     id: hubId ? `hub-${hubId}` : 'hub-none',
     name: hubLabel,
-    room: '—',
+    room: hubRoom ?? '—',
     status: hubStatus,
     type: 'hub',
     side: null,
@@ -1417,7 +1418,7 @@ app.get('/api/spaces', requireAuth, async (req, res) => {
     const spaces = await Promise.all(
       result.rows.map(async (row) => ({
         ...mapSpace(row),
-        devices: await loadDevices(row.id, row.hub_id, row.hub_online),
+        devices: await loadDevices(row.id, row.hub_id, row.hub_online, row.hub_room),
         groups: await loadGroups(row.id),
       })),
     );
@@ -1436,7 +1437,7 @@ app.get('/api/spaces', requireAuth, async (req, res) => {
   const spaces = await Promise.all(
     result.rows.map(async (row) => ({
       ...mapSpace(row),
-      devices: await loadDevices(row.id, row.hub_id, row.hub_online),
+      devices: await loadDevices(row.id, row.hub_id, row.hub_online, row.hub_room),
       groups: appMode === 'pro'
         ? await loadGroups(row.id)
         : await loadGroups(row.id).then(async (groups) => {
@@ -1461,7 +1462,7 @@ app.get('/api/spaces/:id', requireAuth, async (req, res) => {
     return res.status(404).json({ error: 'space_not_found' });
   }
   const space = mapSpace(result.rows[0]);
-  space.devices = await loadDevices(space.id, space.hubId, space.hubOnline);
+  space.devices = await loadDevices(space.id, space.hubId, space.hubOnline, space.hubRoom);
   if (appMode === 'pro') {
     space.groups = await loadGroups(space.id);
   } else {
@@ -1687,11 +1688,12 @@ app.post('/api/spaces', requireAuth, requireInstaller, async (req, res) => {
   const photos = [];
 
   await query(
-    `INSERT INTO spaces (id, hub_id, name, address, status, hub_online, issues, server, city, timezone, company, contacts, notes, photos)
-     VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14)`,
+    `INSERT INTO spaces (id, hub_id, hub_room, name, address, status, hub_online, issues, server, city, timezone, company, contacts, notes, photos)
+     VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15)`,
     [
       generatedId,
       normalizedHubId,
+      '—',
       normalizedName,
       normalizedAddress,
       'disarmed',
@@ -1714,7 +1716,7 @@ app.post('/api/spaces', requireAuth, requireInstaller, async (req, res) => {
   await query('INSERT INTO hubs (id, space_id) VALUES ($1,$2)', [normalizedHubId, generatedId]);
   const space = await query('SELECT * FROM spaces WHERE id = $1', [generatedId]);
   const result = mapSpace(space.rows[0]);
-  result.devices = await loadDevices(result.id, result.hubId, result.hubOnline);
+  result.devices = await loadDevices(result.id, result.hubId, result.hubOnline, result.hubRoom);
   res.status(201).json(result);
 });
 
@@ -1759,7 +1761,43 @@ app.patch('/api/spaces/:id', requireAuth, requireInstaller, async (req, res) => 
 
   await appendLog(req.params.id, 'Обновлена информация об объекте', 'UI', 'system');
   const result = mapSpace(updated.rows[0]);
-  result.devices = await loadDevices(req.params.id, result.hubId, result.hubOnline);
+  result.devices = await loadDevices(req.params.id, result.hubId, result.hubOnline, result.hubRoom);
+  res.json(result);
+});
+
+app.patch('/api/spaces/:id/hub', requireAuth, requireInstaller, async (req, res) => {
+  const allowed = await ensureSpaceAccess(req.user.id, req.params.id);
+  if (!allowed) {
+    res.status(403).json({ error: 'forbidden' });
+    return;
+  }
+  if (!await ensureSpaceDisarmed(req.params.id, res)) return;
+
+  const existing = await query('SELECT * FROM spaces WHERE id = $1', [req.params.id]);
+  if (!existing.rows.length) {
+    return res.status(404).json({ error: 'space_not_found' });
+  }
+
+  const { room } = req.body ?? {};
+  const normalizedRoom = normalizeText(room) || '—';
+  if (isOverMaxLength(normalizedRoom, MAX_DEVICE_ROOM_LENGTH)) {
+    return res.status(400).json({ error: 'field_too_long' });
+  }
+
+  const updated = await query(
+    'UPDATE spaces SET hub_room = $1 WHERE id = $2 RETURNING *',
+    [normalizedRoom, req.params.id],
+  );
+  await appendLog(req.params.id, 'Обновлена информация о хабе', 'UI', 'system');
+  const result = mapSpace(updated.rows[0]);
+  result.devices = await loadDevices(result.id, result.hubId, result.hubOnline, result.hubRoom);
+  if (req.header('x-app-mode') === 'pro') {
+    result.groups = await loadGroups(result.id);
+  } else {
+    const groups = await loadGroups(result.id);
+    const allowedGroups = await loadUserGroupAccess(result.id, req.user.id);
+    result.groups = groups.filter((group) => allowedGroups.includes(group.id));
+  }
   res.json(result);
 });
 
@@ -2099,7 +2137,7 @@ app.delete('/api/spaces/:id/hub', requireAuth, requireInstaller, async (req, res
   if (!existing.rows.length) return res.status(404).json({ error: 'space_not_found' });
 
   await query('DELETE FROM hubs WHERE space_id = $1', [req.params.id]);
-  await query('UPDATE spaces SET hub_id = $1, hub_online = $2 WHERE id = $3', [null, false, req.params.id]);
+  await query('UPDATE spaces SET hub_id = $1, hub_online = $2, hub_room = $3 WHERE id = $4', [null, false, '—', req.params.id]);
   await appendLog(req.params.id, 'Хаб удалён из пространства', 'UI', 'system');
   res.json({ ok: true });
 });
@@ -2689,7 +2727,7 @@ const updateStatus = async (spaceId, status, who, logMessage) => {
   if (status === 'armed') {
     alarmSinceArmed.set(spaceId, false);
   }
-  space.devices = await loadDevices(spaceId, space.hubId, space.hubOnline);
+  space.devices = await loadDevices(spaceId, space.hubId, space.hubOnline, space.hubRoom);
   return space;
 };
 
@@ -3127,7 +3165,7 @@ app.post('/api/spaces/:id/groups/:groupId/arm', requireAuth, async (req, res) =>
   await resetGroupAlarmState(spaceId, Number(groupId));
   const result = await query('SELECT * FROM spaces WHERE id = $1', [spaceId]);
   const space = mapSpace(result.rows[0]);
-  space.devices = await loadDevices(spaceId, space.hubId, space.hubOnline);
+  space.devices = await loadDevices(spaceId, space.hubId, space.hubOnline, space.hubRoom);
   space.groups = await loadGroups(spaceId);
   res.json(space);
 });
@@ -3169,7 +3207,7 @@ app.post('/api/spaces/:id/groups/:groupId/disarm', requireAuth, async (req, res)
   await appendLog(spaceId, `Группа '${groupName}' снята с охраны`, req.user.minecraft_nickname ?? 'UI', 'security', Number(groupId));
   const result = await query('SELECT * FROM spaces WHERE id = $1', [spaceId]);
   const space = mapSpace(result.rows[0]);
-  space.devices = await loadDevices(spaceId, space.hubId, space.hubOnline);
+  space.devices = await loadDevices(spaceId, space.hubId, space.hubOnline, space.hubRoom);
   space.groups = await loadGroups(spaceId);
   res.json(space);
 });

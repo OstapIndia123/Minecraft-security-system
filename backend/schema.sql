@@ -45,6 +45,7 @@ CREATE TABLE sessions (
 CREATE TABLE spaces (
   id TEXT PRIMARY KEY,
   hub_id TEXT,
+  hub_room TEXT NOT NULL DEFAULT '—',
   name TEXT NOT NULL,
   address TEXT NOT NULL,
   status TEXT NOT NULL,

@@ -52,6 +52,7 @@ const seed = async () => {
     {
       id: '452354',
       hub_id: '00543651F',
+      hub_room: 'Серверная',
       name: 'Без номера',
       address: 'x:-8 y:79 z:23',
       status: 'armed',
@@ -100,11 +101,12 @@ const seed = async () => {
   for (const space of spaces) {
     await query('INSERT INTO hubs (id, space_id) VALUES ($1,$2)', [space.hub_id.replace('HUB-', ''), space.id]);
     await query(
-      `INSERT INTO spaces (id, hub_id, name, address, status, hub_online, issues, server, city, timezone, company, contacts, notes, photos)
-       VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14)`,
+      `INSERT INTO spaces (id, hub_id, hub_room, name, address, status, hub_online, issues, server, city, timezone, company, contacts, notes, photos)
+       VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15)`,
       [
         space.id,
         space.hub_id.replace('HUB-', ''),
+        space.hub_room ?? '—',
         space.name,
         space.address,
         space.status,
