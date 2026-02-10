@@ -36,11 +36,16 @@ const escapeHtml = (value) => String(value ?? '')
   .replace(/'/g, '&#39;');
 
 const decodeHtmlEntities = (value) => {
-  const text = String(value ?? '');
+  let text = String(value ?? '');
   if (!text.includes('&')) return text;
   const textarea = document.createElement('textarea');
-  textarea.innerHTML = text;
-  return textarea.value;
+  for (let i = 0; i < 3 && text.includes('&'); i += 1) {
+    textarea.innerHTML = text;
+    const decoded = textarea.value;
+    if (decoded === text) break;
+    text = decoded;
+  }
+  return text;
 };
 
 const alarmAudio = typeof Audio !== 'undefined' ? new Audio(ALARM_SOUND_PATH) : null;
