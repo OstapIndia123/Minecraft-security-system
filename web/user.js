@@ -973,14 +973,20 @@ const renderLogs = async (logs, { flashSince } = {}) => {
     const translated = maskKeyNames(translateLogText(log.text));
     const isHubOffline = log.text === 'Хаб не в сети' || translated === 'Hub offline';
     const isExtensionOffline = log.text === 'Модуль расширения не в сети' || translated === 'Hub extension offline';
+    const isAlarm = log.type === 'alarm';
+    const isRestore = log.type === 'restore';
     const logTimestamp = getLogTimestamp(log);
     const flashKey = `logFlash:user:${state.selectedSpaceId}:${logTimestamp ?? log.time}:${log.text}`;
     const hasSeen = localStorage.getItem(flashKey);
-    if (log.type === 'alarm' && logTimestamp && flashSince && logTimestamp > flashSince && !hasSeen) {
+    if (isAlarm && logTimestamp && flashSince && logTimestamp > flashSince && !hasSeen) {
       localStorage.setItem(flashKey, String(Date.now()));
       logFlashActive.set(flashKey, Date.now() + FLASH_DURATION_MS);
     }
-    row.className = `log-row ${log.type === 'alarm' ? 'log-row--alarm' : ''} ${(isHubOffline || isExtensionOffline) ? 'log-row--hub-offline' : ''}`;
+    const shouldFlash = logFlashActive.get(flashKey) > Date.now();
+    if (!shouldFlash) {
+      logFlashActive.delete(flashKey);
+    }
+    row.className = `log-row ${isAlarm ? 'log-row--alarm' : ''} ${shouldFlash ? 'log-row--alarm-flash' : ''} ${isRestore ? 'log-row--restore' : ''} ${(isHubOffline || isExtensionOffline) ? 'log-row--hub-offline' : ''}`;
     const timeLabel = escapeHtml(formatLogTime(logTimestamp) ?? log.time);
     const text = escapeHtml(translated);
     const whoLabel = escapeHtml(log.who);
