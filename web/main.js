@@ -36,11 +36,16 @@ const escapeHtml = (value) => String(value ?? '')
   .replace(/'/g, '&#39;');
 
 const decodeHtmlEntities = (value) => {
-  const text = String(value ?? '');
+  let text = String(value ?? '');
   if (!text.includes('&')) return text;
   const textarea = document.createElement('textarea');
-  textarea.innerHTML = text;
-  return textarea.value;
+  for (let i = 0; i < 3 && text.includes('&'); i += 1) {
+    textarea.innerHTML = text;
+    const decoded = textarea.value;
+    if (decoded === text) break;
+    text = decoded;
+  }
+  return text;
 };
 
 const alarmAudio = typeof Audio !== 'undefined' ? new Audio(ALARM_SOUND_PATH) : null;
@@ -702,7 +707,7 @@ const renderObjects = (spaces) => {
 
 const translateLogText = (text) => {
   if (state.language !== 'en-US' || !text) return text;
-  const normalizedText = String(text).replace(/&#39;/g, "'");
+  const normalizedText = decodeHtmlEntities(text);
   const [firstLine, ...restLines] = normalizedText.split('\n');
   const hubHeaderTranslations = [
     { pattern: /^Событие хаба: (.+)$/u, replacement: 'Hub event: $1' },
@@ -723,7 +728,12 @@ const translateLogText = (text) => {
     { pattern: /^Объект снят с охраны$/, replacement: 'Object disarmed' },
     { pattern: /^Начало снятия$/, replacement: 'Disarm started' },
     { pattern: /^Неудачная попытка постановки под охрану$/, replacement: 'Failed to arm' },
+    { pattern: /^Неудачная попытка постановки под охрану \(зоны не восстановлены: (.+)\)$/, replacement: 'Failed to arm (zones not restored: $1)' },
     { pattern: /^Неудачная постановка \(зоны не в норме\): (.+)$/, replacement: 'Failed to arm (zones not ready): $1' },
+    { pattern: /^Неудачная постановка \(зоны не восстановлены: (.+)\): (.+)$/, replacement: 'Failed to arm (zones not restored: $1): $2' },
+    { pattern: /^Неудачная постановка \(зоны не восстановлены\): (.+)$/, replacement: 'Failed to arm (zones not restored): $1' },
+    { pattern: /^Неудачная постановка \(зоны не восстановлены: (.+)\)$/, replacement: 'Failed to arm (zones not restored: $1)' },
+    { pattern: /^Неудачная постановка \(зоны не восстановлены\)$/, replacement: 'Failed to arm (zones not restored)' },
     { pattern: /^Тревога шлейфа: (.+)$/, replacement: 'Zone alarm: $1' },
     { pattern: /^Восстановление шлейфа: (.+)$/, replacement: 'Zone restored: $1' },
     { pattern: /^Неизвестный ключ: (.+)$/, replacement: 'Unknown key: $1' },
@@ -811,7 +821,7 @@ const renderLogs = (logs) => {
     if (!shouldFlash) {
       logFlashActive.delete(flashKey);
     }
-    const rawText = isHub ? log.text : log.text;
+    const rawText = decodeHtmlEntities(log.text);
     const translatedText = translateLogText(rawText);
     const isHubOffline = rawText === 'Хаб не в сети' || translatedText === 'Hub offline';
     const isExtensionOffline = rawText === 'Модуль расширения не в сети' || translatedText === 'Hub extension offline';
