@@ -695,6 +695,19 @@ const renderObjects = (spaces) => {
 const translateLogText = (text) => {
   if (state.language !== 'en-US' || !text) return text;
   const normalizedText = String(text).replace(/&#39;/g, "'");
+  const [firstLine, ...restLines] = normalizedText.split('\n');
+  const hubHeaderTranslations = [
+    { pattern: /^Событие хаба: (.+)$/u, replacement: 'Hub event: $1' },
+    { pattern: /^Событие модуля расширения: (.+)$/u, replacement: 'Hub extension event: $1' },
+    { pattern: /^hub_event: (.+)$/iu, replacement: 'Hub event: $1' },
+    { pattern: /^hub_extension_event: (.+)$/iu, replacement: 'Hub extension event: $1' },
+  ];
+  for (const entry of hubHeaderTranslations) {
+    if (entry.pattern.test(firstLine)) {
+      const translatedHeader = firstLine.replace(entry.pattern, entry.replacement);
+      return [translatedHeader, ...restLines].join('\n');
+    }
+  }
   const translations = [
     { pattern: /^Создано пространство$/, replacement: 'Space created' },
     { pattern: /^Обновлена информация об объекте$/, replacement: 'Space details updated' },
@@ -715,6 +728,8 @@ const translateLogText = (text) => {
     { pattern: /^Добавлено фото$/, replacement: 'Photo added' },
     { pattern: /^Удалено фото: (.+)$/, replacement: 'Photo removed: $1' },
     { pattern: /^Обновлено фото$/, replacement: 'Photo updated' },
+    { pattern: /^Событие хаба: (.+)$/, replacement: 'Hub event: $1' },
+    { pattern: /^Событие модуля расширения: (.+)$/, replacement: 'Hub extension event: $1' },
     { pattern: /^Хаб привязан к пространству$/, replacement: 'Hub attached to space' },
     { pattern: /^Хаб удалён из пространства$/, replacement: 'Hub removed from space' },
     { pattern: /^Хаб не в сети$/, replacement: 'Hub offline' },
@@ -789,7 +804,7 @@ const renderLogs = (logs) => {
       logFlashActive.delete(flashKey);
     }
     const rawText = isHub ? log.text : log.text;
-    const translatedText = isHub ? rawText : translateLogText(rawText);
+    const translatedText = translateLogText(rawText);
     const isHubOffline = rawText === 'Хаб не в сети' || translatedText === 'Hub offline';
     const isExtensionOffline = rawText === 'Модуль расширения не в сети' || translatedText === 'Hub extension offline';
     row.className = `log-row ${isAlarm ? 'log-row--alarm' : ''} ${shouldFlash ? 'log-row--alarm-flash' : ''} ${isRestore ? 'log-row--restore' : ''} ${isHub ? 'log-row--hub' : ''} ${(isHubOffline || isExtensionOffline) ? 'log-row--hub-offline' : ''}`;

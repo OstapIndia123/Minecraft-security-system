@@ -884,6 +884,19 @@ const renderDevices = (devices) => {
 const translateLogText = (text) => {
   if (state.language !== 'en-US' || !text) return text;
   const normalizedText = String(text).replace(/&#39;/g, "'");
+  const [firstLine, ...restLines] = normalizedText.split('\n');
+  const hubHeaderTranslations = [
+    { pattern: /^Событие хаба: (.+)$/u, replacement: 'Hub event: $1' },
+    { pattern: /^Событие модуля расширения: (.+)$/u, replacement: 'Hub extension event: $1' },
+    { pattern: /^hub_event: (.+)$/iu, replacement: 'Hub event: $1' },
+    { pattern: /^hub_extension_event: (.+)$/iu, replacement: 'Hub extension event: $1' },
+  ];
+  for (const entry of hubHeaderTranslations) {
+    if (entry.pattern.test(firstLine)) {
+      const translatedHeader = firstLine.replace(entry.pattern, entry.replacement);
+      return [translatedHeader, ...restLines].join('\n');
+    }
+  }
   const translations = [
     { pattern: /^Создано пространство$/, replacement: 'Space created' },
     { pattern: /^Обновлена информация об объекте$/, replacement: 'Space details updated' },
@@ -904,6 +917,8 @@ const translateLogText = (text) => {
     { pattern: /^Добавлено фото$/, replacement: 'Photo added' },
     { pattern: /^Удалено фото: (.+)$/, replacement: 'Photo removed: $1' },
     { pattern: /^Обновлено фото$/, replacement: 'Photo updated' },
+    { pattern: /^Событие хаба: (.+)$/, replacement: 'Hub event: $1' },
+    { pattern: /^Событие модуля расширения: (.+)$/, replacement: 'Hub extension event: $1' },
     { pattern: /^Хаб привязан к пространству$/, replacement: 'Hub attached to space' },
     { pattern: /^Хаб удалён из пространства$/, replacement: 'Hub removed from space' },
     { pattern: /^Хаб не в сети$/, replacement: 'Hub offline' },
@@ -957,7 +972,7 @@ const filterLogs = (logs) => {
 
 const renderLogs = async (logs, { flashSince } = {}) => {
   const filtered = filterLogs(logs)
-    .filter((log) => !/^Событие хаба/.test(log.text ?? ''));
+    .filter((log) => !/^(Событие хаба|Событие модуля расширения|hub_event|hub_extension_event):/u.test(log.text ?? ''));
   logTable.innerHTML = '';
   if (!filtered.length) {
     logTable.innerHTML = `<div class="empty-state">${t('user.empty.logs')}</div>`;
