@@ -1869,6 +1869,7 @@ const updateCreateExtensionOptions = async () => {
 
 const renderDeviceDetails = (device) => {
   const canDelete = device.type !== 'hub';
+  const isHubDevice = device.type === 'hub';
   const deleteLabel = device.type === 'key' ? t('device.deleteKey') : t('device.deleteDevice');
   const displayName = device.type === 'hub' ? t('engineer.object.label.hub') : device.name;
   const safeName = escapeHtml(displayName);
@@ -1902,9 +1903,9 @@ const renderDeviceDetails = (device) => {
 
   const baseFields = device.type !== 'key'
     ? `
-      <input type="text" name="name" value="${safeName}" placeholder="Имя" required />
+      <input type="text" name="name" value="${safeName}" placeholder="Имя" required ${isHubDevice ? 'readonly' : ''} />
       <input type="text" name="room" value="${safeRoom}" placeholder="Комната" required />
-      ${!isHubExtensionType(device.type)
+      ${!isHubExtensionType(device.type) && !isHubDevice
         ? `
           <select name="side" required>
             ${sideOptions(device.side ?? '', t('engineer.deviceModal.side'))}
@@ -2067,14 +2068,12 @@ const renderDeviceDetails = (device) => {
         <strong>${safeId}</strong>
       </div>
     </div>
-    ${device.type !== 'hub' ? `
-      <form class="form-grid device-edit" id="deviceEditForm">
-        ${baseFields}
-        ${groupIdField}
-        ${configFields}
-        <button class="button button--primary" type="submit">Сохранить</button>
-      </form>
-    ` : ''}
+    <form class="form-grid device-edit" id="deviceEditForm">
+      ${baseFields}
+      ${isHubDevice ? '' : groupIdField}
+      ${isHubDevice ? '' : configFields}
+      <button class="button button--primary" type="submit">Сохранить</button>
+    </form>
     ${isHubExtensionType(device.type)
       ? `<button class="button button--ghost" id="refreshExtensionStatus">${t('device.refreshStatus')}</button>`
       : ''}
@@ -2171,6 +2170,11 @@ const renderDeviceDetails = (device) => {
               readerId: payload.readerId || null,
               groups: selectedGroups,
             }),
+          });
+        } else if (isHubDevice) {
+          await apiFetch(`/api/spaces/${space.id}/hub`, {
+            method: 'PATCH',
+            body: JSON.stringify({ room: payload.room }),
           });
         } else {
           await apiFetch(`/api/spaces/${space.id}/devices/${device.id}`, {
