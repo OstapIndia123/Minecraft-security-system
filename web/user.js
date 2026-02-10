@@ -836,14 +836,17 @@ const renderDevices = (devices) => {
   }
 
   devices.forEach((device) => {
-    const statusText = device.type === 'zone' || device.type === 'hub'
+    const deviceTypeToken = getDeviceTypeToken(device.type);
+    const isHubDevice = deviceTypeToken === 'hub';
+    const isKeyDevice = deviceTypeToken === 'key';
+    const shouldRenderSideStat = !['hub', 'hub_extension', 'key'].includes(deviceTypeToken);
+    const statusText = deviceTypeToken === 'zone' || isHubDevice
       ? getStatusLabel(device.status)
       : '';
     const button = document.createElement('button');
     button.className = `device-item ${device.id === state.selectedDeviceId ? 'device-item--active' : ''}`;
-    const baseName = device.type === 'hub' ? t('user.object.label.hub') : device.name;
-    const displayName = device.type === 'key' ? t('device.keyMasked') : baseName;
-    const deviceTypeToken = getDeviceTypeToken(device.type);
+    const baseName = isHubDevice ? t('user.object.label.hub') : device.name;
+    const displayName = isKeyDevice ? t('device.keyMasked') : baseName;
     button.innerHTML = `
       <div class="device-item__content">
         <div class="device-avatar" data-type="${deviceTypeToken}">${deviceIcon(device.type)}</div>
@@ -859,8 +862,16 @@ const renderDevices = (devices) => {
       renderDevices(devices);
       const keyGroups = device.config?.groups ?? [];
       const hasGroupAccess = keyGroups.some((groupId) => allowedGroups.has(groupId));
-      const baseDetailTitle = device.type === 'hub' ? t('user.object.label.hub') : device.name;
-      const detailTitle = device.type === 'key' && !hasGroupAccess ? t('device.keyMasked') : baseDetailTitle;
+      const baseDetailTitle = isHubDevice ? t('user.object.label.hub') : device.name;
+      const detailTitle = isKeyDevice && !hasGroupAccess ? t('device.keyMasked') : baseDetailTitle;
+      const sideStatMarkup = shouldRenderSideStat
+        ? `
+          <div class="stat">
+            <span>${t('device.side')}</span>
+            <strong>${escapeHtml(device.side ?? '—')}</strong>
+          </div>
+        `
+        : '';
       deviceDetails.innerHTML = `
         <div class="device-details__header">
           <div class="device-avatar" data-type="${deviceTypeToken}">${deviceIcon(device.type)}</div>
@@ -874,10 +885,7 @@ const renderDevices = (devices) => {
             <span>${t('device.type')}</span>
             <strong>${escapeHtml(device.type)}</strong>
           </div>
-          <div class="stat">
-            <span>${t('device.side')}</span>
-            <strong>${escapeHtml(device.side ?? '—')}</strong>
-          </div>
+          ${sideStatMarkup}
         </div>
       `;
     });
