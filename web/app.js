@@ -1977,8 +1977,8 @@ const renderDeviceDetails = (device) => {
 
   const baseFields = device.type !== 'key'
     ? `
-      <input type="text" name="name" value="${safeName}" placeholder="Имя" required ${isHubDevice ? 'readonly' : ''} />
-      <input type="text" name="room" value="${safeRoom}" placeholder="Комната" required />
+      <input type="text" name="name" value="${safeName}" placeholder="${t('engineer.deviceModal.name')}" required ${isHubDevice ? 'readonly' : ''} />
+      <input type="text" name="room" value="${safeRoom}" placeholder="${t('engineer.deviceModal.room')}" required />
       ${!isHubExtensionType(device.type) && !isHubDevice
         ? `
           <select name="side" required>
@@ -1989,7 +1989,7 @@ const renderDeviceDetails = (device) => {
     `
     : (() => {
       let keyFields = `
-        <input type="text" name="name" value="${escapeHtml(device.name.replace('Ключ: ', ''))}" placeholder="Имя ключа" required />
+        <input type="text" name="name" value="${escapeHtml(device.name.replace('Ключ: ', ''))}" placeholder="${t('engineer.deviceModal.key.name')}" required />
         <select name="readerId">
           ${getReaderOptions(space, safeReaderId)}
         </select>
@@ -2028,7 +2028,7 @@ const renderDeviceDetails = (device) => {
     const safeHubSide = escapeHtml(device.config?.hubSide ?? '');
     const safeExtensionSide = escapeHtml(device.config?.extensionSide ?? '');
     return `
-      <input type="text" name="extensionId" value="${safeExtensionId}" placeholder="ID модуля (HUB_EXT-...)" required />
+      <input type="text" name="extensionId" value="${safeExtensionId}" placeholder="${t('engineer.deviceModal.extension.id')}" required />
       <select name="hubSide" required>
         ${sideOptions(safeHubSide, t('engineer.deviceModal.extension.hubSide'))}
       </select>
@@ -2042,8 +2042,8 @@ const renderDeviceDetails = (device) => {
       const bindExtensionId = device.config?.extensionId ?? '';
       return `
         <select name="bindTarget" id="bindTargetEdit">
-          <option value="hub" ${bindTarget === 'hub' ? 'selected' : ''}>К хабу</option>
-          <option value="hub_extension" ${bindTarget === 'hub_extension' ? 'selected' : ''}>К модулю расширения</option>
+          <option value="hub" ${bindTarget === 'hub' ? 'selected' : ''}>${t('engineer.deviceModal.bindTarget.hub')}</option>
+          <option value="hub_extension" ${bindTarget === 'hub_extension' ? 'selected' : ''}>${t('engineer.deviceModal.bindTarget.extension')}</option>
         </select>
         <select
           name="bindExtensionId"
@@ -2054,18 +2054,18 @@ const renderDeviceDetails = (device) => {
         </select>
         <div id="bindExtensionHint" class="field-hint hidden"></div>
         <select name="zoneType">
-          <option value="instant" ${device.config?.zoneType === 'instant' ? 'selected' : ''}>Нормальная</option>
-          <option value="delayed" ${device.config?.zoneType === 'delayed' ? 'selected' : ''}>Задержанная</option>
-          <option value="pass" ${device.config?.zoneType === 'pass' ? 'selected' : ''}>Проходная</option>
-          <option value="24h" ${device.config?.zoneType === '24h' ? 'selected' : ''}>24-часовая</option>
+          <option value="instant" ${device.config?.zoneType === 'instant' ? 'selected' : ''}>${t('engineer.deviceModal.zoneType.instant')}</option>
+          <option value="delayed" ${device.config?.zoneType === 'delayed' ? 'selected' : ''}>${t('engineer.deviceModal.zoneType.delayed')}</option>
+          <option value="pass" ${device.config?.zoneType === 'pass' ? 'selected' : ''}>${t('engineer.deviceModal.zoneType.pass')}</option>
+          <option value="24h" ${device.config?.zoneType === '24h' ? 'selected' : ''}>${t('engineer.deviceModal.zoneType.24h')}</option>
         </select>
         <select name="bypass">
-          <option value="false" ${device.config?.bypass ? '' : 'selected'}>Обход: нет</option>
-          <option value="true" ${device.config?.bypass ? 'selected' : ''}>Обход: да</option>
+          <option value="false" ${device.config?.bypass ? '' : 'selected'}>${t('engineer.deviceModal.bypass.false')}</option>
+          <option value="true" ${device.config?.bypass ? 'selected' : ''}>${t('engineer.deviceModal.bypass.true')}</option>
         </select>
         <select name="silent">
-          <option value="false" ${device.config?.silent ? '' : 'selected'}>Тихая: нет</option>
-          <option value="true" ${device.config?.silent ? 'selected' : ''}>Тихая: да</option>
+          <option value="false" ${device.config?.silent ? '' : 'selected'}>${t('engineer.deviceModal.silent.false')}</option>
+          <option value="true" ${device.config?.silent ? 'selected' : ''}>${t('engineer.deviceModal.silent.true')}</option>
         </select>
         <input
           type="number"
@@ -2074,7 +2074,7 @@ const renderDeviceDetails = (device) => {
           value="${device.config?.delaySeconds ?? ''}"
           min="1"
           max="120"
-          placeholder="Задержка (сек)"
+          placeholder="${t('engineer.deviceModal.delaySeconds')}"
         />
         <input type="number" name="normalLevel" value="${device.config?.normalLevel ?? 15}" min="0" max="15" />
       `;
@@ -2084,8 +2084,8 @@ const renderDeviceDetails = (device) => {
       const bindExtensionId = device.config?.extensionId ?? '';
       return `
         <select name="bindTarget" id="bindTargetEdit">
-          <option value="hub" ${bindTarget === 'hub' ? 'selected' : ''}>К хабу</option>
-          <option value="hub_extension" ${bindTarget === 'hub_extension' ? 'selected' : ''}>К модулю расширения</option>
+          <option value="hub" ${bindTarget === 'hub' ? 'selected' : ''}>${t('engineer.deviceModal.bindTarget.hub')}</option>
+          <option value="hub_extension" ${bindTarget === 'hub_extension' ? 'selected' : ''}>${t('engineer.deviceModal.bindTarget.extension')}</option>
         </select>
         <select
           name="bindExtensionId"
@@ -2103,8 +2103,8 @@ const renderDeviceDetails = (device) => {
       const bindExtensionId = device.config?.extensionId ?? '';
       return `
         <select name="bindTarget" id="bindTargetEdit">
-          <option value="hub" ${bindTarget === 'hub' ? 'selected' : ''}>К хабу</option>
-          <option value="hub_extension" ${bindTarget === 'hub_extension' ? 'selected' : ''}>К модулю расширения</option>
+          <option value="hub" ${bindTarget === 'hub' ? 'selected' : ''}>${t('engineer.deviceModal.bindTarget.hub')}</option>
+          <option value="hub_extension" ${bindTarget === 'hub_extension' ? 'selected' : ''}>${t('engineer.deviceModal.bindTarget.extension')}</option>
         </select>
         <select
           name="bindExtensionId"
@@ -2116,7 +2116,7 @@ const renderDeviceDetails = (device) => {
         <div id="bindExtensionHint" class="field-hint hidden"></div>
         <input type="number" name="outputLevel" value="${device.config?.level ?? 15}" min="0" max="15" />
         <input type="number" name="intervalMs" value="${device.config?.intervalMs ?? 1000}" min="300" max="60000" />
-        <input type="number" name="alarmDuration" value="${device.config?.alarmDuration ?? ''}" min="1" max="120" placeholder="Время тревоги (сек)" />
+        <input type="number" name="alarmDuration" value="${device.config?.alarmDuration ?? ''}" min="1" max="120" placeholder="${t('engineer.deviceModal.alarmDuration')}" />
       `;
     }
     if (device.type === 'reader') {
@@ -2151,7 +2151,7 @@ const renderDeviceDetails = (device) => {
       ${baseFields}
       ${isHubDevice ? '' : groupIdField}
       ${isHubDevice ? '' : configFields}
-      <button class="button button--primary" type="submit">Сохранить</button>
+      <button class="button button--primary" type="submit">${t('common.save')}</button>
     </form>
     ${isHubExtensionType(device.type)
       ? `<button class="button button--ghost" id="refreshExtensionStatus">${t('device.refreshStatus')}</button>`
