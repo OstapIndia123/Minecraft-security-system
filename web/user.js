@@ -976,6 +976,7 @@ const translateLogText = (text) => {
     { pattern: /^Пользователь покинул пространство: (.+)$/, replacement: 'User left space: $1' },
     { pattern: /^Пользователь удалён из пространства: (.+)$/, replacement: 'User removed from space: $1' },
     { pattern: /^Пользователь (.+) получил доступ$/, replacement: 'User $1 gained access' },
+    { pattern: /^Инженер монтажа (.+) получил доступ$/, replacement: 'Installer $1 gained access' },
     { pattern: /^Группа '(.+)' поставлена под охрану$/, replacement: "Group '$1' armed" },
     { pattern: /^Группа '(.+)' снята с охраны$/, replacement: "Group '$1' disarmed" },
     { pattern: /^Постановка группы '(.+)' ключом: (.+)$/, replacement: "Group '$1' armed by key: $2" },
