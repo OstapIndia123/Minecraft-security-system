@@ -1684,4 +1684,19 @@ body {
   .log-table {
     font-size: 12px;
   }
+
+  .log-row {
+    grid-template-columns: 1fr;
+    gap: 6px;
+  }
+
+  .log-row > span:first-child {
+    font-size: 12px;
+    color: var(--muted);
+  }
+
+  .log-row > .muted {
+    font-size: 12px;
+    overflow-wrap: anywhere;
+  }
 }
