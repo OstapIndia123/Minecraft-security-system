@@ -119,6 +119,24 @@ http://localhost:8080/login.html?token=TEST_TOKEN
 
 И не забудьте сменить токен Webhook.
 
+
+## Web Push (VAPID + Service Worker)
+Для фоновых уведомлений (когда вкладка спит/закрыта) добавлена поддержка Web Push.
+
+1) Сгенерируйте VAPID ключи:
+```bash
+node -e "const webpush=require('web-push');console.log(webpush.generateVAPIDKeys())"
+```
+2) Добавьте переменные окружения:
+```bash
+VAPID_PUBLIC_KEY=...
+VAPID_PRIVATE_KEY=...
+VAPID_SUBJECT=mailto:you@example.com
+```
+3) Перезапустите backend. Клиент сам зарегистрирует `sw.js` и подпишется на push после логина.
+
+Если VAPID переменные не заданы, приложение продолжает работать в старом режиме (`new Notification` в живой вкладке).
+
 ## UI иконки устройств
 Инструкция по добавлению пользовательских SVG-иконок для устройств находится в `docs/icons.md`.
 
