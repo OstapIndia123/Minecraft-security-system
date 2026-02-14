@@ -6,6 +6,7 @@ const openAdminUsers = document.getElementById('openAdminUsers');
 const adminUsersModal = document.getElementById('adminUsersModal');
 const closeAdminUsers = document.getElementById('closeAdminUsers');
 const adminUsersList = document.getElementById('adminUsersList');
+const adminUsersSearch = document.getElementById('adminUsersSearch');
 const adminLogsDays = document.getElementById('adminLogsDays');
 const adminLogsPurge = document.getElementById('adminLogsPurge');
 const profileLanguage = document.getElementById('profileLanguage');
@@ -15,6 +16,7 @@ const getAdminToken = () => localStorage.getItem('adminToken');
 const adminTranslations = {
   ru: {
     emptyUsers: 'Пользователи не найдены.',
+    emptyFilteredUsers: 'По вашему запросу ничего не найдено.',
     block: 'Заблокировать',
     unblock: 'Разблокировать',
     remove: 'Удалить',
@@ -26,6 +28,7 @@ const adminTranslations = {
   },
   'en-US': {
     emptyUsers: 'No users found.',
+    emptyFilteredUsers: 'No users match your query.',
     block: 'Block',
     unblock: 'Unblock',
     remove: 'Delete',
@@ -65,14 +68,37 @@ const tAdmin = (key, arg) => {
   return typeof value === 'function' ? value(arg) : value;
 };
 
+let adminUsersCache = [];
+
+const normalizeValue = (value) => String(value ?? '').trim().toLowerCase();
+
+const getFilteredUsers = (users, query) => {
+  const normalizedQuery = normalizeValue(query);
+  if (!normalizedQuery) return users;
+  return users.filter((user) => {
+    const nickname = normalizeValue(user.minecraft_nickname);
+    const email = normalizeValue(user.email);
+    const role = normalizeValue(user.role);
+    const discordId = normalizeValue(user.discord_id);
+    const id = normalizeValue(user.id);
+    return nickname.includes(normalizedQuery)
+      || email.includes(normalizedQuery)
+      || role.includes(normalizedQuery)
+      || discordId.includes(normalizedQuery)
+      || id.includes(normalizedQuery);
+  });
+};
+
 const renderUsers = (users) => {
   if (!adminUsersList) return;
+  const query = adminUsersSearch?.value ?? '';
+  const filteredUsers = getFilteredUsers(users, query);
   adminUsersList.innerHTML = '';
-  if (!users.length) {
-    adminUsersList.textContent = tAdmin('emptyUsers');
+  if (!filteredUsers.length) {
+    adminUsersList.textContent = query ? tAdmin('emptyFilteredUsers') : tAdmin('emptyUsers');
     return;
   }
-  users.forEach((user) => {
+  filteredUsers.forEach((user) => {
     const row = document.createElement('div');
     row.className = 'admin-users__row';
 
@@ -100,7 +126,7 @@ const renderUsers = (users) => {
       if (response.ok) {
         const updated = await response.json();
         user.is_blocked = updated.is_blocked;
-        renderUsers(users);
+        renderUsers(adminUsersCache);
       }
     });
     actions.appendChild(toggle);
@@ -118,8 +144,8 @@ const renderUsers = (users) => {
         headers: { 'X-Admin-Token': token },
       });
       if (response.ok) {
-        const next = users.filter((item) => item.id !== user.id);
-        renderUsers(next);
+        adminUsersCache = adminUsersCache.filter((item) => item.id !== user.id);
+        renderUsers(adminUsersCache);
       }
     });
     actions.appendChild(remove);
@@ -137,8 +163,8 @@ const loadUsers = async () => {
     headers: { 'X-Admin-Token': token },
   });
   if (!response.ok) return;
-  const users = await response.json();
-  renderUsers(users);
+  adminUsersCache = await response.json();
+  renderUsers(adminUsersCache);
 };
 
 const openUsersModal = async () => {
@@ -174,6 +200,10 @@ openAdminUsers?.addEventListener('click', () => {
 });
 
 closeAdminUsers?.addEventListener('click', closeUsersModal);
+
+adminUsersSearch?.addEventListener('input', () => {
+  renderUsers(adminUsersCache);
+});
 
 adminLoginForm?.addEventListener('submit', async (event) => {
   event.preventDefault();
