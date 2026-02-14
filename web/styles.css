@@ -338,11 +338,18 @@ body {
   flex-direction: column;
 }
 
+.modal__body {
+  flex: 1;
+  min-height: 0;
+  overflow: hidden;
+}
+
 .admin-users {
   display: flex;
   flex-direction: column;
   gap: 12px;
-  max-height: 100%;
+  flex: 1;
+  min-height: 0;
   overflow: auto;
 }
 
