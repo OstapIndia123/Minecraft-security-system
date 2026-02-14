@@ -143,6 +143,7 @@
             <button class="tab" data-tab="notes" data-i18n="engineer.tabs.notes">Примечания</button>
             <button class="tab" data-tab="users" data-i18n="engineer.tabs.users">Пользователи</button>
             <button class="tab" data-tab="installers" data-i18n="engineer.tabs.installers">Инженеры монтажа</button>
+            <button class="tab" data-tab="groups" data-i18n="engineer.tabs.groups">Группы</button>
             <button class="tab" data-tab="log" data-i18n="engineer.tabs.log">Лог</button>
           </div>
 
@@ -263,6 +264,13 @@
             </div>
           </div>
 
+          <div class="panel" id="groups">
+            <div class="panel__header">
+              <h2 data-i18n="engineer.groups.title">Группы охраны</h2>
+            </div>
+            <div id="groupsContent"></div>
+          </div>
+
           <div class="panel" id="log">
             <div class="panel__header">
               <h2 data-i18n="engineer.log.title">Лог событий</h2>
@@ -275,6 +283,9 @@
               </div>
             </div>
             <div class="log-table" id="logTable"></div>
+            <div class="panel__footer panel__footer--center">
+              <button class="button button--ghost" id="logMore" data-i18n="log.actions.more">Показать ещё</button>
+            </div>
           </div>
         </section>
       </main>
@@ -347,14 +358,58 @@
         <form class="form-grid" id="deviceForm">
           <input type="text" name="name" data-i18n-placeholder="engineer.deviceModal.name" placeholder="Имя устройства" maxlength="60" required />
           <input type="text" name="room" data-i18n-placeholder="engineer.deviceModal.room" placeholder="Комната" maxlength="60" required />
+          <select name="groupId" id="deviceGroupSelect" class="hidden">
+            <option value="" data-i18n="engineer.groups.none">Без группы</option>
+          </select>
           <select name="type" id="deviceType" required>
             <option value="zone" data-i18n="engineer.deviceModal.type.zone">Шлейф/зона</option>
             <option value="output-light" data-i18n="engineer.deviceModal.type.outputLight">Постановочный светодиод</option>
             <option value="siren" data-i18n="engineer.deviceModal.type.siren">Сирена</option>
             <option value="reader" data-i18n="engineer.deviceModal.type.reader">Считыватель</option>
+            <option value="hub_extension" data-i18n="engineer.deviceModal.type.extension">Модуль расширения</option>
             <option value="key" data-i18n="engineer.deviceModal.type.key">Ключ</option>
           </select>
-          <input type="text" name="side" data-i18n-placeholder="engineer.deviceModal.side" placeholder="Сторона хаба (north/south/etc)" maxlength="16" required />
+          <select name="side" data-i18n-placeholder="engineer.deviceModal.side" required>
+            <option value="" disabled selected hidden data-i18n="engineer.deviceModal.side">Сторона (N/S/E/W/U/D)</option>
+            <option value="north">north</option>
+            <option value="south">south</option>
+            <option value="west">west</option>
+            <option value="east">east</option>
+            <option value="up">up</option>
+            <option value="down">down</option>
+          </select>
+
+          <div class="form-inline" id="bindingFields">
+            <select name="bindTarget" id="bindTarget">
+              <option value="hub" data-i18n="engineer.deviceModal.bindTarget.hub">К хабу</option>
+              <option value="hub_extension" data-i18n="engineer.deviceModal.bindTarget.extension">К модулю расширения</option>
+            </select>
+            <select name="bindExtensionId" id="bindExtensionId">
+              <option value="" data-i18n="engineer.deviceModal.bindExtension.empty">Нет модулей расширения</option>
+            </select>
+          </div>
+
+          <div class="form-inline hidden" id="extensionFields">
+            <input type="text" name="extensionId" data-i18n-placeholder="engineer.deviceModal.extension.id" placeholder="ID модуля (HUB_EXT-...)" maxlength="80" />
+            <select name="hubSide" data-i18n-placeholder="engineer.deviceModal.extension.hubSide">
+              <option value="" disabled selected hidden data-i18n="engineer.deviceModal.extension.hubSide">Сторона хаба (N/S/E/W/U/D)</option>
+              <option value="north">north</option>
+              <option value="south">south</option>
+              <option value="west">west</option>
+              <option value="east">east</option>
+              <option value="up">up</option>
+              <option value="down">down</option>
+            </select>
+            <select name="extensionSide" data-i18n-placeholder="engineer.deviceModal.extension.extensionSide">
+              <option value="" disabled selected hidden data-i18n="engineer.deviceModal.extension.extensionSide">Сторона модуля (N/S/E/W/U/D)</option>
+              <option value="north">north</option>
+              <option value="south">south</option>
+              <option value="west">west</option>
+              <option value="east">east</option>
+              <option value="up">up</option>
+              <option value="down">down</option>
+            </select>
+          </div>
 
           <div class="form-inline" id="zoneFields">
             <select name="zoneType">
@@ -393,7 +448,9 @@
 
           <div class="form-inline hidden" id="keyFields">
             <input type="text" name="keyName" data-i18n-placeholder="engineer.deviceModal.key.name" placeholder="Имя ключа" maxlength="60" />
-            <input type="text" name="readerId" data-i18n-placeholder="engineer.deviceModal.key.readerId" placeholder="ID считывателя" maxlength="80" />
+            <select name="readerId" id="keyReaderIdSelect">
+              <option value="" data-i18n="engineer.deviceModal.key.readerId">ID считывателя</option>
+            </select>
             <button type="button" class="button button--ghost" id="readKey" data-i18n="engineer.deviceModal.key.read">Считать ключ</button>
             <button type="button" class="button button--ghost" id="generateKey" data-i18n="engineer.deviceModal.key.generate">Сгенерировать</button>
           </div>
@@ -423,6 +480,19 @@
         <div class="modal__actions">
           <button class="button button--ghost" id="actionModalCancel" type="button" data-i18n="common.cancel">Отмена</button>
           <button class="button button--primary" id="actionModalConfirm" type="button" data-i18n="common.confirm">Подтвердить</button>
+        </div>
+      </div>
+    </div>
+
+    <div class="modal" id="groupsManageModal" aria-hidden="true">
+      <div class="modal__content">
+        <div class="modal__header">
+          <h3 id="groupsManageTitle" data-i18n="engineer.groups.manageTitle">Управление группами</h3>
+          <button class="ghost-button" id="closeGroupsManageModal" aria-label="Закрыть">✕</button>
+        </div>
+        <div id="groupsManageList" class="group-manage-list"></div>
+        <div class="modal__actions">
+          <button class="button button--ghost" id="groupsManageClose" type="button" data-i18n="common.close">Закрыть</button>
         </div>
       </div>
     </div>
