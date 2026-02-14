@@ -4,6 +4,7 @@ import crypto from 'node:crypto';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { isDbAuthFailed, query } from './db.js';
+import webpush from 'web-push';
 
 const app = express();
 const __filename = fileURLToPath(import.meta.url);
@@ -42,6 +43,14 @@ const MAX_DEVICE_ROOM_LENGTH = 60;
 const MAX_DEVICE_ID_LENGTH = 80;
 const MAX_KEY_NAME_LENGTH = 60;
 const MAX_PHOTO_LABEL_LENGTH = 60;
+
+const vapidPublicKey = process.env.VAPID_PUBLIC_KEY;
+const vapidPrivateKey = process.env.VAPID_PRIVATE_KEY;
+const vapidSubject = process.env.VAPID_SUBJECT ?? 'mailto:security@example.com';
+const webPushConfigured = Boolean(vapidPublicKey && vapidPrivateKey);
+if (webPushConfigured) {
+  webpush.setVapidDetails(vapidSubject, vapidPublicKey, vapidPrivateKey);
+}
 
 const asyncHandler = (handler) => (req, res, next) =>
   Promise.resolve(handler(req, res, next)).catch(next);
@@ -106,6 +115,19 @@ let schemaCompatibilityEnsured = false;
 const ensureSchemaCompatibility = async () => {
   if (schemaCompatibilityEnsured) return;
   await query("ALTER TABLE spaces ADD COLUMN IF NOT EXISTS hub_room TEXT NOT NULL DEFAULT '—'");
+  await query(`CREATE TABLE IF NOT EXISTS push_subscriptions (
+    id SERIAL PRIMARY KEY,
+    user_id INT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+    app_mode TEXT NOT NULL,
+    endpoint TEXT NOT NULL,
+    p256dh TEXT NOT NULL,
+    auth TEXT NOT NULL,
+    expiration_time BIGINT,
+    created_at TIMESTAMP NOT NULL DEFAULT NOW(),
+    updated_at TIMESTAMP NOT NULL DEFAULT NOW(),
+    UNIQUE (user_id, app_mode, endpoint)
+  )`);
+  await query('CREATE INDEX IF NOT EXISTS push_subscriptions_endpoint_idx ON push_subscriptions(endpoint)');
   schemaCompatibilityEnsured = true;
 };
 
@@ -504,12 +526,116 @@ const loadDevices = async (spaceId, hubId, hubOnline, hubRoom) => {
 
 const sanitizeLogText = (str) => str.replace(/[<>&"']/g, (c) => ({ '<': '&lt;', '>': '&gt;', '&': '&amp;', '"': '&quot;', "'": '&#39;' })[c]);
 
+const decodeHtmlText = (value = '') => String(value)
+  .replace(/&lt;/g, '<')
+  .replace(/&gt;/g, '>')
+  .replace(/&amp;/g, '&')
+  .replace(/&quot;/g, '"')
+  .replace(/&#39;/g, "'");
+
+const resolvePushRecipients = async (spaceId, groupId, appMode) => {
+  const roleFilter = appMode === 'pro' ? 'installer' : 'user';
+  const whereClauses = ['user_spaces.space_id = $1', 'user_spaces.role = $2', 'push_subscriptions.app_mode = $3'];
+  const params = [spaceId, roleFilter, appMode];
+  if (appMode !== 'pro') {
+    const spaceRow = await query('SELECT groups_enabled FROM spaces WHERE id = $1', [spaceId]);
+    const groupsEnabled = spaceRow.rows[0]?.groups_enabled ?? false;
+    if (groupsEnabled && groupId) {
+      whereClauses.push(`EXISTS (
+        SELECT 1
+        FROM user_group_access
+        WHERE user_group_access.user_id = users.id
+          AND user_group_access.space_id = user_spaces.space_id
+          AND user_group_access.group_id = $${params.length + 1}
+      )`);
+      params.push(groupId);
+    }
+  }
+  const result = await query(
+    `SELECT push_subscriptions.id,
+            push_subscriptions.endpoint,
+            push_subscriptions.p256dh,
+            push_subscriptions.auth,
+            push_subscriptions.expiration_time,
+            users.language,
+            spaces.name AS space_name
+     FROM push_subscriptions
+     JOIN users ON users.id = push_subscriptions.user_id
+     JOIN user_spaces ON user_spaces.user_id = users.id
+     JOIN spaces ON spaces.id = user_spaces.space_id
+     WHERE ${whereClauses.join(' AND ')}`,
+    params,
+  );
+  return result.rows;
+};
+
+const buildPushPayload = ({ spaceName, logType, text, createdAt, language }) => {
+  const isAlarm = logType === 'alarm';
+  const title = language === 'en-US'
+    ? (isAlarm ? 'Security event: alarm' : 'Security event')
+    : (isAlarm ? 'Охранное событие: тревога' : 'Охранное событие');
+  return {
+    title,
+    body: `${spaceName}: ${decodeHtmlText(text)}`,
+    tag: `push:${createdAt}:${logType}:${spaceName}`,
+    data: {
+      createdAt,
+      type: logType,
+      url: '/main.html',
+    },
+  };
+};
+
+const sendWebPushForLog = async ({ spaceId, groupId, type, text, createdAt }) => {
+  if (!webPushConfigured) return;
+  if (type !== 'security' && type !== 'alarm') return;
+  for (const appMode of ['user', 'pro']) {
+    const recipients = await resolvePushRecipients(spaceId, groupId, appMode);
+    await Promise.all(recipients.map(async (recipient) => {
+      const payload = buildPushPayload({
+        spaceName: recipient.space_name,
+        logType: type,
+        text,
+        createdAt,
+        language: recipient.language,
+      });
+      try {
+        await webpush.sendNotification({
+          endpoint: recipient.endpoint,
+          expirationTime: recipient.expiration_time,
+          keys: {
+            p256dh: recipient.p256dh,
+            auth: recipient.auth,
+          },
+        }, JSON.stringify(payload));
+      } catch (error) {
+        if (error?.statusCode === 404 || error?.statusCode === 410) {
+          await query('DELETE FROM push_subscriptions WHERE id = $1', [recipient.id]);
+          return;
+        }
+        console.error('Web push delivery failed:', error?.statusCode ?? error?.message ?? error);
+      }
+    }));
+  }
+};
+
 const appendLog = async (spaceId, text, who, type, groupId = null) => {
   const time = new Date().toLocaleTimeString('ru-RU', { hour: '2-digit', minute: '2-digit', second: '2-digit' });
-  await query(
-    'INSERT INTO logs (space_id, time, text, who, type, group_id) VALUES ($1,$2,$3,$4,$5,$6)',
-    [spaceId, time, sanitizeLogText(text), sanitizeLogText(who), type, groupId],
+  const safeText = sanitizeLogText(text);
+  const result = await query(
+    'INSERT INTO logs (space_id, time, text, who, type, group_id) VALUES ($1,$2,$3,$4,$5,$6) RETURNING id, created_at',
+    [spaceId, time, safeText, sanitizeLogText(who), type, groupId],
   );
+  const inserted = result.rows[0];
+  sendWebPushForLog({
+    spaceId,
+    groupId,
+    type,
+    text: safeText,
+    createdAt: inserted?.created_at ?? new Date().toISOString(),
+  }).catch((error) => {
+    console.error('Web push dispatch failed:', error?.message ?? error);
+  });
 };
 
 const getArmingViolations = (zones = []) => zones.filter((zone) => {
@@ -1174,6 +1300,58 @@ app.post('/api/auth/login', async (req, res) => {
 
 app.get('/api/auth/me', requireAuth, async (req, res) => {
   res.json({ user: req.user });
+});
+
+app.get('/api/push/public-key', requireAuth, async (req, res) => {
+  if (!webPushConfigured) {
+    res.status(503).json({ error: 'push_not_configured' });
+    return;
+  }
+  res.json({ publicKey: vapidPublicKey });
+});
+
+app.post('/api/push/subscribe', requireAuth, async (req, res) => {
+  if (!webPushConfigured) {
+    res.status(503).json({ error: 'push_not_configured' });
+    return;
+  }
+  const appMode = req.header('x-app-mode') === 'pro' ? 'pro' : 'user';
+  const subscription = req.body?.subscription;
+  const endpoint = normalizeText(subscription?.endpoint);
+  const p256dh = normalizeText(subscription?.keys?.p256dh);
+  const auth = normalizeText(subscription?.keys?.auth);
+  const expirationTime = Number.isFinite(Number(subscription?.expirationTime))
+    ? Number(subscription.expirationTime)
+    : null;
+  if (!endpoint || !p256dh || !auth) {
+    res.status(400).json({ error: 'invalid_subscription' });
+    return;
+  }
+  await query(
+    `INSERT INTO push_subscriptions (user_id, app_mode, endpoint, p256dh, auth, expiration_time)
+     VALUES ($1,$2,$3,$4,$5,$6)
+     ON CONFLICT (user_id, app_mode, endpoint)
+     DO UPDATE SET p256dh = EXCLUDED.p256dh,
+                   auth = EXCLUDED.auth,
+                   expiration_time = EXCLUDED.expiration_time,
+                   updated_at = NOW()`,
+    [req.user.id, appMode, endpoint, p256dh, auth, expirationTime],
+  );
+  res.json({ ok: true });
+});
+
+app.delete('/api/push/subscribe', requireAuth, async (req, res) => {
+  const appMode = req.header('x-app-mode') === 'pro' ? 'pro' : 'user';
+  const endpoint = normalizeText(req.body?.endpoint);
+  if (!endpoint) {
+    res.status(400).json({ error: 'invalid_subscription' });
+    return;
+  }
+  await query(
+    'DELETE FROM push_subscriptions WHERE user_id = $1 AND app_mode = $2 AND endpoint = $3',
+    [req.user.id, appMode, endpoint],
+  );
+  res.json({ ok: true });
 });
 
 app.patch('/api/auth/me', requireAuth, async (req, res) => {

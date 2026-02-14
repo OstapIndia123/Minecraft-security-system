@@ -521,6 +521,52 @@ const apiFetch = async (path) => {
   return response.json();
 };
 
+
+const urlBase64ToUint8Array = (base64String) => {
+  const padding = '='.repeat((4 - base64String.length % 4) % 4);
+  const base64 = (base64String + padding)
+    .replace(/-/g, '+')
+    .replace(/_/g, '/');
+  const rawData = window.atob(base64);
+  return Uint8Array.from([...rawData].map((char) => char.charCodeAt(0)));
+};
+
+const initWebPush = async () => {
+  if (!('serviceWorker' in navigator) || !('PushManager' in window)) return;
+  if (Notification.permission === 'denied') return;
+  const token = localStorage.getItem('authToken');
+  if (!token) return;
+  try {
+    const registration = await navigator.serviceWorker.register('/sw.js');
+    const keyResp = await fetch('/api/push/public-key', {
+      headers: { Authorization: `Bearer ${token}`, 'X-App-Mode': 'pro' },
+    });
+    if (!keyResp.ok) return;
+    const { publicKey } = await keyResp.json();
+    if (!publicKey) return;
+    let subscription = await registration.pushManager.getSubscription();
+    if (!subscription) {
+      const permission = await Notification.requestPermission();
+      if (permission !== 'granted') return;
+      subscription = await registration.pushManager.subscribe({
+        userVisibleOnly: true,
+        applicationServerKey: urlBase64ToUint8Array(publicKey),
+      });
+    }
+    await fetch('/api/push/subscribe', {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        Authorization: `Bearer ${token}`,
+        'X-App-Mode': 'pro',
+      },
+      body: JSON.stringify({ subscription }),
+    });
+  } catch (error) {
+    console.warn('Web push init skipped:', error?.message ?? error);
+  }
+};
+
 const getLogTimestamp = (log) => {
   if (log.createdAtMs) return log.createdAtMs;
   const raw = log.createdAt ?? log.created_at;
@@ -1106,7 +1152,8 @@ const initProfileMenu = async () => {
 if (!localStorage.getItem('authToken')) {
   window.location.href = 'login.html';
 } else {
-  initProfileMenu().then(() => {
+  initProfileMenu().then(async () => {
+    await initWebPush();
     refresh().catch(() => null);
   });
   applyTranslations();
